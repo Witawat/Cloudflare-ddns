@@ -129,6 +129,10 @@ class CloudflareAPI:
             {"content": content, "ttl": int(ttl), "proxied": bool(proxied)},
         )
 
+    def delete_record(self, zone_id, record_id):
+        """ลบ record"""
+        return self._request("DELETE", f"/zones/{zone_id}/dns_records/{record_id}")
+
     def create_record(self, zone_id, name, rtype, content, ttl, proxied):
         """สร้าง record ใหม่ (ใช้เมื่อ record ยังไม่มีใน Cloudflare)"""
         return self._request(

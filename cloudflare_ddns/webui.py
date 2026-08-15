@@ -28,6 +28,24 @@ def _get_tunnel_mgr():
         _tunnel_mgr = tunnel_mod.TunnelManager()
     return _tunnel_mgr
 
+
+def _decode_tunnel_token(token):
+    """แยก account_id + tunnel_id จาก tunnel token (JWT payload). คืน (dict, error)"""
+    import base64
+    import json as _json
+
+    try:
+        payload_part = token.strip().split(".")[1]
+        payload_part += "=" * (-len(payload_part) % 4)
+        claims = _json.loads(base64.urlsafe_b64decode(payload_part))
+        account_id = claims.get("a") or claims.get("accountID")
+        tunnel_id = claims.get("t") or claims.get("tunnelID")
+    except Exception:
+        return None, "tunnel token ผิดรูปแบบ (ควรเป็น eyJ... ยาว ๆ จากหน้า Zero Trust)"
+    if not account_id or not tunnel_id:
+        return None, "tunnel token ไม่มี account/tunnel id (token ผิดรูปแบบ?)"
+    return {"account_id": account_id, "tunnel_id": tunnel_id}, ""
+
 # ชื่อบริการสำหรับพอร์ตที่พบบ่อย
 PORT_SERVICES = {
     20: "ftp-data", 21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns",
@@ -332,10 +350,12 @@ __LOGIN__
     <div class="tg-row">
       <span id="tunnel-status" class="tg-status">กำลังโหลด…</span>
       <button id="tunnelWizard" class="btn-primary">ตั้งค่า Tunnel (wizard)</button>
+      <button id="tunnelHostsBtn" class="btn-secondary">ดู hostname ที่ผูกแล้ว</button>
       <button id="tunnelStart" class="btn-secondary">เริ่ม tunnel</button>
       <button id="tunnelStop" class="btn-secondary">หยุด tunnel</button>
       <button id="tunnelDownload" class="btn-secondary">ดาวน์โหลด cloudflared</button>
     </div>
+    <div id="tunnel-hosts" hidden style="margin-top:10px"></div>
   </section>
 
   <section class="panel">
@@ -875,6 +895,51 @@ async function loadTunnelStatus() {
   }
 }
 
+async function tunnelHosts() {
+  const box = $("tunnel-hosts");
+  if (!box.hidden) { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = '<p style="color:var(--muted)">กำลังโหลด…</p>';
+  const token = $("tunnel_token").value.trim();
+  if (!token) { box.innerHTML = '<p style="color:var(--muted)">ยังไม่ได้ตั้งค่า tunnel token (ใช้ wizard ตั้งค่า)</p>'; return; }
+  try {
+    const r = await fetch("/tunnel/hostnames", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const j = await r.json();
+    if (!j.ok) { box.innerHTML = '<p style="color:var(--danger)">' + escapeHtml(j.message) + "</p>"; return; }
+    if (!j.hostnames.length) {
+      box.innerHTML = '<p style="color:var(--muted)">ยังไม่มี hostname ผูกกับ tunnel — ใช้ "ตั้งค่า Tunnel (wizard)" เพื่อผูก</p>';
+      return;
+    }
+    box.innerHTML = '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden"><table style="font-size:0.85rem;width:100%">' +
+      '<tr style="background:var(--surface-2)"><th style="padding:5px 10px;text-align:left">hostname</th><th style="padding:5px 10px;text-align:left">บริการ</th><th style="padding:5px 10px"></th></tr>' +
+      j.hostnames.map(h =>
+        '<tr><td class="mono" style="padding:5px 10px">' + escapeHtml(h.hostname) + '</td><td class="mono" style="padding:5px 10px;color:var(--muted)">' + escapeHtml(h.service) + "</td>" +
+        '<td style="padding:2px 6px"><button class="btn-del" type="button" data-host="' + escapeHtml(h.hostname) + '" title="เลิกผูก">×</button></td></tr>'
+      ).join("") + "</table></div>";
+    box.querySelectorAll("button[data-host]").forEach(b => b.addEventListener("click", async () => {
+      if (!confirm("เลิกผูก " + b.dataset.host + "?")) return;
+      try {
+        const rr = await fetch("/tunnel/unbind", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, hostname: b.dataset.host }),
+        });
+        const jj = await rr.json();
+        toast(jj.ok ? jj.message : "ไม่สำเร็จ: " + jj.message, jj.ok ? "ok" : "err");
+        tunnelHosts();
+      } catch (e) {
+        toast("error: " + e, "err");
+      }
+    }));
+  } catch (e) {
+    box.innerHTML = '<p style="color:var(--danger)">error: ' + escapeHtml(e) + "</p>";
+  }
+}
+
 async function tunnelAction(path, okMsg) {
   try {
     const r = await fetch(path, { method: "POST" });
@@ -1037,6 +1102,10 @@ function renderTunnelWizard() {
       '<label class="field">ชื่อ (subdomain)<input id="twz-sub" type="text" placeholder="app" class="mono"></label>' +
       '<label class="field">โดเมน<select id="twz-domain" class="wz-zone-select"></select></label></div>' +
       '<label class="field">บริการในเครื่อง (localhost:พอร์ต)<input id="twz-service" type="text" class="mono" value="http://localhost:8080"></label>' +
+      '<div style="margin:8px 0">' +
+      '<button class="btn-secondary" type="button" id="twz-load-records">เลือกจาก record ที่มีอยู่</button> ' +
+      '<select id="twz-record-pick" class="wz-zone-select" style="margin-top:6px" hidden></select></div>' +
+      '<h3 style="margin-top:14px">ผูกกับ tunnel แล้ว</h3><div id="twz-bound"><p style="color:var(--muted)">กำลังโหลด…</p></div>' +
       '<div id="twz-bind-msg"></div>' +
       '<div style="margin-top:10px"><button class="btn-primary" type="button" id="twz-bind">ผูกกับ tunnel</button></div>' +
       '<div class="wz-help">ตัวอย่าง: ชื่อ <b>app</b> + โดเมน <b>makerwitawat.com</b> + บริการ <b>http://localhost:8080</b> → เข้าได้ที่ <b>https://app.makerwitawat.com</b> (ผูกแล้วแก้ภายหลังได้ในฟอร์ม/แดชบอร์ด)</div>' +
@@ -1078,11 +1147,45 @@ function renderTunnelWizard() {
         });
         const j = await r.json();
         msg.innerHTML = j.ok ? wzMsg("ok", "✓ " + j.message) : wzMsg("err", j.message);
+        if (j.ok) loadTwzBound();
       } catch (e) {
         msg.innerHTML = wzMsg("err", "error: " + e);
       }
       btn.disabled = false;
     });
+
+    // เลือกชื่อจาก record ที่มีอยู่ (รายการ DNS ปัจจุบัน)
+    $("twz-load-records").addEventListener("click", async () => {
+      const domain = $("twz-domain").value.trim();
+      if (!domain) { toast("เลือกโดเมนก่อน", "err"); return; }
+      const btn = $("twz-load-records");
+      btn.disabled = true;
+      try {
+        const r = await fetch("/list-records", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ zone: domain }),
+        });
+        const j = await r.json();
+        if (!j.ok) { toast("โหลดไม่ได้: " + j.message, "err"); btn.disabled = false; return; }
+        const sel = $("twz-record-pick");
+        sel.hidden = false;
+        sel.innerHTML = '<option value="">— เลือก record —</option>' +
+          j.records.map(n => '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + "</option>").join("");
+        sel.onchange = () => {
+          const h = sel.value;
+          if (!h) return;
+          const dot = h.indexOf(".");
+          $("twz-sub").value = dot > 0 ? h.slice(0, dot) : "@";
+          $("twz-domain").value = h.slice(dot + 1);
+        };
+      } catch (e) {
+        toast("error: " + e, "err");
+      }
+      btn.disabled = false;
+    });
+
+    loadTwzBound();
   }
 
   else if (twzStep === 4) {
@@ -1126,6 +1229,47 @@ function renderTunnelWizard() {
         btn.disabled = false;
       }
     });
+  }
+}
+
+async function loadTwzBound() {
+  const box = $("twz-bound");
+  if (!box) return;
+  try {
+    const r = await fetch("/tunnel/hostnames", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: twzData.token }),
+    });
+    const j = await r.json();
+    if (!j.ok) { box.innerHTML = '<p style="color:var(--danger)">' + escapeHtml(j.message) + "</p>"; return; }
+    if (!j.hostnames.length) {
+      box.innerHTML = '<p style="color:var(--muted)">ยังไม่มี — ผูกจากข้างบนได้เลย</p>';
+      return;
+    }
+    box.innerHTML = j.hostnames.map(h =>
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 10px;background:var(--surface-2);border-radius:8px;margin-bottom:6px;flex-wrap:wrap">' +
+      '<span class="mono">' + escapeHtml(h.hostname) + '</span>' +
+      '<span style="color:var(--muted);font-size:0.8rem">' + escapeHtml(h.service) + "</span>" +
+      '<button class="btn-del" type="button" data-host="' + escapeHtml(h.hostname) + '" title="เลิกผูก">×</button></div>'
+    ).join("");
+    box.querySelectorAll("button[data-host]").forEach(b => b.addEventListener("click", async () => {
+      if (!confirm("เลิกผูก " + b.dataset.host + "?")) return;
+      try {
+        const rr = await fetch("/tunnel/unbind", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: twzData.token, hostname: b.dataset.host }),
+        });
+        const jj = await rr.json();
+        toast(jj.ok ? jj.message : "ไม่สำเร็จ: " + jj.message, jj.ok ? "ok" : "err");
+        loadTwzBound();
+      } catch (e) {
+        toast("error: " + e, "err");
+      }
+    }));
+  } catch (e) {
+    box.innerHTML = '<p style="color:var(--danger)">error: ' + escapeHtml(e) + "</p>";
   }
 }
 
@@ -1503,6 +1647,7 @@ $("tunnelStart").addEventListener("click", () => tunnelAction("/tunnel/start", "
 $("tunnelStop").addEventListener("click", () => tunnelAction("/tunnel/stop", "หยุด tunnel"));
 $("tunnelDownload").addEventListener("click", () => tunnelAction("/tunnel/download", "ดาวน์โหลด"));
 $("tunnelWizard").addEventListener("click", openTunnelWizard);
+$("tunnelHostsBtn").addEventListener("click", tunnelHosts);
 $("twz-close").addEventListener("click", () => { $("tunnel-wizard").hidden = true; });
 
 loadStatus();
@@ -1973,16 +2118,10 @@ async function doLogin(ev) {
                 return self._send_json(400, {"ok": False, "message": "กรุณาระบุ hostname เช่น app.โดเมน.com"})
 
             # 1. แกะ account_id + tunnel_id จาก tunnel token (JWT payload)
-            try:
-                payload_part = token.split(".")[1]
-                payload_part += "=" * (-len(payload_part) % 4)
-                claims = _json.loads(base64.urlsafe_b64decode(payload_part))
-                account_id = claims.get("a") or claims.get("accountID")
-                tunnel_id = claims.get("t") or claims.get("tunnelID")
-            except Exception:
-                return self._send_json(400, {"ok": False, "message": "tunnel token ผิดรูปแบบ (ควรเป็น eyJ... ยาว ๆ จากหน้า Zero Trust)"})
-            if not account_id or not tunnel_id:
-                return self._send_json(400, {"ok": False, "message": "tunnel token ไม่มี account/tunnel id (token ผิดรูปแบบ?)"})
+            ids, error = _decode_tunnel_token(token)
+            if error:
+                return self._send_json(400, {"ok": False, "message": error})
+            account_id, tunnel_id = ids["account_id"], ids["tunnel_id"]
 
             # 2. ตั้ง ingress (public hostname) ใน tunnel config
             api_token = str(data.get("api_token") or "").strip() or self.cfg.api_token
@@ -2036,6 +2175,76 @@ async function doLogin(ev) {
                     "hostname": hostname,
                 },
             )
+
+        if self.path == "/tunnel/hostnames":
+            from . import cloudflare_api as _cf_api
+
+            try:
+                data = json.loads(body)
+            except ValueError:
+                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+            token = str(data.get("token") or "").strip()
+            if not token:
+                return self._send_json(400, {"ok": False, "message": "ไม่พบ tunnel token"})
+            ids, error = _decode_tunnel_token(token)
+            if error:
+                return self._send_json(400, {"ok": False, "message": error})
+            api_token = str(data.get("api_token") or "").strip() or self.cfg.api_token
+            api = _cf_api.CloudflareAPI(api_token)
+            try:
+                result = api._request("GET", f"/accounts/{ids['account_id']}/cfd_tunnel/{ids['tunnel_id']}/configurations")
+                ingress = (result or {}).get("config", {}).get("ingress", [])
+            except _cf_api.CloudflareError as exc:
+                return self._send_json(400, {"ok": False, "message": f"อ่าน tunnel config ไม่ได้: {exc}"})
+            hostnames = [
+                {"hostname": r.get("hostname", ""), "service": r.get("service", "")}
+                for r in ingress
+                if r.get("hostname")
+            ]
+            return self._send_json(200, {"ok": True, "hostnames": hostnames})
+
+        if self.path == "/tunnel/unbind":
+            from . import cloudflare_api as _cf_api
+
+            try:
+                data = json.loads(body)
+            except ValueError:
+                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+            token = str(data.get("token") or "").strip()
+            hostname = str(data.get("hostname") or "").strip().rstrip(".")
+            if not token:
+                return self._send_json(400, {"ok": False, "message": "ไม่พบ tunnel token"})
+            if not hostname:
+                return self._send_json(400, {"ok": False, "message": "ไม่พบ hostname ที่จะลบ"})
+            ids, error = _decode_tunnel_token(token)
+            if error:
+                return self._send_json(400, {"ok": False, "message": error})
+            api_token = str(data.get("api_token") or "").strip() or self.cfg.api_token
+            api = _cf_api.CloudflareAPI(api_token)
+            try:
+                result = api._request("GET", f"/accounts/{ids['account_id']}/cfd_tunnel/{ids['tunnel_id']}/configurations")
+                ingress = (result or {}).get("config", {}).get("ingress", [])
+                remaining = [r for r in ingress if r.get("hostname") != hostname]
+                if len(remaining) == len(ingress):
+                    return self._send_json(400, {"ok": False, "message": f"ไม่พบ {hostname} ใน tunnel config"})
+                api._request(
+                    "PUT",
+                    f"/accounts/{ids['account_id']}/cfd_tunnel/{ids['tunnel_id']}/configurations",
+                    {"config": {"ingress": remaining}},
+                )
+            except _cf_api.CloudflareError as exc:
+                return self._send_json(400, {"ok": False, "message": f"ลบออกจาก tunnel config ไม่ได้: {exc}"})
+            # ลบ CNAME record ด้วย (ชี้ tunnel)
+            domain = hostname.split(".", 1)[1] if "." in hostname else ""
+            if domain:
+                try:
+                    zone_id = api.get_zone_id(domain)
+                    rec = api.get_record(zone_id, hostname, "CNAME")
+                    if rec:
+                        api.delete_record(zone_id, rec["id"])
+                except _cf_api.CloudflareError as exc:
+                    return self._send_json(400, {"ok": False, "message": f"ลบ DNS record ไม่ได้: {exc}"})
+            return self._send_json(200, {"ok": True, "message": f"เลิกผูก {hostname} แล้ว (tunnel config + DNS record)"})
 
         if self.path == "/tunnel/start":
             ok, message = _get_tunnel_mgr().start(self.cfg)
