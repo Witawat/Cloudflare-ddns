@@ -331,6 +331,7 @@ __LOGIN__
     <div class="panel-head"><h2>Cloudflare Tunnel</h2><p>ให้บริการผ่าน Tunnel แทนการเปิดพอร์ต (เหมาะกับ CGNAT / ไม่เปิดพอร์ต)</p></div>
     <div class="tg-row">
       <span id="tunnel-status" class="tg-status">กำลังโหลด…</span>
+      <button id="tunnelWizard" class="btn-primary">ตั้งค่า Tunnel (wizard)</button>
       <button id="tunnelStart" class="btn-secondary">เริ่ม tunnel</button>
       <button id="tunnelStop" class="btn-secondary">หยุด tunnel</button>
       <button id="tunnelDownload" class="btn-secondary">ดาวน์โหลด cloudflared</button>
@@ -480,6 +481,22 @@ __LOGIN__
       <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
     </div>
     <div id="wz-body"></div>
+  </div>
+</div>
+
+<div id="tunnel-wizard" hidden>
+  <div class="wz-card" role="dialog" aria-modal="true" aria-labelledby="twz-title">
+    <div class="wz-head">
+      <div>
+        <h1 id="twz-title">ตั้งค่า Cloudflare Tunnel</h1>
+        <p>ให้บริการเว็บผ่าน Tunnel โดยไม่ต้องเปิดพอร์ต — 4 ขั้นตอน</p>
+      </div>
+      <button id="twz-close" class="wz-skip" type="button">ปิด</button>
+    </div>
+    <div class="wz-steps" id="twz-steps">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    </div>
+    <div id="twz-body"></div>
   </div>
 </div>
 
@@ -926,6 +943,153 @@ async function tgClear() {
   }
 }
 
+/* ---------- wizard Tunnel ---------- */
+
+let twzStep = 1;
+const twzData = { token: "", verified: false };
+
+function openTunnelWizard() {
+  $("tunnel-wizard").hidden = false;
+  twzStep = 1;
+  renderTunnelWizard();
+}
+
+function renderTunnelWizard() {
+  const dots = document.querySelectorAll("#twz-steps .dot");
+  dots.forEach((d, i) => d.classList.toggle("on", i < twzStep));
+  const body = $("twz-body");
+  const actions = (back, next) =>
+    '<div class="wz-actions">' +
+    (back ? '<button class="btn-secondary" type="button" id="twz-back">← ย้อนกลับ</button>' : "<span></span>") +
+    (next ? '<button class="btn-primary" type="button" id="twz-next">' + next + "</button>" : "") +
+    "</div>";
+
+  if (twzStep === 1) {
+    body.innerHTML =
+      '<p class="wz-step-title">Tunnel คืออะไร ทำไมต้องใช้</p>' +
+      '<p class="wz-step-sub">Cloudflare Tunnel เชื่อมต่อเครื่องของคุณกับ Cloudflare โดยตรง — คนเข้าบริการของคุณผ่าน Cloudflare โดยไม่ต้องเปิดพอร์ตที่เราเตอร์ และไม่ต้องพึ่ง IP สาธารณะ</p>' +
+      '<div class="wz-help">เหมาะกับ:<ul style="margin:6px 0 0;padding-left:20px">' +
+      "<li>ISP แจก IP แบบ CGNAT (DDNS ใช้ไม่ได้)</li>" +
+      "<li>ไม่อยากเปิด port forward ที่เราเตอร์</li>" +
+      "<li>ให้บริการเว็บ/API ผ่าน Cloudflare</li></ul></div>" +
+      actions(false, "เริ่มตั้งค่า →");
+    $("twz-next").addEventListener("click", () => { twzStep = 2; renderTunnelWizard(); });
+  }
+
+  else if (twzStep === 2) {
+    body.innerHTML =
+      '<p class="wz-step-title">ขั้นตอนที่ 1: ใส่ Tunnel Token</p>' +
+      '<p class="wz-step-sub">สร้างฟรีจาก Cloudflare Zero Trust — กดปุ่มด้านล่างเพื่อเปิดหน้า และทำตามวิธีทำ:</p>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">' +
+      '<button class="btn-secondary" type="button" id="twz-open-zt">เปิด Zero Trust ↗</button>' +
+      '<button class="btn-secondary" type="button" id="twz-help">ดูวิธีหา token</button></div>' +
+      '<label class="field">Tunnel Token<input id="twz-token" type="password" autocomplete="off" placeholder="eyJhIjoi..."></label>' +
+      '<div id="twz-msg"></div>' +
+      '<div class="wz-help" id="twz-steps" hidden><b>วิธีหา token (ทีละขั้น):</b><ol>' +
+      "<li>กดปุ่ม “เปิด Zero Trust” แล้วล็อกอิน</li>" +
+      "<li>เมนูซ้าย: Networks → Tunnels → Create a tunnel</li>" +
+      "<li>ตั้งชื่อ (เช่น home) → เลือกวิธี Cloudflare-managed → ต่อไป</li>" +
+      "<li>กดคัดลอก token จากคำสั่ง install (ส่วน --token eyJ...) — ไม่ต้องรันคำสั่งนั้นจริง</li>" +
+      "<li>วาง token ในช่องด้านบน แล้วกด ตรวจสอบ token</li></ol></div>" +
+      actions(true, "ตรวจสอบ token →");
+    $("twz-back").addEventListener("click", () => { twzStep = 1; renderTunnelWizard(); });
+    $("twz-open-zt").addEventListener("click", () => window.open("https://one.dash.cloudflare.com/?to=/:account/networks/tunnels", "_blank"));
+    $("twz-help").addEventListener("click", () => {
+      const h = $("twz-steps");
+      h.hidden = !h.hidden;
+      $("twz-help").textContent = h.hidden ? "ดูวิธีหา token" : "ซ่อนวิธีทำ";
+    });
+    $("twz-next").addEventListener("click", async () => {
+      const token = $("twz-token").value.trim();
+      if (!token) { $("twz-msg").innerHTML = wzMsg("err", "กรุณาวาง tunnel token ก่อน"); return; }
+      const btn = $("twz-next");
+      btn.disabled = true;
+      $("twz-msg").innerHTML = wzMsg("ok", "กำลังตรวจสอบ (ดาวน์โหลด cloudflared ถ้ายังไม่มี + ทดสอบเชื่อมต่อ ~5 วิ)...");
+      try {
+        const r = await fetch("/tunnel/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        const j = await r.json();
+        if (!j.ok) {
+          $("twz-msg").innerHTML = wzMsg("err", j.message + " (ลองกด “ดูวิธีหา token”)");
+          btn.disabled = false;
+          return;
+        }
+        twzData.token = token;
+        twzData.verified = true;
+        $("twz-msg").innerHTML = wzMsg("ok", "✓ " + j.message);
+        twzStep = 3;
+        renderTunnelWizard();
+      } catch (e) {
+        $("twz-msg").innerHTML = wzMsg("err", "error: " + e);
+        btn.disabled = false;
+      }
+    });
+  }
+
+  else if (twzStep === 3) {
+    body.innerHTML =
+      '<p class="wz-step-title">ขั้นตอนที่ 2: ตั้ง Public Hostname (เว็บที่จะเปิด)</p>' +
+      '<p class="wz-step-sub">token ตรวจผ่านแล้ว — ขั้นนี้ทำที่หน้า Zero Trust (เปิดลิงก์ด้านล่าง) แล้วกลับมากดต่อไป:</p>' +
+      '<div class="wz-help"><b>วิธีตั้ง hostname:</b><ol>' +
+      "<li>Zero Trust → Networks → Tunnels → กดชื่อ tunnel ของคุณ</li>" +
+      "<li>แท็บ Public Hostname → Add a public hostname</li>" +
+      "<li>Subdomain: เช่น app · Domain: โดเมนคุณ</li>" +
+      "<li>Type: HTTP · URL: localhost:พอร์ตของบริการ (เช่น localhost:8080)</li>" +
+      "<li>บันทึก แล้วเข้า https://app.โดเมน.com ได้เลย</li></ol></div>" +
+      '<div style="margin-top:10px"><button class="btn-secondary" type="button" id="twz-open-zt2">เปิด Zero Trust ↗</button></div>' +
+      actions(true, "ต่อไป →");
+    $("twz-back").addEventListener("click", () => { twzStep = 2; renderTunnelWizard(); });
+    $("twz-open-zt2").addEventListener("click", () => window.open("https://one.dash.cloudflare.com/?to=/:account/networks/tunnels", "_blank"));
+    $("twz-next").addEventListener("click", () => { twzStep = 4; renderTunnelWizard(); });
+  }
+
+  else if (twzStep === 4) {
+    body.innerHTML =
+      '<p class="wz-step-title">ขั้นตอนที่ 3: บันทึกและเริ่ม tunnel</p>' +
+      '<p class="wz-step-sub">พร้อมใช้งาน — บันทึก config และเริ่ม tunnel เลย:</p>' +
+      '<div class="wz-help">' +
+      "Token: ตรวจสอบผ่านแล้ว ✔<br>" +
+      "cloudflared: พร้อม (ดาวน์โหลดให้อัตโนมัติถ้ายังไม่มี)<br>" +
+      "เริ่มอัตโนมัติ: เปิด (ตอน service เริ่ม)" + "</div>" +
+      '<div id="twz-save-msg"></div>' +
+      actions(true, "บันทึกและเริ่ม tunnel");
+    $("twz-back").addEventListener("click", () => { twzStep = 3; renderTunnelWizard(); });
+    $("twz-next").addEventListener("click", async () => {
+      const btn = $("twz-next");
+      btn.disabled = true;
+      $("twz-save-msg").innerHTML = wzMsg("ok", "กำลังบันทึก...");
+      try {
+        const r = await fetch("/config.json");
+        const cfg = await r.json();
+        cfg.tunnel = { enabled: true, token: twzData.token, cloudflared_path: "" };
+        const s = await fetch("/save-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(cfg),
+        });
+        const sj = await s.json();
+        if (!sj.ok) {
+          $("twz-save-msg").innerHTML = wzMsg("err", "บันทึกไม่สำเร็จ: " + sj.message);
+          btn.disabled = false;
+          return;
+        }
+        const st = await fetch("/tunnel/start", { method: "POST" });
+        const stj = await st.json();
+        toast(stj.ok ? "ตั้งค่า Tunnel เสร็จ — " + stj.message : "บันทึกแล้ว แต่เริ่ม tunnel ไม่ได้: " + stj.message, stj.ok ? "ok" : "err");
+        $("tunnel-wizard").hidden = true;
+        loadConfig();
+        loadTunnelStatus();
+      } catch (e) {
+        $("twz-save-msg").innerHTML = wzMsg("err", "error: " + e);
+        btn.disabled = false;
+      }
+    });
+  }
+}
+
 /* ---------- โหมดแก้ไขไฟล์โดยตรง ---------- */
 
 let fileLoaded = false;
@@ -1299,6 +1463,8 @@ $("tgClearBtn").addEventListener("click", tgClear);
 $("tunnelStart").addEventListener("click", () => tunnelAction("/tunnel/start", "เริ่ม tunnel"));
 $("tunnelStop").addEventListener("click", () => tunnelAction("/tunnel/stop", "หยุด tunnel"));
 $("tunnelDownload").addEventListener("click", () => tunnelAction("/tunnel/download", "ดาวน์โหลด"));
+$("tunnelWizard").addEventListener("click", openTunnelWizard);
+$("twz-close").addEventListener("click", () => { $("tunnel-wizard").hidden = true; });
 
 loadStatus();
 loadConfig();
@@ -1704,6 +1870,33 @@ async function doLogin(ev) {
                 return self._send_json(401, {"ok": False, "message": "unauthorized"})
             notifier.clear_queue()
             return self._send_json(200, {"ok": True, "message": "ล้างคิวแล้ว"})
+
+        if self.path == "/tunnel/test":
+            import copy
+            import time
+
+            try:
+                data = json.loads(body)
+            except ValueError:
+                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+            token = str(data.get("token", "")).strip()
+            if not token:
+                return self._send_json(400, {"ok": False, "message": "กรุณาวาง tunnel token ก่อน"})
+            test_cfg = copy.copy(self.cfg)
+            test_cfg.tunnel_token = token
+            test_cfg.tunnel_enabled = True
+            ok, message = _get_tunnel_mgr().start(test_cfg)
+            if not ok:
+                return self._send_json(400, {"ok": False, "message": message})
+            time.sleep(4)  # รอให้ cloudflared ตายเองถ้า token ผิด
+            still_running = _get_tunnel_mgr().status(test_cfg)["running"]
+            _get_tunnel_mgr().stop()
+            if still_running:
+                return self._send_json(200, {"ok": True, "message": "token ใช้ได้ — tunnel เชื่อมต่อ Cloudflare แล้ว (หยุดชั่วคราว รอขั้นตอนสุดท้าย)"})
+            return self._send_json(
+                400,
+                {"ok": False, "message": "token ตรวจไม่ผ่าน — cloudflared เชื่อมต่อไม่ได้ (ตรวจ token/อินเทอร์เน็ต/ไฟร์วอลล์)"},
+            )
 
         if self.path == "/tunnel/start":
             ok, message = _get_tunnel_mgr().start(self.cfg)
