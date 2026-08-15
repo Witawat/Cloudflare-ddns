@@ -4,4 +4,9 @@ build/
 dist/
 *.spec
 config.ini
+config.ini.bak
+config.ini.bak[0-9]
+state.json
+notify_queue.json
+logs/
 .playwright-mcp/
