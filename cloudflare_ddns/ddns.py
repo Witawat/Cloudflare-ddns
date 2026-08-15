@@ -105,7 +105,7 @@ class DDNSEngine:
                 notify.notify(notifier.EVENT_ERROR, f"{rec.name}: หา zone ไม่ได้ ({exc})")
                 continue
 
-            zone_name = zone_name_cache[rec.zone.lower()]
+            zone_name = rec.zone.strip().rstrip(".") or zone_name_cache.get(rec.zone.lower(), "")
             fqdn = fqdn_name(rec.name, zone_name)
             if fqdn != rec.name:
                 log.debug("ใช้ชื่อเต็ม %s (จาก %s + %s)", fqdn, rec.name, zone_name)
@@ -284,8 +284,16 @@ def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_
         notify.flush()
     while True:
         started = time.monotonic()
-        engine = DDNSEngine(config_path, dry_run=dry_run)
-        engine.run_once()
+        try:
+            engine = DDNSEngine(config_path, dry_run=dry_run)
+            engine.run_once()
+        except Exception:
+            log.exception("เกิดข้อผิดพลาดไม่คาดคิดในรอบ DDNS (รันรอบถัดไปต่อ)")
+            try:
+                notify.notify(notifier.EVENT_ERROR, "เกิดข้อผิดพลาดใน DDNS loop ดู log ไฟล์เพิ่มเติม")
+                notify.flush()
+            except Exception:
+                pass
         cfg = config_mod.Config(config_path)
         interval = max(cfg.interval_seconds, config_mod.MIN_INTERVAL)
         elapsed = time.monotonic() - started
