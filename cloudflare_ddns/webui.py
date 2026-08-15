@@ -141,6 +141,13 @@ label.field input:focus, label.field select:focus {
 .toggles { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 4px 0 6px; }
 .toggles label { display: inline-flex; align-items: center; gap: 7px; font-size: 0.9rem; color: var(--ink-2); cursor: pointer; }
 .toggles input { accent-color: var(--accent); width: 15px; height: 15px; }
+#daily_report_time {
+  width: 96px; height: auto; box-sizing: border-box; margin-left: 6px;
+  padding: 7px 10px; font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.9rem; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--ink);
+}
+#daily_report_time:focus { outline: 2px solid color-mix(in oklch, var(--accent) 40%, transparent); border-color: var(--accent); }
 
 /* records editor */
 .rec-edit {
@@ -197,10 +204,13 @@ label.field input:focus, label.field select:focus {
   .brand .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 62vw; }
   .brand-dot { width: 30px; height: 30px; border-radius: 8px; }
   main { padding: 16px 16px 80px; }
-  .rec-edit { grid-template-columns: 1fr 1fr; }
   .panel { padding: 14px; }
   .record-row { gap: 10px; }
   .rec-meta { width: 100%; text-align: left; }
+}
+/* แท็บเล็ต/จอเล็ก: record editor เปลี่ยนเป็น 2 คอลัมน์ (ชื่อ+zone / proxy+ttl / 4-6+ลบ) */
+@media (max-width: 860px) {
+  .rec-edit { grid-template-columns: 1fr 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
@@ -393,7 +403,7 @@ __LOGIN__
     </div>
     <div class="toggles">
       <label><input id="daily_report" type="checkbox"> สรุปรายวันทาง Telegram</label>
-      <label class="field" style="margin-bottom:0">เวลา (HH:MM)<input id="daily_report_time" type="text" style="width:90px;display:inline-block;margin-left:6px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--ink)" placeholder="08:00"></label>
+      <label>เวลา (HH:MM)<input id="daily_report_time" type="text" placeholder="08:00"></label>
     </div>
 
     <h3>DNS records</h3>
