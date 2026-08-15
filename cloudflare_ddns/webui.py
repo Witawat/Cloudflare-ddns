@@ -359,8 +359,13 @@ __LOGIN__
     </div>
     <div id="tunnel-add-form" hidden style="margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--surface)">
       <div class="grid2">
-        <label class="field">ชื่อ (subdomain)<input id="th-sub" type="text" class="mono" placeholder="app"></label>
-        <label class="field">โดเมน<input id="th-domain" type="text" class="mono" placeholder="โดเมน.com"></label>
+        <label class="field">ชื่อ (subdomain)
+          <input id="th-sub" type="text" class="mono" placeholder="app" list="th-sub-list">
+          <datalist id="th-sub-list"></datalist>
+        </label>
+        <label class="field">โดเมน
+          <select id="th-domain" class="wz-zone-select"></select>
+        </label>
       </div>
       <div class="grid2">
         <label class="field">Path (ไม่บังคับ)<input id="th-path" type="text" class="mono" placeholder="/api"></label>
@@ -975,9 +980,48 @@ async function tunnelAddHost() {
   const form = $("tunnel-add-form");
   form.hidden = !form.hidden;
   if (form.hidden) return;
-  const sub = $("th-sub");
-  const domain = $("th-domain");
-  if (!domain.value) domain.value = ($("twz-domain") && $("twz-domain").value) || "";
+  const msg = $("th-msg");
+  msg.innerHTML = "";
+  // โหลดรายชื่อโดเมน (dropdown)
+  const domainSel = $("th-domain");
+  domainSel.innerHTML = '<option value="">— กำลังโหลดโดเมน… —</option>';
+  try {
+    const r = await fetch("/tunnel/zones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+    const j = await r.json();
+    if (j.ok && j.zones.length) {
+      domainSel.innerHTML = j.zones.map(z => '<option value="' + escapeHtml(z) + '">' + escapeHtml(z) + "</option>").join("");
+      await fillSubList("th-sub", "th-domain", "th-sub-list");
+    } else {
+      domainSel.innerHTML = '<option value="">— ใส่โดเมนไม่ได้ (API token ไม่มีสิทธิ์) —</option>';
+    }
+  } catch (e) {
+    domainSel.innerHTML = '<option value="">— โหลดโดเมนไม่ได้ —</option>';
+  }
+  // เปลี่ยนโดเมน -> โหลดชื่อแนะนำใหม่
+  domainSel.onchange = loadSubSuggestions;
+}
+
+async function fillSubList(subId, domainId, listId) {
+  const sub = $(subId);
+  const domain = $(domainId).value.trim();
+  const list = $(listId);
+  list.innerHTML = "";
+  if (!domain) return;
+  try {
+    const r = await fetch("/list-records", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ zone: domain }) });
+    const j = await r.json();
+    if (!j.ok || !j.records.length) return;
+    const names = j.records.map(n => {
+      const dot = n.indexOf(".");
+      return { full: n, sub: dot > 0 ? n.slice(0, dot) : "@" };
+    });
+    const subs = [...new Set(names.map(x => x.sub))];
+    list.innerHTML = subs.map(s => '<option value="' + escapeHtml(s) + '">' + escapeHtml(s + "." + domain) + "</option>").join("");
+  } catch (e) { /* ไม่มีคำแนะนำ ไม่เป็นไร */ }
+}
+
+async function loadSubSuggestions() {
+  await fillSubList("th-sub", "th-domain", "th-sub-list");
 }
 
 async function thBind() {
@@ -1185,7 +1229,7 @@ function renderTunnelWizard() {
       '<p class="wz-step-title">ขั้นตอนที่ 2: ผูกเว็บ (hostname) กับ tunnel</p>' +
       '<p class="wz-step-sub">ระบุชื่อเว็บและบริการในเครื่อง — โปรแกรมตั้งค่าให้อัตโนมัติ (สร้าง DNS + ตั้ง tunnel config) ไม่ต้องไปทำที่ dashboard</p>' +
       '<div class="grid2">' +
-      '<label class="field">ชื่อ (subdomain)<input id="twz-sub" type="text" placeholder="app" class="mono"></label>' +
+      '<label class="field">ชื่อ (subdomain)<input id="twz-sub" type="text" placeholder="app" class="mono" list="twz-sub-list"><datalist id="twz-sub-list"></datalist></label>' +
       '<label class="field">โดเมน<select id="twz-domain" class="wz-zone-select"></select></label></div>' +
       '<label class="field">Path (ไม่บังคับ — ใช้หลาย port ต่อชื่อเดียว เช่น /api)<input id="twz-path" type="text" class="mono" placeholder="/api (เว้น = ทุก path)"></label>' +
       '<div class="grid2">' +
@@ -1212,12 +1256,14 @@ function renderTunnelWizard() {
         const j = await r.json();
         if (j.ok && j.zones.length) {
           sel.innerHTML = j.zones.map(z => '<option value="' + escapeHtml(z) + '">' + escapeHtml(z) + "</option>").join("");
+          await fillSubList("twz-sub", "twz-domain", "twz-sub-list");
         } else {
           sel.innerHTML = '<option value="">— ใส่เองไม่ได้ (API token ไม่มีสิทธิ์) —</option>';
         }
       } catch (e) {
         sel.innerHTML = '<option value="">— โหลดโดเมนไม่ได้ —</option>';
       }
+      sel.onchange = () => fillSubList("twz-sub", "twz-domain", "twz-sub-list");
     })();
 
     $("twz-bind").addEventListener("click", async () => {
