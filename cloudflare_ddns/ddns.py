@@ -17,6 +17,12 @@ log = logging.getLogger("cloudflare-ddns")
 RECORD_TYPES = {4: "A", 6: "AAAA"}
 
 
+def _is_zone_not_found(message):
+    """เช็คว่า error เป็น 'zone ไม่พบ' (id cache เก่า) หรือไม่"""
+    msg = str(message).lower()
+    return "not found" in msg or "9109" in msg or ("404" in msg and "zone" in msg)
+
+
 class DDNSEngine:
     """engine หนึ่งตัว = อ่าน config -> ตรวจ IP -> อัปเดต record ทุกตัว"""
 
@@ -33,6 +39,18 @@ class DDNSEngine:
                 self._state = json.load(handle)
         except (OSError, ValueError):
             self._state = {}
+
+    def _invalidate_zone(self, zone_key):
+        """ลบ zone cache เมื่อ id ไม่ถูกต้องแล้ว (เปลี่ยน token/ลบ zone) — รอบถัดไปจะหาใหม่"""
+        zones = self._state.get("zones", {})
+        if zone_key in zones:
+            del zones[zone_key]
+            log.info("ลบ zone cache ของ %s (id ไม่ถูกต้องแล้ว) — จะหาใหม่รอบถัดไป", zone_key)
+            if not self.dry_run:
+                try:
+                    self._save_state()
+                except Exception:
+                    pass
 
     def _save_state(self):
         os.makedirs(os.path.dirname(config_mod.DEFAULT_STATE_PATH), exist_ok=True)
@@ -101,6 +119,7 @@ class DDNSEngine:
                 continue
             except cloudflare_api.CloudflareError as exc:
                 log.warning("%s: หา zone ไม่ได้: %s", rec.name, exc)
+                self._invalidate_zone(rec.zone.lower())
                 summary.append({"record": rec.name, "family": 0, "action": "error", "message": str(exc)})
                 notify.notify(notifier.EVENT_ERROR, f"{rec.name}: หา zone ไม่ได้ ({exc})")
                 continue
@@ -114,7 +133,7 @@ class DDNSEngine:
                 enabled = rec.ipv4 if family == 4 else rec.ipv6
                 if not enabled or not (cfg.use_ipv4 if family == 4 else cfg.use_ipv6):
                     continue
-                entry = self._sync_family(api, zone_id, rec, fqdn, family, notify)
+                entry = self._sync_family(api, zone_id, rec, fqdn, family, notify, zone_key=rec.zone.lower())
                 if entry:
                     if entry.get("action") == "skip":
                         rate_limited = True
@@ -126,7 +145,7 @@ class DDNSEngine:
         notify.flush()
         return summary
 
-    def _sync_family(self, api, zone_id, rec, fqdn, family, notify):
+    def _sync_family(self, api, zone_id, rec, fqdn, family, notify, zone_key=""):
         rtype = RECORD_TYPES[family]
         key = f"{fqdn.lower()}|{rtype}"
         cached = self._state.get("records", {}).get(key, "")
@@ -152,6 +171,8 @@ class DDNSEngine:
             return {"record": fqdn, "family": family, "action": "skip", "message": str(exc)}
         except cloudflare_api.CloudflareError as exc:
             log.warning("%s %s: อ่าน record ไม่ได้: %s", fqdn, rtype, exc)
+            if zone_key and _is_zone_not_found(str(exc)):
+                self._invalidate_zone(zone_key)
             notify.notify(
                 notifier.EVENT_ERROR,
                 f"{fqdn} ({rtype}): อ่าน record ไม่ได้ ({exc})",
@@ -209,6 +230,8 @@ class DDNSEngine:
             return {"record": fqdn, "family": family, "action": "skip", "message": str(exc)}
         except cloudflare_api.CloudflareError as exc:
             log.warning("%s %s: %s ล้มเหลว: %s", fqdn, rtype, "อัปเดต" if current else "สร้าง", exc)
+            if zone_key and _is_zone_not_found(str(exc)):
+                self._invalidate_zone(zone_key)
             notify.notify(
                 notifier.EVENT_ERROR,
                 f"{fqdn} ({rtype}): {'อัปเดต' if current else 'สร้าง'} ล้มเหลว ({exc})",
@@ -303,7 +326,7 @@ def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_
         try:
             if not dry_run and cfg.daily_report and cfg.daily_report_time:
                 now_hm = datetime.now().strftime("%H:%M")
-                if now_hm == cfg.daily_report_time and engine.status()["last_run"]:
+                if now_hm == cfg.daily_report_time and engine._state.get("last_run"):
                     _send_daily_report(engine, cfg, notify)
         except Exception as exc:
             log.debug("daily report error: %s", exc)

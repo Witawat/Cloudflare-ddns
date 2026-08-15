@@ -1353,7 +1353,7 @@ function closeWizard() {
 }
 
 function wzMsg(kind, text) {
-  return '<div class="' + (kind === "ok" ? "wz-ok-box" : "wz-err-box") + '">' + text + "</div>";
+  return '<div class="' + (kind === "ok" ? "wz-ok-box" : "wz-err-box") + '">' + escapeHtml(text) + "</div>";
 }
 
 function renderWizard() {
@@ -1565,13 +1565,20 @@ function renderWizard() {
     $("wz-next").addEventListener("click", async () => {
       const btn = $("wz-next");
       btn.disabled = true;
+      // ใช้รหัสผ่านหน้าเว็บเดิม (ไม่ล้างถ้ามีอยู่แล้ว)
+      let existingPassword = "";
+      try {
+        const cr = await fetch("/config.json");
+        const cj = await cr.json();
+        existingPassword = (cj.cloudflare && cj.cloudflare.webui_password) || "";
+      } catch (e) { /* config ยังไม่มี -> ว่าง */ }
       const payload = {
         cloudflare: {
           api_token: wzData.token,
           interval_seconds: 60,
           use_ipv4: true,
           use_ipv6: true,
-          webui_password: "",
+          webui_password: existingPassword,
         },
         telegram: {
           bot_token: (wzData.tg && wzData.tg.token) || "",
@@ -2112,9 +2119,6 @@ async function doLogin(ev) {
             return self._send_json(200, {"ok": True, "zones": zones})
 
         if self.path == "/tunnel/bind":
-            import base64
-            import json as _json
-
             from . import cloudflare_api as _cf_api
 
             try:

@@ -229,6 +229,11 @@ class Config:
             errors.append("ปิดทั้ง use_ipv4 และ use_ipv6 แล้ว ไม่มีอะไรต้องอัปเดต")
         if self.interval_seconds < MIN_INTERVAL:
             errors.append(f"interval_seconds น้อยเกินไป (ขั้นต่ำ {MIN_INTERVAL} วินาที)")
+        if self.daily_report and self.daily_report_time:
+            import re as _re
+
+            if not _re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", self.daily_report_time):
+                errors.append(f"daily_report_time ต้องเป็น HH:MM (0-23:0-59) เช่น 08:00 (ตอนนี้: {self.daily_report_time})")
         seen = set()
         for rec in self.records:
             if not rec.name:

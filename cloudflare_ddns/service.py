@@ -63,6 +63,13 @@ def _make_service_class():
             self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
             self._stop_event.set()
 
+        def _start_tunnel_async(self, tunnel_mgr, cfg):
+            try:
+                ok, message = tunnel_mgr.start(cfg)
+                log.info("Cloudflare Tunnel: %s", message)
+            except Exception as exc:
+                log.warning("เริ่ม Cloudflare Tunnel ไม่ได้: %s", exc)
+
         def SvcDoRun(self):
             import servicemanager
 
@@ -75,19 +82,7 @@ def _make_service_class():
             setup_file_logging(cfg.log_dir)
             log.info("service เริ่มทำงาน (interval=%ss)", cfg.interval_seconds)
 
-            # เริ่ม Cloudflare Tunnel ถ้าตั้งค่าไว้
-            tunnel_mgr = None
-            try:
-                if cfg.tunnel_enabled:
-                    from . import tunnel as tunnel_mod
-
-                    tunnel_mgr = tunnel_mod.TunnelManager()
-                    ok, message = tunnel_mgr.start(cfg)
-                    log.info("Cloudflare Tunnel: %s", message)
-            except Exception as exc:
-                log.warning("เริ่ม Cloudflare Tunnel ไม่ได้: %s", exc)
-
-            # เปิด Web UI ไปพร้อมกันด้วย (เข้าผ่าน http://127.0.0.1:8123 ได้ตลอด)
+            # เปิด Web UI ก่อน (เร็ว ไม่บล็อก SCM timeout) - เข้าผ่าน 127.0.0.1:8123 ได้ตลอด
             web_ui = None
             try:
                 from . import webui as webui_mod
@@ -97,6 +92,21 @@ def _make_service_class():
                 log.info("Web UI เปิดที่ http://127.0.0.1:%d", web_ui.port)
             except Exception as exc:
                 log.warning("เปิด Web UI ไม่ได้: %s", exc)
+
+            # เริ่ม Cloudflare Tunnel (อาจต้องดาวน์โหลด cloudflared ครั้งแรก -> รันแบบ async
+            # ไม่ให้บล็อกการตอบสนอง SCM เกิน 30 วิ)
+            tunnel_mgr = None
+            try:
+                if cfg.tunnel_enabled:
+                    from . import tunnel as tunnel_mod
+
+                    tunnel_mgr = tunnel_mod.TunnelManager()
+                    threading.Thread(
+                        target=lambda: self._start_tunnel_async(tunnel_mgr, cfg),
+                        daemon=True,
+                    ).start()
+            except Exception as exc:
+                log.warning("เริ่ม Cloudflare Tunnel ไม่ได้: %s", exc)
 
             try:
                 ddns.run_forever(
