@@ -132,8 +132,9 @@ ipv6 = true
 
 ## log
 
-- Service/foreground เขียน log รายวันที่ `%PROGRAMDATA%\CloudflareDDNS\logs\cloudflare-ddns.log` (เก็บ 14 วัน)
+- เขียน log รายวันที่ `logs\cloudflare-ddns.log` (โฟลเดอร์เดียวกับ exe/โปรเจกต์ เก็บ 14 วัน)
 - เปลี่ยนที่เก็บได้ผ่าน `log_dir` ใน config
+- ข้อมูลอื่น (state, คิวแจ้งเตือน) อยู่ข้าง exe เช่นกัน — ย้าย exe ไปไหน ข้อมูลตามไปด้วย
 
 ## การทำงาน
 
@@ -162,3 +163,10 @@ ipv6 = true
 | `หา IP สาธารณะไม่ได้` | เช็ค internet/ไฟร์วอลล์ (เครื่องต้องออก HTTPS ไปยัง provider ข้างบนได้) |
 | IPv6 ไม่ถูกอัปเดต | ผู้ให้บริการอินเทอร์เน็ตอาจยังไม่ให้ IPv6 — ตั้ง `use_ipv6 = false` ได้ |
 | อยากให้ IP เปลี่ยนเร็วขึ้น | ลด `interval_seconds` (ขั้นต่ำ 15) |
+
+## เครดิต & License
+
+- **ผู้พัฒนา:** Witawat (XSoFTz) · [github.com/Witawat/Cloudflare-ddns](https://github.com/Witawat/Cloudflare-ddns)
+- **License:** [MIT](LICENSE) — ใช้ แก้ไข แจกจ่ายได้ฟรี (แจ้งที่มาด้วยก็ดี)
+- **ไอคอน exe:** icons8 ([icons8.com](https://icons8.com)) — ใช้ฟรีตามเงื่อนไขของ icons8
+- **เครื่องมือที่ใช้:** Cloudflare API v4, Telegram Bot API, PyInstaller, pywin32, Pillow, Playwright (ทดสอบ UI)

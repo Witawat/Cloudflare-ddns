@@ -10,6 +10,7 @@ import logging
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from . import __version__
 from . import config as config_mod
 from . import ddns
 from . import notifier
@@ -424,6 +425,11 @@ __LOGIN__
     </div>
   </section>
 </main>
+
+<footer style="text-align:center;padding:8px 16px 40px;color:var(--muted);font-size:0.8rem">
+  Cloudflare DDNS Updater v__VERSION__ · MIT License ·
+  <a href="https://github.com/Witawat/Cloudflare-ddns" target="_blank" rel="noopener" style="color:var(--accent)">github.com/Witawat/Cloudflare-ddns</a>
+</footer>
 
 <div id="toast" role="status"></div>
 
@@ -1448,8 +1454,8 @@ async function doLogin(ev) {
             return self._send_json(200, {"needs_setup": bool(errors), "errors": errors})
 
         if not self._authed():
-            return self._send(200, PAGE.replace("__LOGIN__", self._login_block()))
-        return self._send(200, PAGE.replace("__LOGIN__", ""))
+            return self._send(200, PAGE.replace("__LOGIN__", self._login_block()).replace("__VERSION__", __version__))
+        return self._send(200, PAGE.replace("__LOGIN__", "").replace("__VERSION__", __version__))
 
     # ---- POST ----
 
