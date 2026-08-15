@@ -101,11 +101,12 @@ Tunnel ให้บริการผ่าน Cloudflare โดยไม่ต�
 3. ตั้งชื่อ tunnel (เช่น `home`) → เลือกวิธีติดตั้ง **Cloudflare-managed (แนะนำ)** → ต่อไป
 4. หน้า "Install and run a connector": เลือก Windows → คัดลอกคำสั่งที่ได้ ซึ่งมี token อยู่ใน `--token <eyJ...>` (ยาวมาก ขึ้นต้นด้วย `eyJ`)
    - ไม่ต้องรันคำสั่งนั้นจริง — แค่เอา token ไปวางในโปรแกรม
-5. วาง token ใน **Web UI → ตั้งค่า → Cloudflare Tunnel** → บันทึก → เปิด `tunnel_enabled` → กด "เริ่ม tunnel"
-   - โปรแกรมดาวน์โหลด `cloudflared.exe` ให้อัตโนมัติครั้งแรก
-6. กลับไปหน้า Tunnels → กดชื่อ tunnel → **Public Hostname** → Add a public hostname:
-   - Subdomain: เช่น `app` · Domain: โดเมนคุณ · Type: HTTP · URL: `localhost:8080` (ตามบริการที่รันในเครื่อง)
-7. เสร็จ — เข้า `https://app.โดเมน.com` ผ่าน Cloudflare ได้เลย ไม่ต้องแตะเราเตอร์/DDNS
+5. เปิด **Web UI → การ์ด Cloudflare Tunnel → "ตั้งค่า Tunnel (wizard)"** → ทำตาม 4 ขั้น:
+   - วาง token → **ตรวจสอบ token** (โปรแกรมดาวน์โหลด cloudflared + ทดสอบเชื่อมต่อให้)
+   - **ผูก hostname**: ใส่ชื่อ (เช่น `app`) + เลือกโดเมน + บริการ (เช่น `http://localhost:8080`) → กด **"ผูกกับ tunnel"** — โปรแกรมตั้ง DNS (CNAME) + tunnel config ให้อัตโนมัติ (ไม่ต้องแตะ dashboard) หรือเลือกจาก "record ที่มีอยู่"
+   - บันทึก → tunnel เริ่มทำงาน
+6. เสร็จ — เข้า `https://app.โดเมน.com` ได้เลย ไม่ต้องแตะเราเตอร์/DDNS
+   - ดู/ลบ hostname ที่ผูกแล้วได้ที่ปุ่ม "ดู hostname ที่ผูกแล้ว"
 
 ### Tunnel vs DDNS
 
