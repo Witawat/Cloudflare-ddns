@@ -17,6 +17,17 @@ from . import notifier
 
 log = logging.getLogger("cloudflare-ddns")
 
+_tunnel_mgr = None
+
+
+def _get_tunnel_mgr():
+    global _tunnel_mgr
+    if _tunnel_mgr is None:
+        from . import tunnel as tunnel_mod
+
+        _tunnel_mgr = tunnel_mod.TunnelManager()
+    return _tunnel_mgr
+
 # ชื่อบริการสำหรับพอร์ตที่พบบ่อย
 PORT_SERVICES = {
     20: "ftp-data", 21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns",
@@ -317,6 +328,16 @@ __LOGIN__
   </section>
 
   <section class="panel">
+    <div class="panel-head"><h2>Cloudflare Tunnel</h2><p>ให้บริการผ่าน Tunnel แทนการเปิดพอร์ต (เหมาะกับ CGNAT / ไม่เปิดพอร์ต)</p></div>
+    <div class="tg-row">
+      <span id="tunnel-status" class="tg-status">กำลังโหลด…</span>
+      <button id="tunnelStart" class="btn-secondary">เริ่ม tunnel</button>
+      <button id="tunnelStop" class="btn-secondary">หยุด tunnel</button>
+      <button id="tunnelDownload" class="btn-secondary">ดาวน์โหลด cloudflared</button>
+    </div>
+  </section>
+
+  <section class="panel">
     <div class="panel-head">
       <h2>สแกนพอร์ต</h2>
       <p>ตรวจบริการที่เปิดอยู่บน host ที่ตั้งไว้ (resolve IP ปัจจุบันให้อัตโนมัติ)</p>
@@ -407,6 +428,19 @@ __LOGIN__
     <div class="toggles">
       <label><input id="daily_report" type="checkbox"> สรุปรายวันทาง Telegram</label>
       <label>เวลา (HH:MM)<input id="daily_report_time" type="text" placeholder="08:00"></label>
+    </div>
+
+    <h3>Cloudflare Tunnel (ไม่บังคับ)</h3>
+    <div class="toggles">
+      <label><input id="tunnel_enabled" type="checkbox"> เปิด tunnel อัตโนมัติตอน service เริ่ม</label>
+    </div>
+    <div class="grid2">
+      <label class="field">Tunnel Token (จาก Zero Trust → Networks → Tunnels)
+        <input id="tunnel_token" type="password" autocomplete="off" placeholder="eyJhIjoi...">
+      </label>
+      <label class="field">ที่อยู่ cloudflared.exe (เว้นว่าง = ดาวน์โหลดข้าง exe อัตโนมัติ)
+        <input id="cloudflared_path" type="text" class="mono" autocomplete="off" placeholder="(อัตโนมัติ)">
+      </label>
     </div>
 
     <h3>DNS records</h3>
@@ -572,6 +606,9 @@ async function loadConfig() {
     $("notify_created").checked = !!c.telegram.notify_created;
     $("daily_report").checked = !!c.telegram.daily_report;
     $("daily_report_time").value = c.telegram.daily_report_time || "08:00";
+    $("tunnel_enabled").checked = !!c.tunnel.enabled;
+    $("tunnel_token").value = c.tunnel.token;
+    $("cloudflared_path").value = c.tunnel.cloudflared_path || "";
     recordsData = c.records.map(r => ({ ...r }));
     renderRecordsEditor();
     loadScanHosts();
@@ -658,6 +695,11 @@ async function saveConfig() {
       notify_created: $("notify_created").checked,
       daily_report: $("daily_report").checked,
       daily_report_time: $("daily_report_time").value.trim() || "08:00",
+    },
+    tunnel: {
+      enabled: $("tunnel_enabled").checked,
+      token: $("tunnel_token").value.trim(),
+      cloudflared_path: $("cloudflared_path").value.trim(),
     },
     records: recordsData,
   };
@@ -796,6 +838,34 @@ async function loadLog() {
     box.scrollTop = box.scrollHeight;
   } catch (e) {
     box.textContent = "อ่าน log ไม่ได้: " + e;
+  }
+}
+
+async function loadTunnelStatus() {
+  try {
+    const r = await fetch("/status.json");
+    const s = await r.json();
+    const t = s.tunnel || {};
+    const box = $("tunnel-status");
+    const parts = [];
+    if (!t.enabled) parts.push('<span style="color:var(--muted)">ปิดใช้งาน (ตั้งค่าในฟอร์มด้านล่าง)</span>');
+    if (!t.installed) parts.push('<span class="err">cloudflared ยังไม่ติดตั้ง</span>');
+    if (t.running) parts.push('<span class="ok">รันอยู่ (pid ' + t.pid + ")</span>");
+    else if (t.enabled) parts.push('<span>ยังไม่รัน</span>');
+    box.innerHTML = parts.join(" · ");
+  } catch (e) {
+    $("tunnel-status").textContent = "อ่านสถานะไม่ได้: " + e;
+  }
+}
+
+async function tunnelAction(path, okMsg) {
+  try {
+    const r = await fetch(path, { method: "POST" });
+    const j = await r.json();
+    toast(j.ok ? okMsg + (j.message ? ": " + j.message : "") : "ไม่สำเร็จ: " + j.message, j.ok ? "ok" : "err");
+    loadTunnelStatus();
+  } catch (e) {
+    toast("error: " + e, "err");
   }
 }
 
@@ -1226,11 +1296,15 @@ $("tgTest").addEventListener("click", tgTest);
 $("tgQueueBtn").addEventListener("click", tgQueue);
 $("tgFlushBtn").addEventListener("click", tgFlush);
 $("tgClearBtn").addEventListener("click", tgClear);
+$("tunnelStart").addEventListener("click", () => tunnelAction("/tunnel/start", "เริ่ม tunnel"));
+$("tunnelStop").addEventListener("click", () => tunnelAction("/tunnel/stop", "หยุด tunnel"));
+$("tunnelDownload").addEventListener("click", () => tunnelAction("/tunnel/download", "ดาวน์โหลด"));
 
 loadStatus();
 loadConfig();
 loadIp();
 loadLog();
+loadTunnelStatus();
 checkSetup();
 setInterval(loadStatus, 10000);
 </script>
@@ -1263,6 +1337,11 @@ def _cfg_to_dict(cfg):
             "notify_created": cfg.notify_created,
             "daily_report": cfg.daily_report,
             "daily_report_time": cfg.daily_report_time,
+        },
+        "tunnel": {
+            "enabled": cfg.tunnel_enabled,
+            "token": cfg.tunnel_token,
+            "cloudflared_path": cfg.cloudflared_path,
         },
         "records": [
             {
@@ -1303,6 +1382,10 @@ def _dict_to_ini(data):
     kv("notify_created", str(bool(tg.get("notify_created", True))).lower())
     kv("daily_report", str(bool(tg.get("daily_report", True))).lower())
     kv("daily_report_time", str(tg.get("daily_report_time", "08:00")).strip() or "08:00")
+    tu = data.get("tunnel", {})
+    kv("tunnel_enabled", str(bool(tu.get("enabled", False))).lower())
+    kv("tunnel_token", str(tu.get("token", "")).strip())
+    kv("cloudflared_path", str(tu.get("cloudflared_path", "")).strip())
     lines.append("")
     for rec in data.get("records", []):
         name = str(rec.get("name", "")).strip().rstrip(".")
@@ -1436,6 +1519,7 @@ async function doLogin(ev) {
                 "chat_id": notify.chat_id,
                 "queue": notifier.queue_size(),
             }
+            status["tunnel"] = _get_tunnel_mgr().status(self.cfg)
             status["record_errors"] = {}
             return self._send_json(200, status)
 
@@ -1620,6 +1704,20 @@ async function doLogin(ev) {
                 return self._send_json(401, {"ok": False, "message": "unauthorized"})
             notifier.clear_queue()
             return self._send_json(200, {"ok": True, "message": "ล้างคิวแล้ว"})
+
+        if self.path == "/tunnel/start":
+            ok, message = _get_tunnel_mgr().start(self.cfg)
+            return self._send_json(200 if ok else 400, {"ok": ok, "message": message})
+
+        if self.path == "/tunnel/stop":
+            ok, message = _get_tunnel_mgr().stop()
+            return self._send_json(200 if ok else 400, {"ok": ok, "message": message})
+
+        if self.path == "/tunnel/download":
+            from . import tunnel as tunnel_mod
+
+            ok, message = tunnel_mod.ensure_installed(self.cfg)
+            return self._send_json(200 if ok else 400, {"ok": ok, "message": message})
 
         if self.path == "/save-config":
             try:

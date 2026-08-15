@@ -64,6 +64,25 @@ install.bat                                REM ติดตั้ง service (�
 
 `install.bat` / `uninstall.bat` ครอบคำสั่งด้านบน (ขอสิทธิ์ admin ให้อัตโนมัติ และใช้ exe อัตโนมัติถ้ามี)
 
+## Cloudflare Tunnel (ทางเลือกแทน/เสริม DDNS)
+
+ใช้เมื่อต้องการให้บริการผ่าน **Tunnel** แทนการเปิดพอร์ต/พึ่ง IP ตรง:
+- เหมาะกับ: ISP แจก IP CGNAT, ไม่อยากเปิด port forward, ให้บริการเว็บผ่าน Cloudflare
+- ต่างจาก DDNS ตรงที่ record จะชี้ผ่าน CNAME ของ Cloudflare (ไม่ใช้ IP เลย) — ใช้ได้ทั้งคู่พร้อมกัน (คนละ record)
+
+```ini
+[cloudflare]
+tunnel_enabled = true
+tunnel_token = eyJhIjoi...
+cloudflared_path =        ; เว้นว่าง = ดาวน์โหลด cloudflared.exe ข้าง exe อัตโนมัติ
+```
+
+**วิธีหา token:** Cloudflare Dashboard → **Zero Trust** → **Networks → Tunnels** → Create a tunnel → เลือกวิธี Cloudflare-managed → คัดลอก token (ดู [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md))
+
+- ตั้ง `tunnel_enabled = true` แล้ว service จะเริ่ม tunnel อัตโนมัติตอน boot (และหยุดพร้อม service)
+- เริ่ม/หยุด/ดาวน์โหลด cloudflared ได้จากปุ่มใน Web UI (การ์ด Cloudflare Tunnel)
+- `cloudflared.exe` (~40 MB) ดาวน์โหลดจาก GitHub releases ให้อัตโนมัติเมื่อกดปุ่ม (หรือตอน service เริ่มครั้งแรก)
+
 ## แจ้งเตือน Telegram
 
 แจ้งเหตุการณ์ผ่าน Telegram Bot — ตั้งค่าได้ใน `setup` (ตอบ `y` ตรงคำถาม Telegram) หรือแก้ config.ini เอง:

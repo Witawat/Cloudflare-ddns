@@ -75,6 +75,18 @@ def _make_service_class():
             setup_file_logging(cfg.log_dir)
             log.info("service เริ่มทำงาน (interval=%ss)", cfg.interval_seconds)
 
+            # เริ่ม Cloudflare Tunnel ถ้าตั้งค่าไว้
+            tunnel_mgr = None
+            try:
+                if cfg.tunnel_enabled:
+                    from . import tunnel as tunnel_mod
+
+                    tunnel_mgr = tunnel_mod.TunnelManager()
+                    ok, message = tunnel_mgr.start(cfg)
+                    log.info("Cloudflare Tunnel: %s", message)
+            except Exception as exc:
+                log.warning("เริ่ม Cloudflare Tunnel ไม่ได้: %s", exc)
+
             # เปิด Web UI ไปพร้อมกันด้วย (เข้าผ่าน http://127.0.0.1:8123 ได้ตลอด)
             web_ui = None
             try:
@@ -93,6 +105,11 @@ def _make_service_class():
                     stop_event=self._stop_event,
                 )
             finally:
+                if tunnel_mgr is not None:
+                    try:
+                        tunnel_mgr.stop()
+                    except Exception:
+                        pass
                 if web_ui is not None:
                     try:
                         web_ui.stop()

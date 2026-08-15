@@ -90,8 +90,39 @@ cloudflare-ddns.exe notify-test
 
 ---
 
-## 3. หมายเหตุความปลอดภัย
+## 3. Cloudflare Tunnel (ทางเลือก — ใช้เมื่อเปิดพอร์ตไม่ได้ / ไม่อยากเปิดพอร์ต)
 
-- **Cloudflare token** อยู่ใน `config.ini` (ในโฟลเดอร์เดียวกับ exe) — ห้ามแชร์ไฟล์นี้
+Tunnel ให้บริการผ่าน Cloudflare โดยไม่ต้องใช้ IP/เปิดพอร์ต — เหมาะกับ ISP ที่แจก IP แบบ CGNAT หรือให้บริการเว็บโดยไม่อยาก port forward
+
+### ขั้นตอน (ปัจจุบัน 2026)
+
+1. ล็อกอิน https://dash.cloudflare.com → คลิก **Zero Trust** (เมนูซ้าย)
+2. ไปที่ **Networks → Tunnels** → กด **Create a tunnel**
+3. ตั้งชื่อ tunnel (เช่น `home`) → เลือกวิธีติดตั้ง **Cloudflare-managed (แนะนำ)** → ต่อไป
+4. หน้า "Install and run a connector": เลือก Windows → คัดลอกคำสั่งที่ได้ ซึ่งมี token อยู่ใน `--token <eyJ...>` (ยาวมาก ขึ้นต้นด้วย `eyJ`)
+   - ไม่ต้องรันคำสั่งนั้นจริง — แค่เอา token ไปวางในโปรแกรม
+5. วาง token ใน **Web UI → ตั้งค่า → Cloudflare Tunnel** → บันทึก → เปิด `tunnel_enabled` → กด "เริ่ม tunnel"
+   - โปรแกรมดาวน์โหลด `cloudflared.exe` ให้อัตโนมัติครั้งแรก
+6. กลับไปหน้า Tunnels → กดชื่อ tunnel → **Public Hostname** → Add a public hostname:
+   - Subdomain: เช่น `app` · Domain: โดเมนคุณ · Type: HTTP · URL: `localhost:8080` (ตามบริการที่รันในเครื่อง)
+7. เสร็จ — เข้า `https://app.โดเมน.com` ผ่าน Cloudflare ได้เลย ไม่ต้องแตะเราเตอร์/DDNS
+
+### Tunnel vs DDNS
+
+| | DDNS | Tunnel |
+|---|---|---|
+| ใช้ได้กับ | บริการที่ต้องรับ connection ตรง (SSH, game server) | HTTP/HTTPS บริการเว็บ |
+| ต้องเปิดพอร์ต | ใช่ (port forward) | ไม่ต้องเลย |
+| ใช้ได้กับ CGNAT | ❌ | ✅ |
+| record ชี้ไปที่ | IP บ้านคุณ | CNAME ของ Cloudflare |
+| เหมาะกับ | โฮสต์ที่ต้องการ IP ตรง | เว็บ/API ผ่าน Cloudflare |
+
+ใช้คู่กันได้ (คนละ record) — ตัวโปรแกรมจัดการทั้งคู่
+
+---
+
+## 4. หมายเหตุความปลอดภัย
+
+- **Cloudflare token / Tunnel token** อยู่ใน `config.ini` (ในโฟลเดอร์เดียวกับ exe) — ห้ามแชร์ไฟล์นี้
 - **Bot token** เป็นกุญแจเข้า bot — ใครได้ไปสามารถส่งข้อความปลอมในนาม bot ได้ (แต่ทำอะไรกับบัญชีของคุณไม่ได้)
-- รีโวค/สร้าง token ใหม่ได้ทุกเมื่อที่หน้า Cloudflare API Tokens หรือ BotFather (`/revoke`)
+- รีโวค/สร้าง token ใหม่ได้ทุกเมื่อที่หน้า Cloudflare API Tokens หรือ BotFather (`/revoke`) และหน้า Zero Trust → Tunnels

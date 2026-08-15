@@ -303,6 +303,18 @@ def cmd_status(args):
         print("  ยังไม่มีข้อมูล IP (รอรอบแรก)")
     print(f"  รอบล่าสุด: {status.get('last_run', '-')}")
 
+    try:
+        from . import tunnel as tunnel_mod
+
+        tunnel_status = tunnel_mod.TunnelManager().status(config_mod.Config(args.config))
+        print("=== Cloudflare Tunnel ===")
+        print(f"  เปิดใช้งาน: {'ใช่' if tunnel_status['enabled'] else 'ไม่'} | "
+              f"cloudflared: {'ติดตั้งแล้ว' if tunnel_status['installed'] else 'ยังไม่ติดตั้ง'} | "
+              f"รันอยู่: {'ใช่' if tunnel_status['running'] else 'ไม่'}"
+              + (f" (pid {tunnel_status['pid']})" if tunnel_status["pid"] else ""))
+    except Exception:
+        pass
+
 
 def cmd_webui(args):
     from . import webui

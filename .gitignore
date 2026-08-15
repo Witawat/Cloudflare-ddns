@@ -9,4 +9,6 @@ config.ini.bak[0-9]
 state.json
 notify_queue.json
 logs/
+cloudflared.exe
+tunnel.pid
 .playwright-mcp/

@@ -137,6 +137,10 @@ class Config:
         self.notify_created = True
         self.daily_report = True
         self.daily_report_time = "08:00"
+        # Cloudflare Tunnel (cloudflared)
+        self.tunnel_enabled = False
+        self.tunnel_token = ""
+        self.cloudflared_path = ""
         self.records = []
         self.last_error = ""
         self.reload()
@@ -176,6 +180,9 @@ class Config:
         self.notify_created = self._as_bool(section, "notify_created", True)
         self.daily_report = self._as_bool(section, "daily_report", True)
         self.daily_report_time = section.get("daily_report_time", "08:00").strip() or "08:00"
+        self.tunnel_enabled = self._as_bool(section, "tunnel_enabled", False)
+        self.tunnel_token = section.get("tunnel_token", "").strip()
+        self.cloudflared_path = section.get("cloudflared_path", "").strip()
 
         self.records = []
         for name in self.parser.sections():
@@ -304,6 +311,9 @@ class Config:
         self.notify_created = self._as_bool(section, "notify_created", True)
         self.daily_report = self._as_bool(section, "daily_report", True)
         self.daily_report_time = section.get("daily_report_time", "08:00").strip() or "08:00"
+        self.tunnel_enabled = self._as_bool(section, "tunnel_enabled", False)
+        self.tunnel_token = section.get("tunnel_token", "").strip()
+        self.cloudflared_path = section.get("cloudflared_path", "").strip()
 
         self.records = []
         for name in self.parser.sections():
