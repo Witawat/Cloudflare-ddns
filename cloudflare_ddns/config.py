@@ -141,6 +141,7 @@ class Config:
         self.tunnel_enabled = False
         self.tunnel_token = ""
         self.cloudflared_path = ""
+        self.tunnel_hosts = []
         self.records = []
         self.last_error = ""
         self.reload()
@@ -183,6 +184,7 @@ class Config:
         self.tunnel_enabled = self._as_bool(section, "tunnel_enabled", False)
         self.tunnel_token = section.get("tunnel_token", "").strip()
         self.cloudflared_path = section.get("cloudflared_path", "").strip()
+        self.tunnel_hosts = self._parse_tunnel_hosts(section.get("tunnel_hosts", ""))
 
         self.records = []
         for name in self.parser.sections():
@@ -218,6 +220,32 @@ class Config:
         except (ValueError, TypeError):
             return default
 
+    def _parse_tunnel_hosts(self, raw):
+        """parse tunnel_hosts (JSON list) -> list[dict]; คืน [] ถ้าไม่ถูกต้อง"""
+        import json as _json
+
+        raw = (raw or "").strip()
+        if not raw:
+            return []
+        try:
+            items = _json.loads(raw)
+        except ValueError:
+            return []
+        if not isinstance(items, list):
+            return []
+        out = []
+        for item in items:
+            if isinstance(item, dict) and item.get("hostname"):
+                out.append(
+                    {
+                        "hostname": str(item["hostname"]).strip().rstrip("."),
+                        "path": str(item.get("path", "")).strip() or "",
+                        "protocol": str(item.get("protocol", "http")).strip() or "http",
+                        "service": str(item.get("service", "")).strip(),
+                    }
+                )
+        return out
+
     def validate(self):
         """คืน list ของข้อผิดพลาด ถ้าว่าง = config ใช้ได้"""
         errors = []
@@ -234,6 +262,19 @@ class Config:
 
             if not _re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", self.daily_report_time):
                 errors.append(f"daily_report_time ต้องเป็น HH:MM (0-23:0-59) เช่น 08:00 (ตอนนี้: {self.daily_report_time})")
+        if self.tunnel_hosts:
+            import json as _json
+
+            seen_hosts = set()
+            for h in self.tunnel_hosts:
+                key = (h["hostname"], h.get("path", ""))
+                if key in seen_hosts:
+                    errors.append(f"tunnel_hosts ซ้ำ: {h['hostname']}{h.get('path', '')}")
+                seen_hosts.add(key)
+                if h.get("protocol") not in ("http", "https", "tcp", "udp"):
+                    errors.append(f"tunnel_hosts protocol ไม่รู้จัก: {h.get('protocol')} (ต้องเป็น http/https/tcp/udp)")
+                if h.get("path") and not h["path"].startswith("/"):
+                    errors.append(f"tunnel_hosts path ต้องเริ่มด้วย /: {h['path']}")
         seen = set()
         for rec in self.records:
             if not rec.name:
@@ -319,6 +360,7 @@ class Config:
         self.tunnel_enabled = self._as_bool(section, "tunnel_enabled", False)
         self.tunnel_token = section.get("tunnel_token", "").strip()
         self.cloudflared_path = section.get("cloudflared_path", "").strip()
+        self.tunnel_hosts = self._parse_tunnel_hosts(section.get("tunnel_hosts", ""))
 
         self.records = []
         for name in self.parser.sections():

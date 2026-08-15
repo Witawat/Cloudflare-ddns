@@ -66,6 +66,18 @@ cloudflared_path =                ; เว้นว่าง = ดาวน์�
 
 **วิธีเริ่ม (แนะนำใช้ wizard ในเว็บ):** การ์ด Cloudflare Tunnel → "ตั้งค่า Tunnel (wizard)" → วาง token (ตรวจสอบให้จริง) → ใส่ชื่อ + โดเมน + บริการ → "ผูกกับ tunnel" — โปรแกรมตั้ง DNS (CNAME → tunnel) + tunnel config ให้เอง → เข้า `https://ชื่อ.โดเมน.com` ได้ทันที — ดู/ลบ hostname ที่ผูกแล้วได้ด้วยปุ่ม "ดู hostname ที่ผูกแล้ว"
 
+### รองรับทุกแบบ (หลายพอร์ต/หลาย protocol)
+
+| รูปแบบ | วิธี | ตัวอย่าง |
+|---|---|---|
+| **หลาย hostname → หลายพอร์ต** | ผูกซ้ำได้ (หรือปุ่ม "+ เพิ่ม hostname" ในการ์ด) | `app.โดเมน` → 8080 · `api.โดเมน` → 3000 |
+| **หลายพอร์ตต่อชื่อเดียว (path)** | ระบุ Path ในฟอร์มผูก | `app.โดเมน` → 8080 · `app.โดเมน/api` → 3000 |
+| **TCP** (SSH/game/RDP) | ชนิด TCP + `tcp://localhost:พอร์ต` | `ssh.โดเมน` → `tcp://localhost:22` |
+| **UDP** (game/VPN) | ชนิด UDP + `udp://localhost:พอร์ต` | `vpn.โดเมน` → `udp://localhost:51820` |
+| **HTTPS ภายใน** | ชนิด HTTPS + `https://localhost:พอร์ต` | `app.โดเมน` → `https://localhost:8443` |
+
+จัดการทั้งหมดใน **การ์ด Cloudflare Tunnel**: ตาราง "ดู hostname ที่ผูกแล้ว" (hostname+path / ชนิด / บริการ + ลบ) · ปุ่ม "+ เพิ่ม hostname" (ผูกด่วน) · ปุ่ม "ซิงค์จาก Cloudflare" (ดึงจาก API → บันทึกลง config)
+
 ### ข้อควรรู้ (Tunnel)
 
 - **ชื่อเดียวใช้ได้อย่างใดอย่างหนึ่ง:** A/AAAA (DDNS) หรือ CNAME (tunnel) — Cloudflare ห้ามซ้ำชื่อกัน → ใช้**คนละชื่อ** (โปรแกรมตรวจให้และแจ้งเตือน)
