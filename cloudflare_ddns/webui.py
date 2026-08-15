@@ -246,12 +246,12 @@ label.field input:focus, label.field select:focus {
 .file-note { font-size: 0.85rem; color: var(--muted); margin: 0 0 10px; }
 
 /* ---------- wizard ครั้งแรก ---------- */
-#wizard {
+#wizard, #tunnel-wizard {
   position: fixed; inset: 0; z-index: 60; overflow-y: auto;
   background: oklch(0.24 0.03 250 / 0.45); backdrop-filter: blur(3px);
   display: flex; align-items: flex-start; justify-content: center; padding: 5vh 16px 40px;
 }
-#wizard[hidden] { display: none; }
+#wizard[hidden], #tunnel-wizard[hidden] { display: none; }
 .wz-card {
   width: 100%; max-width: 560px; background: var(--bg);
   border: 1px solid var(--border); border-radius: 16px;
