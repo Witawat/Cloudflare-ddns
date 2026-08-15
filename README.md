@@ -79,6 +79,8 @@ cloudflared_path =        ; เว้นว่าง = ดาวน์โหล�
 
 **วิธีหา token:** Cloudflare Dashboard → **Zero Trust** → **Networks → Tunnels** → Create a tunnel → เลือกวิธี Cloudflare-managed → คัดลอก token (ดู [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md))
 
+**ผูกเว็บกับ tunnel อัตโนมัติ:** ใน wizard Tunnel (ขั้นที่ 2) ใส่ชื่อ (เช่น `app`) + เลือกโดเมน + บริการ (เช่น `http://localhost:8080`) → กด "ผูกกับ tunnel" — โปรแกรมตั้ง DNS (CNAME → tunnel) + tunnel config ให้เอง (ไม่ต้องแตะ dashboard) — เข้า `https://app.โดเมน.com` ได้ทันที
+
 - ตั้ง `tunnel_enabled = true` แล้ว service จะเริ่ม tunnel อัตโนมัติตอน boot (และหยุดพร้อม service)
 - เริ่ม/หยุด/ดาวน์โหลด cloudflared ได้จากปุ่มใน Web UI (การ์ด Cloudflare Tunnel)
 - `cloudflared.exe` (~40 MB) ดาวน์โหลดจาก GitHub releases ให้อัตโนมัติเมื่อกดปุ่ม (หรือตอน service เริ่มครั้งแรก)

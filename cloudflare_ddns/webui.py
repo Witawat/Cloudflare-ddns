@@ -1031,19 +1031,58 @@ function renderTunnelWizard() {
 
   else if (twzStep === 3) {
     body.innerHTML =
-      '<p class="wz-step-title">ขั้นตอนที่ 2: ตั้ง Public Hostname (เว็บที่จะเปิด)</p>' +
-      '<p class="wz-step-sub">token ตรวจผ่านแล้ว — ขั้นนี้ทำที่หน้า Zero Trust (เปิดลิงก์ด้านล่าง) แล้วกลับมากดต่อไป:</p>' +
-      '<div class="wz-help"><b>วิธีตั้ง hostname:</b><ol>' +
-      "<li>Zero Trust → Networks → Tunnels → กดชื่อ tunnel ของคุณ</li>" +
-      "<li>แท็บ Public Hostname → Add a public hostname</li>" +
-      "<li>Subdomain: เช่น app · Domain: โดเมนคุณ</li>" +
-      "<li>Type: HTTP · URL: localhost:พอร์ตของบริการ (เช่น localhost:8080)</li>" +
-      "<li>บันทึก แล้วเข้า https://app.โดเมน.com ได้เลย</li></ol></div>" +
-      '<div style="margin-top:10px"><button class="btn-secondary" type="button" id="twz-open-zt2">เปิด Zero Trust ↗</button></div>' +
+      '<p class="wz-step-title">ขั้นตอนที่ 2: ผูกเว็บ (hostname) กับ tunnel</p>' +
+      '<p class="wz-step-sub">ระบุชื่อเว็บและบริการในเครื่อง — โปรแกรมตั้งค่าให้อัตโนมัติ (สร้าง DNS + ตั้ง tunnel config) ไม่ต้องไปทำที่ dashboard</p>' +
+      '<div class="grid2">' +
+      '<label class="field">ชื่อ (subdomain)<input id="twz-sub" type="text" placeholder="app" class="mono"></label>' +
+      '<label class="field">โดเมน<select id="twz-domain" class="wz-zone-select"></select></label></div>' +
+      '<label class="field">บริการในเครื่อง (localhost:พอร์ต)<input id="twz-service" type="text" class="mono" value="http://localhost:8080"></label>' +
+      '<div id="twz-bind-msg"></div>' +
+      '<div style="margin-top:10px"><button class="btn-primary" type="button" id="twz-bind">ผูกกับ tunnel</button></div>' +
+      '<div class="wz-help">ตัวอย่าง: ชื่อ <b>app</b> + โดเมน <b>makerwitawat.com</b> + บริการ <b>http://localhost:8080</b> → เข้าได้ที่ <b>https://app.makerwitawat.com</b> (ผูกแล้วแก้ภายหลังได้ในฟอร์ม/แดชบอร์ด)</div>' +
       actions(true, "ต่อไป →");
     $("twz-back").addEventListener("click", () => { twzStep = 2; renderTunnelWizard(); });
-    $("twz-open-zt2").addEventListener("click", () => window.open("https://one.dash.cloudflare.com/?to=/:account/networks/tunnels", "_blank"));
     $("twz-next").addEventListener("click", () => { twzStep = 4; renderTunnelWizard(); });
+
+    // โหลดรายชื่อโดเมน (จาก API token หลัก)
+    (async () => {
+      const sel = $("twz-domain");
+      try {
+        const r = await fetch("/tunnel/zones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+        const j = await r.json();
+        if (j.ok && j.zones.length) {
+          sel.innerHTML = j.zones.map(z => '<option value="' + escapeHtml(z) + '">' + escapeHtml(z) + "</option>").join("");
+        } else {
+          sel.innerHTML = '<option value="">— ใส่เองไม่ได้ (API token ไม่มีสิทธิ์) —</option>';
+        }
+      } catch (e) {
+        sel.innerHTML = '<option value="">— โหลดโดเมนไม่ได้ —</option>';
+      }
+    })();
+
+    $("twz-bind").addEventListener("click", async () => {
+      const sub = $("twz-sub").value.trim().replace(/^\.+|\.+$/g, "");
+      const domain = $("twz-domain").value.trim();
+      const service = $("twz-service").value.trim();
+      const msg = $("twz-bind-msg");
+      if (!sub || !domain) { msg.innerHTML = wzMsg("err", "กรุณาใส่ชื่อและเลือกโดเมน"); return; }
+      const hostname = sub === "@" ? domain : sub + "." + domain;
+      const btn = $("twz-bind");
+      btn.disabled = true;
+      msg.innerHTML = wzMsg("ok", "กำลังผูก " + hostname + " กับ tunnel...");
+      try {
+        const r = await fetch("/tunnel/bind", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: twzData.token, hostname, service }),
+        });
+        const j = await r.json();
+        msg.innerHTML = j.ok ? wzMsg("ok", "✓ " + j.message) : wzMsg("err", j.message);
+      } catch (e) {
+        msg.innerHTML = wzMsg("err", "error: " + e);
+      }
+      btn.disabled = false;
+    });
   }
 
   else if (twzStep === 4) {
@@ -1896,6 +1935,106 @@ async function doLogin(ev) {
             return self._send_json(
                 400,
                 {"ok": False, "message": "token ตรวจไม่ผ่าน — cloudflared เชื่อมต่อไม่ได้ (ตรวจ token/อินเทอร์เน็ต/ไฟร์วอลล์)"},
+            )
+
+        if self.path == "/tunnel/zones":
+            from . import cloudflare_api as _cf_api
+
+            try:
+                data = json.loads(body)
+            except ValueError:
+                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+            token = str(data.get("token") or "").strip() or self.cfg.api_token
+            if not token:
+                return self._send_json(400, {"ok": False, "message": "ไม่พบ API token (ตั้งค่า Cloudflare ก่อน)"})
+            api = _cf_api.CloudflareAPI(token)
+            try:
+                zones = [z["name"] for z in api.list_zones()]
+            except _cf_api.CloudflareError as exc:
+                return self._send_json(400, {"ok": False, "message": str(exc)})
+            return self._send_json(200, {"ok": True, "zones": zones})
+
+        if self.path == "/tunnel/bind":
+            import base64
+            import json as _json
+
+            from . import cloudflare_api as _cf_api
+
+            try:
+                data = json.loads(body)
+            except ValueError:
+                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+            token = str(data.get("token") or "").strip()
+            hostname = str(data.get("hostname") or "").strip().rstrip(".")
+            service = str(data.get("service") or "").strip() or "http://localhost:8080"
+            if not token:
+                return self._send_json(400, {"ok": False, "message": "ไม่พบ tunnel token"})
+            if not hostname:
+                return self._send_json(400, {"ok": False, "message": "กรุณาระบุ hostname เช่น app.โดเมน.com"})
+
+            # 1. แกะ account_id + tunnel_id จาก tunnel token (JWT payload)
+            try:
+                payload_part = token.split(".")[1]
+                payload_part += "=" * (-len(payload_part) % 4)
+                claims = _json.loads(base64.urlsafe_b64decode(payload_part))
+                account_id = claims.get("a") or claims.get("accountID")
+                tunnel_id = claims.get("t") or claims.get("tunnelID")
+            except Exception:
+                return self._send_json(400, {"ok": False, "message": "tunnel token ผิดรูปแบบ (ควรเป็น eyJ... ยาว ๆ จากหน้า Zero Trust)"})
+            if not account_id or not tunnel_id:
+                return self._send_json(400, {"ok": False, "message": "tunnel token ไม่มี account/tunnel id (token ผิดรูปแบบ?)"})
+
+            # 2. ตั้ง ingress (public hostname) ใน tunnel config
+            api_token = str(data.get("api_token") or "").strip() or self.cfg.api_token
+            if not api_token:
+                return self._send_json(400, {"ok": False, "message": "ไม่พบ API token สำหรับแก้ DNS (ตั้งค่า Cloudflare ก่อน)"})
+            api = _cf_api.CloudflareAPI(api_token)
+            try:
+                # อ่าน ingress เดิมมาก่อน (กันทับของเก่า)
+                try:
+                    current = api._request("GET", f"/accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations")
+                    ingress = current.get("config", {}).get("ingress", []) if current else []
+                except _cf_api.CloudflareError:
+                    ingress = []
+                ingress = [r for r in ingress if r.get("hostname") != hostname]
+                ingress.append({"hostname": hostname, "service": service})
+                ingress.append({"service": "http_status:404"})
+                api._request(
+                    "PUT",
+                    f"/accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations",
+                    {"config": {"ingress": ingress}},
+                )
+            except _cf_api.CloudflareError as exc:
+                return self._send_json(
+                    400,
+                    {"ok": False, "message": f"ตั้งค่า tunnel config ไม่ได้: {exc} (API token ต้องมีสิทธิ์ Account > Cloudflare Tunnel > Edit)"},
+                )
+
+            # 3. สร้าง/แก้ CNAME record ชี้ไป tunnel
+            domain = hostname.split(".", 1)[1] if "." in hostname else ""
+            if not domain:
+                return self._send_json(400, {"ok": False, "message": "hostname ไม่ถูกต้อง (ต้องเป็น app.โดเมน.com)"})
+            sub = hostname[: -len(domain) - 1] if hostname.endswith(domain) else hostname
+            try:
+                zone_id = api.get_zone_id(domain)
+                existing = api.get_record(zone_id, hostname, "CNAME")
+                cname_content = f"{tunnel_id}.cfargotunnel.com"
+                if existing:
+                    api.update_record(zone_id, existing["id"], cname_content, 1, True)
+                    action = "อัปเดต"
+                else:
+                    api.create_record(zone_id, hostname, "CNAME", cname_content, 1, True)
+                    action = "สร้าง"
+            except _cf_api.CloudflareError as exc:
+                return self._send_json(400, {"ok": False, "message": f"สร้าง DNS record ไม่ได้: {exc}"})
+
+            return self._send_json(
+                200,
+                {
+                    "ok": True,
+                    "message": f"{action} record แล้ว: {hostname} → {tunnel_id}.cfargotunnel.com (เข้าผ่าน https://{hostname})",
+                    "hostname": hostname,
+                },
             )
 
         if self.path == "/tunnel/start":
