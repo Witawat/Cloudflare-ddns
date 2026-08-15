@@ -356,6 +356,18 @@ __LOGIN__
       <button id="tunnelDownload" class="btn-secondary">ดาวน์โหลด cloudflared</button>
     </div>
     <div id="tunnel-hosts" hidden style="margin-top:10px"></div>
+    <details class="wz-help" style="margin-top:12px">
+      <summary style="cursor:pointer;font-weight:600">ข้อควรรู้</summary>
+      <ul style="margin:8px 0 0;padding-left:20px">
+        <li>ชื่อเดียวใช้ได้อย่างใดอย่างหนึ่ง: A/AAAA (DDNS) หรือ CNAME (tunnel) — Cloudflare ห้ามซ้ำชื่อกัน ต้องใช้คนละชื่อ (เช่น DDNS = home.โดเมน, tunnel = app.โดเมน)</li>
+        <li>Tunnel ไม่ต้องเปิดพอร์ต / ไม่พึ่ง IP — เหมาะกับ CGNAT หรือไม่อยากแตะเราเตอร์</li>
+        <li>DDNS เหมาะกับบริการที่ต้องรับ connection ตรง (SSH, game server)</li>
+        <li>บริการที่ผูก (เช่น localhost:8080) ต้องรันอยู่ ถึงจะเข้าเว็บได้</li>
+        <li>ผูก hostname ต้องใช้ API token ที่มีสิทธิ์ Account &gt; Cloudflare Tunnel &gt; Edit</li>
+        <li>tunnel รันตาม service — หยุด service = tunnel หยุด</li>
+        <li>tunnel token ใช้ได้จนกว่าจะ revoke ที่ Zero Trust</li>
+      </ul>
+    </details>
   </section>
 
   <section class="panel">
@@ -2123,11 +2135,33 @@ async function doLogin(ev) {
                 return self._send_json(400, {"ok": False, "message": error})
             account_id, tunnel_id = ids["account_id"], ids["tunnel_id"]
 
-            # 2. ตั้ง ingress (public hostname) ใน tunnel config
+            # 1.5 ตรวจชื่อชนกับ DDNS ก่อน (Cloudflare ห้าม A/AAAA กับ CNAME ซ้ำชื่อกัน)
+            domain = hostname.split(".", 1)[1] if "." in hostname else ""
+            if not domain:
+                return self._send_json(400, {"ok": False, "message": "hostname ไม่ถูกต้อง (ต้องเป็น app.โดเมน.com)"})
             api_token = str(data.get("api_token") or "").strip() or self.cfg.api_token
             if not api_token:
                 return self._send_json(400, {"ok": False, "message": "ไม่พบ API token สำหรับแก้ DNS (ตั้งค่า Cloudflare ก่อน)"})
             api = _cf_api.CloudflareAPI(api_token)
+            try:
+                zone_id = api.get_zone_id(domain)
+                conflict = api.get_record(zone_id, hostname, "A") or api.get_record(zone_id, hostname, "AAAA")
+                if conflict:
+                    return self._send_json(
+                        400,
+                        {
+                            "ok": False,
+                            "message": (
+                                f"ชื่อ {hostname} มี record {conflict['type']} อยู่แล้ว (น่าจะใช้กับ DDNS) — "
+                                "Cloudflare ไม่อนุญาตให้มี CNAME (tunnel) ซ้ำชื่อเดียวกับ A/AAAA — "
+                                "ใช้คนละชื่อ (เช่น app.โดเมน.com) หรือลบ record เดิมก่อน"
+                            ),
+                        },
+                    )
+            except _cf_api.CloudflareError as exc:
+                return self._send_json(400, {"ok": False, "message": f"ตรวจ DNS record ไม่ได้: {exc}"})
+
+            # 2. ตั้ง ingress (public hostname) ใน tunnel config
             try:
                 # อ่าน ingress เดิมมาก่อน (กันทับของเก่า)
                 try:
@@ -2150,12 +2184,7 @@ async function doLogin(ev) {
                 )
 
             # 3. สร้าง/แก้ CNAME record ชี้ไป tunnel
-            domain = hostname.split(".", 1)[1] if "." in hostname else ""
-            if not domain:
-                return self._send_json(400, {"ok": False, "message": "hostname ไม่ถูกต้อง (ต้องเป็น app.โดเมน.com)"})
-            sub = hostname[: -len(domain) - 1] if hostname.endswith(domain) else hostname
             try:
-                zone_id = api.get_zone_id(domain)
                 existing = api.get_record(zone_id, hostname, "CNAME")
                 cname_content = f"{tunnel_id}.cfargotunnel.com"
                 if existing:

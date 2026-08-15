@@ -119,6 +119,15 @@ Tunnel ให้บริการผ่าน Cloudflare โดยไม่ต�
 
 ใช้คู่กันได้ (คนละ record) — ตัวโปรแกรมจัดการทั้งคู่
 
+### ข้อควรรู้
+
+- **ชื่อเดียวใช้ได้อย่างใดอย่างหนึ่ง:** A/AAAA (DDNS) หรือ CNAME (tunnel) — Cloudflare ห้ามซ้ำชื่อกัน → ใช้คนละชื่อ เช่น DDNS = `home.โดเมน.com`, tunnel = `app.โดเมน.com` (โปรแกรมตรวจให้และแจ้งเตือน)
+- ผูก hostname ต้องใช้ **API token ที่มีสิทธิ์ Account > Cloudflare Tunnel > Edit** — ถ้าใช้ token แบบ Zone:DNS:Edit อย่างเดียวจะ error พร้อมคำแนะนำ วิธีเพิ่มสิทธิ์: dash.cloudflare.com → My Profile → API Tokens → Edit token → เพิ่มสิทธิ์ Account → Cloudflare Tunnel → Edit
+- บริการที่ผูก (เช่น `localhost:8080`) ต้องรันอยู่ ถึงจะเข้าเว็บได้ — ถ้าเข้าไม่ได้ ตรวจว่าโปรแกรม/บริการนั้นเปิดอยู่
+- Tunnel รันตาม service — หยุด service = tunnel หยุด (และ hostname นั้นเข้าไม่ได้ชั่วคราว)
+- tunnel token (eyJ...) ใช้ได้จนกว่าจะ revoke — ระวังอย่าแชร์
+- ใช้ DDNS กับ Tunnel คู่กันได้: DDNS สำหรับ SSH/game (ต้อง IP ตรง), Tunnel สำหรับเว็บ/API — แยก subdomain กัน
+
 ---
 
 ## 4. หมายเหตุความปลอดภัย

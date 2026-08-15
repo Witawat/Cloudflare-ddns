@@ -81,6 +81,16 @@ cloudflared_path =        ; เว้นว่าง = ดาวน์โหล�
 
 **ผูกเว็บกับ tunnel อัตโนมัติ:** ใน wizard Tunnel (ขั้นที่ 2) ใส่ชื่อ (เช่น `app`) + เลือกโดเมน + บริการ (เช่น `http://localhost:8080`) → กด "ผูกกับ tunnel" — โปรแกรมตั้ง DNS (CNAME → tunnel) + tunnel config ให้เอง (ไม่ต้องแตะ dashboard) — เข้า `https://app.โดเมน.com` ได้ทันที
 
+### ข้อควรรู้ (Tunnel)
+
+- **ชื่อเดียวใช้ได้อย่างใดอย่างหนึ่ง:** A/AAAA (DDNS) หรือ CNAME (tunnel) — Cloudflare ห้าม record ต่างชนิดซ้ำชื่อกัน → ต้องใช้**คนละชื่อ** (เช่น DDNS = `home.โดเมน.com`, tunnel = `app.โดเมน.com`) — โปรแกรมตรวจให้และแจ้งเตือนถ้าชนกัน
+- Tunnel **ไม่ต้องเปิดพอร์ต / ไม่พึ่ง IP** — เหมาะกับ CGNAT หรือไม่อยากแตะเราเตอร์
+- DDNS เหมาะกับบริการที่ต้องรับ connection ตรง (SSH, game server)
+- บริการที่ผูก (เช่น `localhost:8080`) **ต้องรันอยู่** ถึงจะเข้าเว็บได้
+- การผูก hostname ต้องใช้ API token ที่มีสิทธิ์ **Account > Cloudflare Tunnel > Edit** (สิทธิ์ Zone:DNS:Edit อย่างเดียวพอแก้ DNS แต่ตั้ง tunnel config ไม่ได้)
+- tunnel รันตาม service — หยุด service = tunnel หยุด
+- tunnel token ใช้ได้จนกว่าจะ revoke ที่ Zero Trust (ต่างจาก API token ที่ตั้ง TTL ได้)
+
 - ตั้ง `tunnel_enabled = true` แล้ว service จะเริ่ม tunnel อัตโนมัติตอน boot (และหยุดพร้อม service)
 - เริ่ม/หยุด/ดาวน์โหลด cloudflared ได้จากปุ่มใน Web UI (การ์ด Cloudflare Tunnel)
 - `cloudflared.exe` (~40 MB) ดาวน์โหลดจาก GitHub releases ให้อัตโนมัติเมื่อกดปุ่ม (หรือตอน service เริ่มครั้งแรก)
