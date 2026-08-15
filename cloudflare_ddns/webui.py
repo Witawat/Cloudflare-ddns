@@ -144,15 +144,23 @@ label.field input:focus, label.field select:focus {
 
 /* records editor */
 .rec-edit {
-  display: grid; grid-template-columns: minmax(150px, 1.4fr) minmax(120px, 1fr) 88px 76px 52px auto;
+  display: grid; grid-template-columns: minmax(160px, 1.4fr) minmax(130px, 1fr) 112px 92px 78px auto;
   gap: 8px; align-items: center; margin-bottom: 8px;
 }
 .rec-edit input[type="text"], .rec-edit input[type="number"] {
   width: 100%; font-size: 0.9rem; padding: 7px 9px;
   border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--ink);
 }
-.rec-edit .mini { display: flex; gap: 10px; justify-content: center; font-size: 0.85rem; color: var(--muted); }
-.rec-edit .mini input { accent-color: var(--accent); }
+.rec-edit .mini {
+  display: flex; gap: 8px; justify-content: flex-start; align-items: center;
+  font-size: 0.85rem; color: var(--muted); white-space: nowrap;
+}
+.rec-edit .mini label {
+  display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  padding: 5px 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg);
+}
+.rec-edit .mini label:hover { border-color: var(--accent); }
+.rec-edit .mini input { accent-color: var(--accent); margin: 0; }
 .btn-del {
   background: transparent; border: 1px solid transparent; color: var(--danger);
   font-size: 16px; cursor: pointer; padding: 4px 6px; border-radius: 6px;
