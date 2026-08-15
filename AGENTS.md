@@ -1,0 +1,166 @@
+# AGENTS.md — คู่มือ AI Agent สำหรับโปรเจกต์ Cloudflare DDNS Updater
+
+คู่มือนี้สำหรับ AI agent (Claude Code / opencode / Codex ฯลฯ) ที่จะทำงานในโปรเจกต์นี้ — **อ่านให้ครบก่อนแก้โค้ด** โดยเฉพาะส่วน "กับดักที่พบบ่อย" (มีประวัติเจอจริงทุกข้อ)
+
+---
+
+## 1. โปรเจกต์นี้คืออะไร
+
+Cloudflare DDNS Updater: โปรแกรม Python รันเป็น **Windows Service** ตรวจหา IP สาธารณะ (IPv4/IPv6) แล้วอัปเดต DNS record บน Cloudflare อัตโนมัติเมื่อ IP เปลี่ยน + **Web UI** (localhost) ดูสถานะ/ตั้งค่า + **Telegram notify** + **Cloudflare Tunnel** (cloudflared) + สแกนพอร์ต
+
+- ใช้ **stdlib ล้วน** (urllib, http.server, socket, configparser) + `pywin32` เท่านั้น — **ห้ามเพิ่ม dependency** (ไม่ใช้ requests/fastapi/flask)
+- Build เป็น exe ไฟล์เดียวด้วย PyInstaller (`build.bat`)
+- เอกสารผู้ใช้: `README.md`, `docs/` (GETTING-STARTED / USAGE / TROUBLESHOOTING), `CHANGELOG.md`
+- ทุกอย่างภาษาไทย (UI + log + เอกสาร) — ศัพท์เทคนิคอังกฤษได้
+
+## 2. โครงสร้างไฟล์
+
+```
+D:\MyCode\Cloudflare\
+├── cloudflare_ddns\
+│   ├── main.py            # entry: setup/run/dry-run/install/start/stop/restart/remove/status/webui/notify-test
+│   ├── config.py          # Config class: อ่าน/validate/save config.ini + fqdn_name + migrate_legacy_data
+│   ├── ddns.py            # DDNSEngine: loop ตรวจ IP -> เทียบ cache -> อัปเดต CF; daily report; run_forever
+│   ├── ip_detect.py       # get_public_ip(4/6) + nat_report (STUN) + is_cgnat/is_private
+│   ├── cloudflare_api.py  # CloudflareAPI: verify_token / zones / records CRUD (urllib ล้วน)
+│   ├── notifier.py        # TelegramNotifier: notify(event) -> build_message -> queue (atomic) + flush
+│   ├── tunnel.py          # TunnelManager: cloudflared download/start/stop/status (pid ใน tunnel.pid)
+│   ├── service.py         # Windows Service (pywin32): SvcDoRun -> webui thread + ddns loop + tunnel async
+│   └── webui.py           # Web UI ทั้งหมดในไฟล์เดียว: PAGE (HTML+CSS+JS) + handlers + wizard
+├── dist\cloudflare-ddns.exe   # exe ที่ build แล้ว (ข้อมูล runtime อยู่ข้าง exe)
+├── config.ini / state.json / notify_queue.json / tunnel.pid / logs\  # runtime (gitignored)
+├── config.example.ini
+├── build.bat / install.bat / uninstall.bat
+├── ui-check.mjs / ui-verify.mjs   # เทสต์ responsive ด้วย playwright (ต้อง npm i playwright ในโฟลเดอร์แยก)
+└── docs\ (GETTING-STARTED/USAGE/TROUBLESHOOTING) · CHANGELOG.md · LICENSE · PRODUCT.md · DESIGN.md
+```
+
+### webui.py — ไฟล์เดียวมี 3 ส่วน (ระวังที่สุด)
+1. **PAGE** (Python triple-quote string): HTML+CSS+JS ทั้งหมด — placeholder `__LOGIN__`, `__VERSION__` (แทนด้วย `.replace()`)
+2. **handlers** (`do_GET` / `do_POST`): endpoints ทั้งหมด
+3. helper: `_cfg_to_dict` / `_dict_to_ini` (แปลง config <-> JSON)
+
+## 3. คำสั่ง (ใช้ `python -m cloudflare_ddns.main <cmd>` หรือ `dist\cloudflare-ddns.exe <cmd>`)
+
+| คำสั่ง | ความหมาย |
+|---|---|
+| `setup` | wizard ตั้งค่าครั้งแรก (console) — เปิดเบราว์เซอร์ + ถาม token/zone/record/Telegram |
+| `run` | รัน foreground (เทสต์) |
+| `dry-run` | ตรวจรอบเดียว **ไม่แตะ record/state** |
+| `install` / `remove` | ติดตั้ง/ลบ Windows Service (admin) |
+| `start` / `stop` / `restart` | ควบคุม service |
+| `status` | สถานะ service + IP + tunnel |
+| `webui` | เปิด Web UI (blocking) |
+| `notify-test` | ส่งข้อความทดสอบ Telegram |
+| (ไม่มี args) | เปิด Web UI + browser อัตโนมัติ |
+| `run-service` | internal — SCM เรียก (ห้ามรันเองนอกจากเทสต์) |
+
+## 4. Web UI endpoints (webui.py)
+
+```
+GET  /            หน้า HTML
+GET  /status.json        สถานะ: records/records_time/history/telegram/tunnel/config_ok
+GET  /config.json        config เป็น JSON (ฟอร์มโหลด)
+GET  /config-file        config.ini ดิบ (โหมดแก้ไฟล์)
+GET  /setup-state        needs_setup (wizard หลัก auto-open)
+GET  /ip-check           IP สด + NAT report
+GET  /log                200 บรรทัดสุดท้าย
+GET  /notify-queue       คิว Telegram
+POST /login              cookie session (webui_password)
+POST /save-config        บันทึกฟอร์ม (โครงสร้างเดียวกับ /config.json)
+POST /save-file          บันทึกโหมดแก้ไฟล์ (validate ก่อนเขียน)
+POST /verify-token       ตรวจ API token + list zones
+POST /list-records       รายชื่อ record ของ zone (dropdown หลายที่)
+POST /resolve-chat-id    หา chat id (getUpdates + ลบ webhook อัตโนมัติเมื่อ 409)
+POST /notify-test / notify-test-raw
+POST /port-scan          สแกนพอร์ต (จำกัดเฉพาะ host ใน config เท่านั้น!)
+POST /notify-queue/flush|clear
+POST /tunnel/test|start|stop|download|bind|hostnames|unbind|sync|zones
+```
+
+**โครงสร้าง response:** `{"ok": true/false, "message": "ไทย", ...}` — error ใช้ HTTP 400/401/403
+
+## 5. กับดักที่พบบ่อย (เจอจริงทุกข้อ — อ่านก่อนแก้!)
+
+### Python ↔ JS ใน PAGE
+- `PAGE` เป็น Python string — **ห้ามใช้ `\"` ใน JS string** (Python แปลงเป็น `"` → JS syntax error) → ใช้ **อัญประกาศไทย “ ”** หรือ `'`
+- ตรวจ JS หลังแก้ทุกครั้ง: `python -c "จาก webui import PAGE; extract <script>..."` → `node --check` (ดูสคริปต์ตรวจด้านล่าง)
+- **id ใน HTML ห้ามซ้ำ** (เคยเจอ: `twz-steps` ซ้ำกับ progress dots → ปุ่มกดแล้วไป toggle ผิด element)
+- ใช้ `escapeHtml()` ทุกจุดที่แทรกค่าจาก server/API ลง innerHTML (wzMsg ครอบแล้ว)
+
+### Encoding / .bat
+- `.bat` ต้องเป็น **UTF-8 ไม่มี BOM + CRLF + `chcp 65001` บรรทัด 2** ไม่งั้นภาษาไทยเพี้ยน (cmd อ่านเป็น cp874)
+- ESC byte ใน .bat: ฝัง `0x1B` ตัวเดียวที่ `set "ESC="` แล้วอ้าง `%ESC%[92m` — เขียนไฟล์ด้วย Python/PowerShell ไม่งั้น write tool เขียน LF
+
+### พอร์ต 8123 / process
+- service เปิด webui เองที่ 8123 — **เทสต์ webui ด้วย port อื่น** (เช่น `WebUI(config_path, port=8126)`) ไม่งั้น request ไปโดน service เก่า → 404 งง ๆ
+- `ThreadingHTTPServer` มี `allow_reuse_address` → bind ซ้ำได้ → ระวัง service เก่าค้าง
+- exe onefile มี 2 process (bootloader + child) — kill ต้อง `taskkill /IM cloudflare-ddns.exe /F` หรือผ่าน service
+
+### state / queue (เขียนจากหลาย thread)
+- `state.json`, `notify_queue.json` เขียนจาก ddns loop + webui พร้อมกัน → **เขียนแบบ atomic เสมอ** (temp + `os.replace`) — ห้ามเขียนตรง ๆ
+- **dry-run ต้องไม่เขียน state** (`_save_state` เช็ค `self.dry_run`; `_invalidate_zone` ก็เช็ค)
+
+### Service
+- `service.py` ใช้ `SvcDoRun` (ไม่ใช่ SvcRun) + pywin32 306 ใช้ `PrepareToHostSingle` (ไม่มี `PrepareServiceHost` แล้ว)
+- **ห้ามบล็อก SvcDoRun นาน** (SCM timeout 30 วิ) — tunnel start ต้อง async thread (เคย crash 1053)
+- `run_forever` ครอบ try/except ทั้ง loop — ห้ามปล่อย exception หลุด (service ตายเงียบ)
+- หยุด service ไว: `stop_event.wait(min(interval, 5))`
+
+### build / deploy
+- **build.bat จะหยุด service → build → เริ่มใหม่เอง** (อย่า build ขณะ service รันด้วยมือ — exe ถูกล็อก PermissionError)
+- หลังแก้โค้ด ต้อง: `python -m compileall -q cloudflare_ddns` → rebuild → reinstall service → เทสต์
+- reinstall: `dist\cloudflare-ddns.exe remove/install/start` (admin) — หรือใช้ install.bat
+
+## 6. งานแก้ไขโค้ด — ขั้นตอนมาตรฐาน
+
+1. **อ่านก่อน**: ไฟล์ที่เกี่ยวข้อง + กับดักข้อ 5 + `field-journal`/git log ล่าสุด (ถ้ามี)
+2. แก้โค้ด → `python -m compileall -q cloudflare_ddns`
+3. ถ้าแตะ JS: สกัด `<script>` จาก PAGE → `node --check`
+4. เทสต์ logic ผ่าน `python` (ใช้ state/temp แยก อย่าแตะของจริง) — `dry-run` เสมอถ้าเป็น DDNS flow
+5. เทสต์ Web UI ผ่าน playwright (`ui-check.mjs`/`ui-verify.mjs` — ต้อง `npm i playwright` ในโฟลเดอร์ temp แยก เพราะไม่ควรมี node_modules ในโปรเจกต์) — เทสต์ทุกขนาดจอ 360-1920
+6. **rebuild + reinstall service** (svc-stop → PyInstaller → svc-reinstall) — ตรวจ `sc query CloudflareDDNS` = RUNNING + `curl http://127.0.0.1:8123/` = 200
+7. อัปเดต docs (README/CHANGELOG) ถ้าฟีเจอร์/behavior เปลี่ยน
+8. commit: `feat:` / `fix:` / `docs:` / `ui:` / `chore:` + คำอธิบายไทยสั้นกระชับ (ดู `git log --oneline`)
+
+## 7. แนวทางโค้ด
+
+- **ห้าม dependency ใหม่** — ใช้ urllib/socket/http.server/configparser เท่านั้น (+ pywin32 สำหรับ service)
+- ข้อความไทยทั้งหมด: UI, log, error — `sys.stdout.reconfigure(encoding="utf-8")` ที่ entry (Windows console)
+- Config ใหม่: เพิ่ม field ใน `config.py` **ทั้ง 2 จุด** (`__init__`/`reload()` และ `_load_from_parser()`) + `_cfg_to_dict`/`_dict_to_ini` ใน webui + `config.example.ini` + validate
+- validate config ก่อนบันทึกเสมอ (`Config.validate()` → `save_text` ใช้ validate กันเขียนไฟล์เสีย)
+- Cloudflare API: จับ `CloudflareRateLimit` (429) แยกจาก `CloudflareError` — rate limit → ข้ามรอบไม่ retry
+- tunnel token = JWT: `_decode_tunnel_token()` แยก `a` (account) / `t` (tunnel) จาก payload
+- ข้อมูล runtime ทั้งหมดอยู่ข้าง exe (`config_mod.DEFAULT_DATA_DIR`) — `migrate_legacy_data()` ย้ายจาก ProgramData ให้ครั้งเดียว
+
+## 8. สคริปต์ตรวจที่ควรมี
+
+```powershell
+# 1. syntax
+python -m compileall -q cloudflare_ddns
+
+# 2. JS syntax (หลังแก้ webui.py)
+python -c "import sys; from cloudflare_ddns.webui import PAGE; s=PAGE.index('<script>')+8; e=PAGE.index('</script>',s); open(r'$env:TEMP\page.js','w',encoding='utf-8').write(PAGE[s:e])"
+node --check "$env:TEMP\page.js"
+
+# 3. service สถานะ + webui
+sc query CloudflareDDNS
+curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8123/
+
+# 4. responsive (ui-verify.mjs) — ติดตั้ง playwright ในโฟลเดอร์ temp
+cd $env:TEMP\pw && npm i playwright && node D:\MyCode\Cloudflare\ui-verify.mjs
+
+# 5. rebuild + reinstall (admin UAC popup)
+powershell -File <temp>\svc-stop.cmd    # stop + taskkill
+python -m PyInstaller --noconfirm --clean --onefile --console --name cloudflare-ddns --icon assets\icon.ico --hidden-import servicemanager --hidden-import win32serviceutil --hidden-import win32service run.py
+powershell -File <temp>\svc-reinstall.cmd # remove+install+start
+```
+
+> svc-stop.cmd / svc-reinstall.cmd เป็นสคริปต์ช่วย (อยู่ใน temp ของแต่ละ session — สร้างใหม่ได้ตามคำสั่งใน install.bat/uninstall.bat)
+
+## 9. อย่าลืม
+
+- อย่า commit: `config.ini`, `state.json`, `notify_queue.json`, `logs/`, `cloudflared.exe`, `tunnel.pid`, `*.png` (gitignore มีแล้ว)
+- ไม่ push โดยไม่ได้รับคำสั่ง
+- ถ้าผู้ใช้ติดตั้ง service อยู่: หลัง rebuild **ต้อง reinstall/restart** ไม่งั้นผู้ใช้ยังใช้ exe เก่า (เว็บจะไม่เห็นฟีเจอร์ใหม่)
+- อัปเดต `CHANGELOG.md` เมื่อ feature/fix สำคัญ
