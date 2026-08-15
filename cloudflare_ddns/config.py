@@ -13,15 +13,18 @@
     [record:home.example.com]
     zone = example.com
     proxied = false
-    ttl = 120
+    ttl = 60
     ipv4 = true
     ipv6 = true
 """
 
 import configparser
+import logging
 import os
 import re
 import sys
+
+log = logging.getLogger("cloudflare-ddns")
 
 if getattr(sys, "frozen", False):
     # ตอนเป็น exe: หา config.ini จากโฟลเดอร์เดียวกับตัว exe (วางข้าง ๆ กันก็ใช้ได้)
@@ -41,12 +44,32 @@ MIN_INTERVAL = 15
 RECORD_SECTION_RE = re.compile(r"^record:(.+)$", re.IGNORECASE)
 
 
+def fqdn_name(name, zone):
+    """รวมชื่อ record กับ zone ให้เป็นชื่อเต็ม (home + example.com -> home.example.com).
+
+    - "@" -> zone
+    - ชื่อที่ลงท้ายด้วย .zone อยู่แล้ว -> ใช้ตรง
+    - ชื่อสั้น -> เติม .zone ให้
+    """
+    name = (name or "").strip().rstrip(".")
+    zone = (zone or "").strip().rstrip(".")
+    if not name:
+        return ""
+    if not zone:
+        return name
+    if name == "@":
+        return zone
+    if name == zone or name.endswith("." + zone):
+        return name
+    return f"{name}.{zone}"
+
+
 class ConfigError(Exception):
     """config.ini มีปัญหา"""
 
 
 class RecordConfig:
-    def __init__(self, name, zone="", proxied=False, ttl=120, ipv4=True, ipv6=True):
+    def __init__(self, name, zone="", proxied=False, ttl=60, ipv4=True, ipv6=True):
         self.name = name.strip().rstrip(".")
         self.zone = zone.strip().rstrip(".")
         self.proxied = bool(proxied)
@@ -79,6 +102,8 @@ class Config:
         self.notify_ip_change = True
         self.notify_error = True
         self.notify_created = True
+        self.daily_report = True
+        self.daily_report_time = "08:00"
         self.records = []
         self.last_error = ""
         self.reload()
@@ -116,6 +141,8 @@ class Config:
         self.notify_ip_change = self._as_bool(section, "notify_ip_change", True)
         self.notify_error = self._as_bool(section, "notify_error", True)
         self.notify_created = self._as_bool(section, "notify_created", True)
+        self.daily_report = self._as_bool(section, "daily_report", True)
+        self.daily_report_time = section.get("daily_report_time", "08:00").strip() or "08:00"
 
         self.records = []
         for name in self.parser.sections():
@@ -128,7 +155,7 @@ class Config:
                     name=match.group(1),
                     zone=rec_sec.get("zone", ""),
                     proxied=self._as_bool(rec_sec, "proxied", False),
-                    ttl=int(self._as_float(rec_sec, "ttl", 120)),
+                    ttl=int(self._as_float(rec_sec, "ttl", 60)),
                     ipv4=self._as_bool(rec_sec, "ipv4", True),
                     ipv6=self._as_bool(rec_sec, "ipv6", True),
                 )
@@ -167,9 +194,10 @@ class Config:
             if not rec.name:
                 errors.append("มี record ที่ชื่อว่างเปล่า")
                 continue
-            if rec.name in seen:
-                errors.append(f"record ซ้ำ: {rec.name}")
-            seen.add(rec.name)
+            fqdn = fqdn_name(rec.name, rec.zone)
+            if fqdn in seen:
+                errors.append(f"record ซ้ำ: {rec.name} (= {fqdn}) กับ record อื่นในรายการ")
+            seen.add(fqdn)
             if rec.ttl < 60:
                 errors.append(f"ttl ของ {rec.name} น้อยกว่า 60 (ขั้นต่ำที่ Cloudflare รองรับ)")
         return errors
@@ -199,9 +227,24 @@ class Config:
         errors = probe.validate()
         if errors:
             return False, "config ยังไม่สมบูรณ์: " + "; ".join(errors)
+        # สำรองไฟล์เดิมก่อนเขียน (หมุนเก็บ 5 อัน: .bak, .bak1 ... .bak4)
         try:
-            with open(self.path, "w", encoding="utf-8") as handle:
+            if os.path.isfile(self.path):
+                for i in range(4, 0, -1):
+                    src = f"{self.path}.bak{i}" if i > 1 else f"{self.path}.bak"
+                    dst = f"{self.path}.bak{i + 1}" if i > 1 else f"{self.path}.bak1"
+                    if os.path.isfile(src):
+                        os.replace(src, dst)
+                os.replace(self.path, self.path + ".bak")
+        except OSError as exc:
+            log.warning("สำรอง config ไม่ได้: %s", exc)
+
+        # เขียนแบบ atomic (temp + rename) กันไฟล์เสียกลางคัน
+        tmp_path = self.path + ".tmp"
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as handle:
                 handle.write(text)
+            os.replace(tmp_path, self.path)
         except OSError as exc:
             return False, f"เขียนไฟล์ไม่ได้: {exc}"
         self.reload()
@@ -226,6 +269,8 @@ class Config:
         self.notify_ip_change = self._as_bool(section, "notify_ip_change", True)
         self.notify_error = self._as_bool(section, "notify_error", True)
         self.notify_created = self._as_bool(section, "notify_created", True)
+        self.daily_report = self._as_bool(section, "daily_report", True)
+        self.daily_report_time = section.get("daily_report_time", "08:00").strip() or "08:00"
 
         self.records = []
         for name in self.parser.sections():
@@ -238,7 +283,7 @@ class Config:
                     name=match.group(1),
                     zone=rec_sec.get("zone", ""),
                     proxied=self._as_bool(rec_sec, "proxied", False),
-                    ttl=int(self._as_float(rec_sec, "ttl", 120)),
+                    ttl=int(self._as_float(rec_sec, "ttl", 60)),
                     ipv4=self._as_bool(rec_sec, "ipv4", True),
                     ipv6=self._as_bool(rec_sec, "ipv6", True),
                 )

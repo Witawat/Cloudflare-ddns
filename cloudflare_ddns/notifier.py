@@ -143,9 +143,11 @@ def load_queue():
 
 def save_queue(items):
     os.makedirs(os.path.dirname(QUEUE_PATH), exist_ok=True)
+    tmp = QUEUE_PATH + ".tmp"
     try:
-        with open(QUEUE_PATH, "w", encoding="utf-8") as handle:
+        with open(tmp, "w", encoding="utf-8") as handle:
             json.dump(items, handle, ensure_ascii=False, indent=2)
+        os.replace(tmp, QUEUE_PATH)
     except OSError as exc:
         log.warning("บันทึกคิวแจ้งเตือนไม่ได้: %s", exc)
 
@@ -154,15 +156,44 @@ def queue_size():
     return len(load_queue())
 
 
+def _tg_api(bot_token, method, timeout=10):
+    """เรียก Telegram Bot API ตรง ๆ คืน dict ที่ parse แล้ว"""
+    url = "https://api.telegram.org/bot{}/{}".format(bot_token.strip(), method)
+    with urllib.request.urlopen(url, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8", "replace"))
+
+
 def get_chat_id(bot_token, timeout=10):
     """หา chat_id ล่าสุดผ่าน getUpdates (ผู้ใช้ต้องเคยส่ง /start หรือข้อความให้ bot).
 
+    - ถ้าเจอ error 409 (มี webhook ค้าง) จะลบ webhook ให้อัตโนมัติแล้วลองใหม่
     คืน (chat_id_str หรือ "", error_message)
     """
-    url = "https://api.telegram.org/bot{}/getUpdates".format(bot_token.strip())
+    token = bot_token.strip()
+    if not token:
+        return "", "ไม่พบ bot token"
+
+    def fetch():
+        return _tg_api(token, "getUpdates", timeout=timeout)
+
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:
-            data = json.loads(response.read().decode("utf-8", "replace"))
+        data = fetch()
+    except urllib.error.HTTPError as exc:
+        if exc.code == 409:
+            # webhook ถูกตั้งค้างอยู่ -> ลบให้แล้วลองใหม่
+            log.warning("getUpdates ติด 409 (webhook ค้าง) — กำลังลบ webhook แล้วลองใหม่")
+            try:
+                _tg_api(token, "deleteWebhook", timeout=timeout)
+                data = fetch()
+            except urllib.error.HTTPError as exc2:
+                return "", (
+                    f"ลบ webhook แล้วก็ยังติด error {exc2.code}: {exc2} "
+                    "— ถ้า bot นี้กำลังรันกับโปรแกรมอื่นอยู่ ให้ปิดตัวนั้นก่อนแล้วลองใหม่"
+                )
+            except Exception as exc2:
+                return "", f"ลบ webhook ไม่ได้: {exc2}"
+        else:
+            return "", f"เรียก getUpdates ไม่ได้: {exc}"
     except Exception as exc:
         return "", f"เรียก getUpdates ไม่ได้: {exc}"
     if not data.get("ok"):

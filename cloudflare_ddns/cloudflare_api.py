@@ -13,6 +13,10 @@ class CloudflareError(Exception):
     """Cloudflare API คืน error หรือเชื่อมต่อไม่ได้"""
 
 
+class CloudflareRateLimit(CloudflareError):
+    """โดน rate limit (HTTP 429) — ควรหยุดยิง API ชั่วคราว"""
+
+
 class CloudflareAPI:
     def __init__(self, token):
         self._headers = {
@@ -32,6 +36,8 @@ class CloudflareAPI:
             with urllib.request.urlopen(request, timeout=20) as response:
                 raw = response.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as exc:
+            if exc.code == 429:
+                raise CloudflareRateLimit("rate limit (HTTP 429) — เกินโควตาเรียก API") from exc
             detail = ""
             try:
                 detail = exc.read().decode("utf-8", "replace")[:500]
@@ -56,7 +62,7 @@ class CloudflareAPI:
 
     def verify_token(self):
         """ตรวจว่า token ใช้งานได้"""
-        return self._request("GET", "/user/token/verify")
+        return self._request("GET", "/user/tokens/verify")
 
     def list_zones(self):
         """คืนรายชื่อ zone ทั้งหมดที่ token นี้เข้าถึงได้"""
@@ -97,6 +103,23 @@ class CloudflareAPI:
         query = urllib.parse.urlencode({"name": name.rstrip("."), "type": rtype})
         result = self._request("GET", f"/zones/{zone_id}/dns_records?{query}")
         return result[0] if result else None
+
+    def list_dns_records(self, zone_id, types=("A", "AAAA")):
+        """คืน record ทั้งหมดใน zone (เฉพาะชนิด A/AAAA ตามที่ระบุ)"""
+        out = []
+        for rtype in types:
+            page = 1
+            while True:
+                result = self._request(
+                    "GET", f"/zones/{zone_id}/dns_records?type={rtype}&per_page=100&page={page}"
+                )
+                if not result:
+                    break
+                out.extend(result)
+                if len(result) < 100:
+                    break
+                page += 1
+        return out
 
     def update_record(self, zone_id, record_id, content, ttl, proxied):
         """แก้ IP ของ record ที่มีอยู่"""

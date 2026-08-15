@@ -16,6 +16,16 @@ from . import notifier
 
 log = logging.getLogger("cloudflare-ddns")
 
+# ชื่อบริการสำหรับพอร์ตที่พบบ่อย
+PORT_SERVICES = {
+    20: "ftp-data", 21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns",
+    80: "http", 110: "pop3", 143: "imap", 443: "https", 445: "smb", 465: "smtps",
+    587: "smtp-sub", 993: "imaps", 995: "pop3s", 1433: "mssql", 1883: "mqtt",
+    3306: "mysql", 3389: "rdp", 5432: "postgres", 5900: "vnc", 6379: "redis",
+    8080: "http-alt", 8443: "https-alt", 9000: "php-fpm", 27017: "mongodb",
+}
+DEFAULT_SCAN_PORTS = [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 993, 995, 1433, 3306, 3389, 5900, 6379, 8080, 8443, 27017]
+
 PAGE = """<!DOCTYPE html>
 <html lang="th">
 <head>
@@ -266,6 +276,10 @@ __LOGIN__
       <h2>สถานะ IP</h2>
       <p>กดที่ IP เพื่อคัดลอก</p>
     </div>
+    <div id="public-ip" class="tg-row" style="margin-bottom:12px;padding:10px 12px;background:var(--surface-2);border-radius:8px">
+      <span class="tg-status"><b>IP สาธารณะปัจจุบัน</b> <span class="mono" id="pub-ipv4" style="color:var(--ink-2)">ตรวจ…</span><span class="muted" style="color:var(--muted)"> · IPv6: </span><span class="mono" id="pub-ipv6" style="color:var(--muted)">ตรวจ…</span><br><span id="nat-status" style="font-size:0.85rem;color:var(--muted)"></span></span>
+      <button id="recheckIp" class="btn-secondary">ตรวจใหม่</button>
+    </div>
     <div id="records" class="records"><p style="color:var(--muted)">กำลังโหลด…</p></div>
   </section>
 
@@ -275,6 +289,35 @@ __LOGIN__
       <span id="tgstatus" class="tg-status">กำลังโหลด…</span>
       <button id="tgTest" class="btn-secondary">ส่งข้อความทดสอบ</button>
     </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>สแกนพอร์ต</h2>
+      <p>ตรวจบริการที่เปิดอยู่บน host ที่ตั้งไว้ (resolve IP ปัจจุบันให้อัตโนมัติ)</p>
+    </div>
+    <div class="tg-row">
+      <select id="scan-host" class="wz-zone-select" style="max-width:280px"></select>
+      <input id="scan-ports" class="mono" style="flex:1;min-width:200px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--ink);font-size:0.9rem" value="21,22,23,25,53,80,110,143,443,445,993,995,1433,3306,3389,5900,6379,8080,8443,27017">
+      <button id="scanBtn" class="btn-primary">สแกน</button>
+    </div>
+    <div id="scan-result" style="margin-top:12px"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>ประวัติการอัปเดต</h2>
+      <p>50 รายการล่าสุด</p>
+    </div>
+    <div id="history"><p style="color:var(--muted)">กำลังโหลด…</p></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Log ล่าสุด</h2>
+      <button id="logReload" class="btn-secondary">โหลดใหม่</button>
+    </div>
+    <pre id="logview" style="margin:0;padding:10px 12px;background:var(--surface-2);border-radius:8px;font-family:'Cascadia Code',Consolas,monospace;font-size:0.8rem;color:var(--ink-2);max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-all">กำลังโหลด…</pre>
   </section>
 
   <section class="panel" id="settings-panel">
@@ -299,6 +342,14 @@ __LOGIN__
         <input id="interval" type="number" min="15" step="5">
       </label>
     </div>
+    <div class="grid2">
+      <label class="field">รหัสผ่านหน้าเว็บ (เว้นว่าง = ไม่ต้องใช้)
+        <input id="webui_password" type="password" autocomplete="off" placeholder="ตั้งไว้ถ้าไม่อยากให้ใครเปิดหน้าได้">
+      </label>
+      <label class="field">พอร์ตหน้าเว็บ
+        <input id="webui_port" type="number" min="1" max="65535" style="display:none">
+      </label>
+    </div>
     <div class="toggles">
       <label><input id="use_ipv4" type="checkbox"> อัปเดต IPv4 (A record)</label>
       <label><input id="use_ipv6" type="checkbox"> อัปเดต IPv6 (AAAA record)</label>
@@ -320,10 +371,18 @@ __LOGIN__
       <label><input id="notify_error" type="checkbox"> Error</label>
       <label><input id="notify_created" type="checkbox"> สร้าง record ใหม่</label>
     </div>
+    <div class="toggles">
+      <label><input id="daily_report" type="checkbox"> สรุปรายวันทาง Telegram</label>
+      <label class="field" style="margin-bottom:0">เวลา (HH:MM)<input id="daily_report_time" type="text" style="width:90px;display:inline-block;margin-left:6px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--ink)" placeholder="08:00"></label>
+    </div>
 
     <h3>DNS records</h3>
     <div id="records-editor"></div>
-    <button id="addRecord" class="btn-secondary" type="button">+ เพิ่ม record</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button id="addRecord" class="btn-secondary" type="button">+ เพิ่ม record</button>
+      <button id="loadRecords" class="btn-secondary" type="button">โหลดชื่อ record จาก Cloudflare</button>
+      <select id="rec-pick" class="wz-zone-select" hidden style="max-width:280px"></select>
+    </div>
     </div>
 
     <div id="file-view" hidden>
@@ -390,16 +449,21 @@ async function loadStatus() {
     const box = $("records");
     const entries = Object.entries(s.records || {});
     if (!entries.length) {
-      box.innerHTML = '<p style="color:var(--muted)">ยังไม่มีข้อมูล IP (รอรอบแรกของ service)</p>';
+      const msg = s.config_ok
+        ? 'ยังไม่มีข้อมูล IP (รอรอบแรกของ service)'
+        : 'ยังไม่ได้ตั้งค่า config — ทำตาม wizard หรือส่วน "ตั้งค่า" ให้ครบก่อน (IP จะถูกอัปเดตให้อัตโนมัติ)';
+      box.innerHTML = '<p style="color:var(--muted)">' + msg + "</p>";
     } else {
       box.innerHTML = entries.map(([key, ip]) => {
         const err = s.record_errors && s.record_errors[key];
         const kind = err ? "err" : (ip ? "ok" : "idle");
+        const t = (s.records_time || {})[key];
+        const timeText = t ? new Date(t).toLocaleString("th-TH") : "—";
         return '<div class="record-row ' + kind + '">' +
           '<span class="rec-dot"></span>' +
           '<span class="rec-name mono">' + escapeHtml(key) + "</span>" +
           '<span class="rec-ip mono clickable" title="กดเพื่อคัดลอก" onclick="copyIp(this)">' + (ip || "ยังไม่ตั้งค่า") + "</span>" +
-          '<span class="rec-meta">' + (err ? escapeHtml(err) : "อัปเดตล่าสุด") + "</span></div>";
+          '<span class="rec-meta">' + (err ? escapeHtml(err) : "อัปเดตล่าสุด " + timeText) + "</span></div>";
       }).join("");
     }
 
@@ -411,6 +475,21 @@ async function loadStatus() {
       tgBox.innerHTML = html;
     } else {
       tgBox.innerHTML = '<span>ยังไม่ได้ตั้งค่า</span> · <span style="color:var(--muted)">ใส่ token ในฟอร์มด้านล่าง หรือรัน setup</span>';
+    }
+
+    const hist = s.history || [];
+    const histBox = $("history");
+    if (!hist.length) {
+      histBox.innerHTML = '<p style="color:var(--muted)">ยังไม่มีประวัติ (รอการอัปเดตครั้งแรก)</p>';
+    } else {
+      histBox.innerHTML = '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden"><table style="font-size:0.85rem;width:100%">' +
+        '<tr style="background:var(--surface-2)"><th style="padding:5px 10px;text-align:left">เวลา</th><th style="padding:5px 10px;text-align:left">record</th><th style="padding:5px 10px;text-align:left">การกระทำ</th><th style="padding:5px 10px;text-align:left">IP</th></tr>' +
+        hist.slice().reverse().map(h => {
+          const t = h.time ? new Date(h.time).toLocaleString("th-TH") : "-";
+          const act = { updated: "อัปเดต IP", created: "สร้าง record" }[h.action] || h.action;
+          const cls = h.action === "updated" ? "" : "ok";
+          return '<tr class="' + cls + '"><td style="padding:5px 10px;color:var(--muted)">' + t + '</td><td class="mono" style="padding:5px 10px">' + escapeHtml(h.record) + " (" + escapeHtml(h.type || "") + ')</td><td style="padding:5px 10px">' + act + '</td><td class="mono" style="padding:5px 10px">' + escapeHtml(h.ip || "-") + "</td></tr>";
+        }).join("") + "</table></div>";
     }
   } catch (e) {
     $("pill").textContent = "อ่านสถานะไม่ได้";
@@ -430,6 +509,8 @@ async function copyIp(el) {
 /* ---------- ตั้งค่า ---------- */
 
 let recordsData = [];
+let currentWebuiPassword = "";
+let currentWebuiPort = 8123;
 
 async function loadConfig() {
   try {
@@ -439,6 +520,9 @@ async function loadConfig() {
     $("interval").value = c.cloudflare.interval_seconds;
     $("use_ipv4").checked = !!c.cloudflare.use_ipv4;
     $("use_ipv6").checked = !!c.cloudflare.use_ipv6;
+    $("webui_password").value = c.cloudflare.webui_password;
+    currentWebuiPassword = c.cloudflare.webui_password;
+    currentWebuiPort = c.cloudflare.webui_port || 8123;
     $("tg_token").value = c.telegram.bot_token;
     $("tg_chat").value = c.telegram.chat_id;
     $("notify_start").checked = !!c.telegram.notify_start;
@@ -446,8 +530,11 @@ async function loadConfig() {
     $("notify_ip_change").checked = !!c.telegram.notify_ip_change;
     $("notify_error").checked = !!c.telegram.notify_error;
     $("notify_created").checked = !!c.telegram.notify_created;
+    $("daily_report").checked = !!c.telegram.daily_report;
+    $("daily_report_time").value = c.telegram.daily_report_time || "08:00";
     recordsData = c.records.map(r => ({ ...r }));
     renderRecordsEditor();
+    loadScanHosts();
   } catch (e) {
     toast("โหลด config ไม่ได้: " + e, "err");
   }
@@ -461,7 +548,7 @@ function renderRecordsEditor() {
   }
   box.innerHTML = recordsData.map((r, i) => `
     <div class="rec-edit">
-      <input type="text" data-i="${i}" data-k="name" value="${escapeHtml(r.name)}" placeholder="home.example.com">
+      <input type="text" data-i="${i}" data-k="name" value="${escapeHtml(r.name)}" placeholder="home (เติม .zone ให้) หรือ @">
       <input type="text" data-i="${i}" data-k="zone" value="${escapeHtml(r.zone)}" placeholder="zone (เว้น = เดาให้)">
       <div class="mini" title="ผ่าน orange cloud ของ Cloudflare">
         <label><input type="checkbox" data-i="${i}" data-k="proxied" ${r.proxied ? "checked" : ""}> proxy</label>
@@ -479,7 +566,7 @@ function renderRecordsEditor() {
       const i = +inp.dataset.i;
       const k = inp.dataset.k;
       if (inp.type === "checkbox") recordsData[i][k] = inp.checked;
-      else if (k === "ttl") recordsData[i][k] = Math.max(60, Math.floor(+inp.value || 120));
+      else if (k === "ttl") recordsData[i][k] = Math.max(60, Math.floor(+inp.value || 60));
       else recordsData[i][k] = inp.value;
     });
   });
@@ -491,16 +578,34 @@ function renderRecordsEditor() {
   });
 }
 
+function recKey(r) {
+  const n = (r.name || "").trim().replace(/\.+$/, "");
+  const z = (r.zone || "").trim().replace(/\.+$/, "");
+  if (!n) return "";
+  if (!z) return n.toLowerCase();
+  if (n === "@") return z.toLowerCase();
+  if (n === z || n.endsWith("." + z)) return n.toLowerCase();
+  return (n + "." + z).toLowerCase();
+}
+
 async function saveConfig() {
   const btn = $("saveBtn");
   btn.disabled = true;
+  const keys = recordsData.map(recKey);
+  const dup = keys.find((k, i) => k && keys.indexOf(k) !== i);
+  if (dup) {
+    toast("record ซ้ำ: " + dup + " (กรอกชื่อซ้ำกัน)", "err");
+    btn.disabled = false;
+    return;
+  }
   const payload = {
     cloudflare: {
       api_token: $("api_token").value.trim(),
       interval_seconds: Math.max(15, Math.floor(+$("interval").value || 60)),
       use_ipv4: $("use_ipv4").checked,
       use_ipv6: $("use_ipv6").checked,
-      webui_password: "",
+      webui_port: currentWebuiPort,
+      webui_password: $("webui_password").value.trim(),
     },
     telegram: {
       bot_token: $("tg_token").value.trim(),
@@ -510,6 +615,8 @@ async function saveConfig() {
       notify_ip_change: $("notify_ip_change").checked,
       notify_error: $("notify_error").checked,
       notify_created: $("notify_created").checked,
+      daily_report: $("daily_report").checked,
+      daily_report_time: $("daily_report_time").value.trim() || "08:00",
     },
     records: recordsData,
   };
@@ -522,13 +629,129 @@ async function saveConfig() {
     const j = await r.json();
     toast(j.ok ? "บันทึกสำเร็จ — มีผลในรอบถัดไป" : "บันทึกไม่สำเร็จ: " + j.message, j.ok ? "ok" : "err");
     if (j.ok) {
+      const pwChanged = $("webui_password").value.trim() !== currentWebuiPassword;
       loadConfig();
       loadStatus();
+      if (pwChanged) {
+        toast(payload.cloudflare.webui_password ? "ตั้งรหัสผ่านหน้าเว็บแล้ว — กำลังรีเฟรช ต้องเข้าสู่ระบบใหม่" : "ลบรหัสผ่านหน้าเว็บแล้ว", "ok");
+        setTimeout(() => location.reload(), 1500);
+      }
     }
   } catch (e) {
     toast("บันทึกไม่ได้: " + e, "err");
   }
   btn.disabled = false;
+}
+
+async function loadIp() {
+  const v4 = $("pub-ipv4");
+  const v6 = $("pub-ipv6");
+  const nat = $("nat-status");
+  v4.textContent = "ตรวจ…";
+  v6.textContent = "ตรวจ…";
+  nat.textContent = "";
+  try {
+    const r = await fetch("/ip-check");
+    const j = await r.json();
+    v4.textContent = j.ipv4 || "ไม่พบ (IPv4)";
+    v6.textContent = j.ipv6 || "ไม่มี (IPv6)";
+    if (j.nat) {
+      const bad = j.nat.nat_type === "cg-nat" || j.nat.nat_type === "private-ip";
+      nat.innerHTML = (bad ? '<span style="color:var(--danger)">⚠ ' : '<span style="color:var(--ok)">✓ ') + escapeHtml(j.nat.message) + "</span>";
+    }
+  } catch (e) {
+    v4.textContent = "อ่านไม่ได้: " + e;
+  }
+}
+
+async function loadCloudflareRecords() {
+  const zone = recordsData.find(r => r.zone)?.zone;
+  if (!zone) { toast("กรุณาใส่ zone ของ record ก่อน", "err"); return; }
+  const btn = $("loadRecords");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/list-records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ zone }),
+    });
+    const j = await r.json();
+    if (!j.ok) { toast("โหลดไม่ได้: " + j.message, "err"); btn.disabled = false; return; }
+    const sel = $("rec-pick");
+    if (!j.records.length) { toast("ไม่มี A/AAAA record ใน zone นี้ (จะสร้างให้เองเมื่อมี IP)", "err"); btn.disabled = false; return; }
+    sel.hidden = false;
+    sel.innerHTML = '<option value="">— เลือก record ที่มีอยู่ —</option>' +
+      j.records.map(n => '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + "</option>").join("");
+    sel.onchange = () => {
+      if (!sel.value) return;
+      const row = recordsData.find(x => !x.name) || recordsData[recordsData.length - 1];
+      row.name = sel.value;
+      renderRecordsEditor();
+      sel.value = "";
+    };
+  } catch (e) {
+    toast("error: " + e, "err");
+  }
+  btn.disabled = false;
+}
+
+/* ---------- สแกนพอร์ต ---------- */
+
+function loadScanHosts() {
+  const sel = $("scan-host");
+  const hosts = [];
+  for (const r of recordsData) {
+    const k = recKey(r);
+    if (k) hosts.push(k);
+  }
+  sel.innerHTML = hosts.length
+    ? hosts.map(h => '<option value="' + escapeHtml(h) + '">' + escapeHtml(h) + "</option>").join("")
+    : '<option value="">— ยังไม่มี record ใน config —</option>';
+}
+
+async function scanPorts() {
+  const host = $("scan-host").value;
+  const btn = $("scanBtn");
+  if (!host) { toast("ยังไม่มี host ให้สแกน (ตั้ง record ก่อน)", "err"); return; }
+  btn.disabled = true;
+  const box = $("scan-result");
+  box.innerHTML = '<p style="color:var(--muted)">กำลังสแกน ' + escapeHtml(host) + " ...</p>";
+  try {
+    const r = await fetch("/port-scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host, ports: $("scan-ports").value.split(",").map(s => s.trim()).filter(Boolean) }),
+    });
+    const j = await r.json();
+    if (!j.ok) { box.innerHTML = '<p style="color:var(--danger)">' + escapeHtml(j.message) + "</p>"; btn.disabled = false; return; }
+    const open = j.ports.filter(p => p.status === "open");
+    const filtered = j.ports.filter(p => p.status === "filtered");
+    const rows = j.ports.map(p => {
+      const cls = p.status === "open" ? "ok" : (p.status === "filtered" ? "" : "muted");
+      const label = { open: "เปิด", filtered: "ไม่มีตอบ (ไฟร์วอลล์?)", closed: "ปิด" }[p.status];
+      return '<tr class="' + cls + '"><td class="mono">' + p.port + '</td><td class="mono">' + escapeHtml(p.service || "-") + "</td><td>" + label + "</td></tr>";
+    }).join("");
+    box.innerHTML =
+      '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden"><table style="font-size:0.9rem;width:100%">' +
+      '<tr style="background:var(--surface-2)"><th style="padding:6px 10px;text-align:left">พอร์ต</th><th style="padding:6px 10px;text-align:left">บริการ</th><th style="padding:6px 10px;text-align:left">สถานะ</th></tr>' +
+      rows + "</table></div>" +
+      '<p style="margin-top:8px;font-size:0.85rem;color:var(--ink-2)">' + escapeHtml(j.host) + " → " + escapeHtml(j.ip) +
+      " · เปิด " + open.length + " · ปิด " + (j.ports.length - open.length - filtered.length) + " · ไม่มีตอบ " + filtered.length + "</p>";
+  } catch (e) {
+    box.innerHTML = '<p style="color:var(--danger)">error: ' + escapeHtml(e) + "</p>";
+  }
+  btn.disabled = false;
+}
+
+async function loadLog() {
+  const box = $("logview");
+  try {
+    const r = await fetch("/log");
+    box.textContent = await r.text();
+    box.scrollTop = box.scrollHeight;
+  } catch (e) {
+    box.textContent = "อ่าน log ไม่ได้: " + e;
+  }
 }
 
 async function tgTest() {
@@ -684,27 +907,60 @@ function renderWizard() {
 
   else if (wzStep === 3) {
     if (!wzData.records.length) {
-      wzData.records = [{ name: "", proxied: false, ttl: 120 }];
+      wzData.records = [{ name: "", proxied: false, ttl: 60 }];
     }
     const zoneOptions = wzZones.length
       ? '<select id="wz-zone" class="wz-zone-select">' + wzZones.map(z => '<option value="' + escapeHtml(z) + '">' + escapeHtml(z) + "</option>").join("") + "</select>"
       : '<input id="wz-zone" type="text" class="wz-zone-select" placeholder="example.com">';
     body.innerHTML =
       '<p class="wz-step-title">ขั้นตอนที่ 2: เลือกโดเมน (zone) และ record</p>' +
-      '<p class="wz-step-sub">เลือกโดเมน แล้วระบุชื่อ record ที่ต้องการให้อัปเดต IP ให้ (เช่น home.example.com หรือ @ สำหรับหน้าหลัก)</p>' +
+      '<p class="wz-step-sub">เลือกโดเมน แล้วระบุชื่อ record — ใส่แค่ชื่อสั้น ๆ ก็ได้ (เช่น home) โปรแกรมเติม .โดเมน ให้อัตโนมัติ ส่วน @ คือหน้าหลักของโดเมน</p>' +
       '<label class="field">Zone (โดเมน)' + zoneOptions + "</label>" +
+      '<div style="margin:2px 0 10px">' +
+      '<button class="btn-secondary" type="button" id="wz-load-records">โหลดชื่อ record ที่มีอยู่จาก Cloudflare</button> ' +
+      '<select id="wz-record-pick" class="wz-zone-select" style="margin-top:6px" hidden></select></div>' +
       '<h3 style="margin-top:16px">Record ที่จะอัปเดต</h3><div id="wz-records"></div>' +
       '<button class="btn-secondary" type="button" id="wz-add-record">+ เพิ่ม record</button>' +
       actions(true, "ต่อไป →");
     $("wz-back").addEventListener("click", () => { wzStep = 2; renderWizard(); });
     $("wz-add-record").addEventListener("click", () => {
-      wzData.records.push({ name: "", proxied: false, ttl: 120 });
+      wzData.records.push({ name: "", proxied: false, ttl: 60 });
       renderWzRecords();
+    });
+    $("wz-load-records").addEventListener("click", async () => {
+      const zone = ($("wz-zone").value || "").trim();
+      if (!zone) { toast("เลือก zone ก่อน", "err"); return; }
+      const btn = $("wz-load-records");
+      btn.disabled = true;
+      try {
+        const r = await fetch("/list-records", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: wzData.token, zone }),
+        });
+        const j = await r.json();
+        if (!j.ok) { toast("โหลดไม่ได้: " + j.message, "err"); btn.disabled = false; return; }
+        const sel = $("wz-record-pick");
+        sel.hidden = false;
+        sel.innerHTML = '<option value="">— เลือก record ที่มีอยู่ —</option>' +
+          j.records.map(n => '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + "</option>").join("");
+        sel.onchange = () => {
+          if (!sel.value) return;
+          const row = wzData.records.find(x => !x.name) || wzData.records[0];
+          row.name = sel.value;
+          renderWzRecords();
+          sel.value = "";
+        };
+      } catch (e) {
+        toast("error: " + e, "err");
+      }
+      btn.disabled = false;
     });
     renderWzRecords();
     $("wz-next").addEventListener("click", () => {
       const zoneSel = $("wz-zone");
       wzData.zone = (zoneSel.value || "").trim();
+      if (!wzData.zone) { toast("กรุณาเลือก zone ก่อน", "err"); return; }
       const recs = wzData.records.map((r, i) => ({
         name: r.name,
         zone: wzData.zone,
@@ -713,8 +969,10 @@ function renderWizard() {
         ipv4: true,
         ipv6: true,
       }));
-      if (!wzData.zone) { toast("กรุณาเลือก zone ก่อน", "err"); return; }
       if (!recs.length || !recs[0].name) { toast("กรุณากรอกชื่อ record อย่างน้อย 1 ตัว", "err"); return; }
+      const keys = recs.map(recKey);
+      const dup = keys.find((k, i) => k && keys.indexOf(k) !== i);
+      if (dup) { toast("record ซ้ำ: " + dup + " (กรอกชื่อซ้ำกัน)", "err"); return; }
       wzData.records = recs;
       wzStep = 4;
       renderWizard();
@@ -833,7 +1091,7 @@ function renderWzRecords() {
   const box = $("wz-records");
   box.innerHTML = wzData.records.map((r, i) =>
     '<div class="rec-edit">' +
-    '<input type="text" data-i="' + i + '" data-k="name" value="' + escapeHtml(r.name) + '" placeholder="home.example.com หรือ @">' +
+    '<input type="text" data-i="' + i + '" data-k="name" value="' + escapeHtml(r.name) + '" placeholder="home (เติม .zone ให้) หรือ @">' +
     '<div class="mini" title="ผ่าน orange cloud ของ Cloudflare"><label><input type="checkbox" data-i="' + i + '" data-k="proxied" ' + (r.proxied ? "checked" : "") + "> proxy</label></div>" +
     '<input type="number" data-i="' + i + '" data-k="ttl" value="' + r.ttl + '" min="60" title="TTL (วินาที)">' +
     '<button class="btn-del" type="button" data-del="' + i + '" title="ลบ record">×</button></div>').join("");
@@ -843,7 +1101,7 @@ function renderWzRecords() {
       const i = +inp.dataset.i;
       const k = inp.dataset.k;
       if (inp.type === "checkbox") wzData.records[i][k] = inp.checked;
-      else if (k === "ttl") wzData.records[i][k] = Math.max(60, Math.floor(+inp.value || 120));
+      else if (k === "ttl") wzData.records[i][k] = Math.max(60, Math.floor(+inp.value || 60));
       else wzData.records[i][k] = inp.value;
     });
   });
@@ -860,18 +1118,24 @@ function renderWzRecords() {
 $("mode-form").addEventListener("click", () => setMode("form"));
 $("mode-file").addEventListener("click", () => setMode("file"));
 $("saveFileBtn").addEventListener("click", saveFileMode);
+$("loadRecords").addEventListener("click", loadCloudflareRecords);
 $("wz-skip").addEventListener("click", closeWizard);
 
+$("logReload").addEventListener("click", loadLog);
 $("refresh").addEventListener("click", loadStatus);
+$("recheckIp").addEventListener("click", loadIp);
+$("scanBtn").addEventListener("click", scanPorts);
 $("saveBtn").addEventListener("click", saveConfig);
 $("addRecord").addEventListener("click", () => {
-  recordsData.push({ name: "", zone: "", proxied: false, ttl: 120, ipv4: true, ipv6: true });
+  recordsData.push({ name: "", zone: "", proxied: false, ttl: 60, ipv4: true, ipv6: true });
   renderRecordsEditor();
 });
 $("tgTest").addEventListener("click", tgTest);
 
 loadStatus();
 loadConfig();
+loadIp();
+loadLog();
 checkSetup();
 setInterval(loadStatus, 10000);
 </script>
@@ -901,6 +1165,8 @@ def _cfg_to_dict(cfg):
             "notify_ip_change": cfg.notify_ip_change,
             "notify_error": cfg.notify_error,
             "notify_created": cfg.notify_created,
+            "daily_report": cfg.daily_report,
+            "daily_report_time": cfg.daily_report_time,
         },
         "records": [
             {
@@ -938,6 +1204,8 @@ def _dict_to_ini(data):
     kv("notify_ip_change", str(bool(tg.get("notify_ip_change", True))).lower())
     kv("notify_error", str(bool(tg.get("notify_error", True))).lower())
     kv("notify_created", str(bool(tg.get("notify_created", True))).lower())
+    kv("daily_report", str(bool(tg.get("daily_report", True))).lower())
+    kv("daily_report_time", str(tg.get("daily_report_time", "08:00")).strip() or "08:00")
     lines.append("")
     for rec in data.get("records", []):
         name = str(rec.get("name", "")).strip().rstrip(".")
@@ -946,7 +1214,7 @@ def _dict_to_ini(data):
         lines.append(f"[record:{name}]")
         kv("zone", str(rec.get("zone", "")).strip().rstrip("."))
         kv("proxied", str(bool(rec.get("proxied", False))).lower())
-        kv("ttl", max(int(rec.get("ttl", 120)), 60))
+        kv("ttl", max(int(rec.get("ttl", 60)), 60))
         kv("ipv4", str(bool(rec.get("ipv4", True))).lower())
         kv("ipv6", str(bool(rec.get("ipv6", True))).lower())
         lines.append("")
@@ -955,6 +1223,19 @@ def _dict_to_ini(data):
 
 class WebUIHandler(BaseHTTPRequestHandler):
     server_version = "CloudflareDDNSWebUI/2.0"
+
+    def _load_records_time(self):
+        """อ่าน records_time จาก state.json (เวลา IP ล่าสุดของแต่ละ record)"""
+        try:
+            import json as _json
+            import os
+
+            path = os.path.join(config_mod.DEFAULT_DATA_DIR, "state.json")
+            with open(path, "r", encoding="utf-8") as handle:
+                state = _json.load(handle)
+            return state.get("records_time", {})
+        except (OSError, ValueError):
+            return {}
 
     @property
     def cfg(self):
@@ -1008,11 +1289,42 @@ async function doLogin(ev) {
     # ---- GET ----
 
     def do_GET(self):
+        if self.path == "/ip-check":
+            from . import ip_detect
+
+            import concurrent.futures
+
+            def check(version):
+                return version, ip_detect.get_public_ip(version, timeout=6)
+
+            result = {"ipv4": "", "ipv6": "", "nat": None}
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(check, 4), pool.submit(check, 6)]
+                for future in concurrent.futures.as_completed(futures):
+                    version, ip = future.result()
+                    result["ipv4" if version == 4 else "ipv6"] = ip or ""
+            if result["ipv4"]:
+                result["nat"] = ip_detect.nat_report(result["ipv4"], timeout=5)
+            return self._send_json(200, result)
+
+        if self.path == "/log":
+            import os
+
+            log_path = os.path.join(self.cfg.log_dir, "cloudflare-ddns.log")
+            try:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as handle:
+                    lines = handle.readlines()
+                body = "".join(lines[-200:])
+                return self._send(200, body, "text/plain; charset=utf-8")
+            except OSError as exc:
+                return self._send(200, f"(ยังไม่มีไฟล์ log: {exc})", "text/plain; charset=utf-8")
+
         if self.path == "/status.json":
             if not self._authed():
                 return self._send_json(401, {"ok": False, "message": "unauthorized"})
             engine = ddns.DDNSEngine(self.server.config_path)
             status = engine.status()
+            status["records_time"] = self._load_records_time()
             cfg_errors = self.cfg.validate()
             status["config_ok"] = not cfg_errors
             status["config_errors"] = cfg_errors
@@ -1118,6 +1430,79 @@ async function doLogin(ev) {
                 return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
             ok, message = self.cfg.save_text(str(data.get("text", "")))
             return self._send_json(200 if ok else 400, {"ok": ok, "message": message})
+
+        if self.path == "/list-records":
+            from . import cloudflare_api
+
+            try:
+                data = json.loads(body)
+            except ValueError:
+                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+            token = str(data.get("token") or "").strip() or self.cfg.api_token
+            zone = str(data.get("zone") or "").strip()
+            if not token:
+                return self._send_json(400, {"ok": False, "message": "ไม่พบ token (ตั้งค่า Cloudflare ก่อน)"})
+            if not zone:
+                return self._send_json(400, {"ok": False, "message": "ไม่พบ zone"})
+            api = cloudflare_api.CloudflareAPI(token)
+            try:
+                zone_id = api.get_zone_id(zone)
+                records = api.list_dns_records(zone_id)
+            except cloudflare_api.CloudflareError as exc:
+                return self._send_json(400, {"ok": False, "message": str(exc)})
+            names = sorted({r["name"] for r in records})
+            return self._send_json(200, {"ok": True, "records": names})
+
+        if self.path == "/port-scan":
+            import concurrent.futures
+            import socket
+
+            from .config import fqdn_name
+
+            try:
+                data = json.loads(body)
+            except ValueError:
+                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+            host = str(data.get("host", "")).strip().rstrip(".")
+            allowed = {fqdn_name(rec.name, rec.zone).lower() for rec in self.cfg.records}
+            if host.lower() not in allowed:
+                return self._send_json(
+                    403,
+                    {"ok": False, "message": "อนุญาตให้สแกนเฉพาะ host ที่ตั้งไว้ใน config เท่านั้น"},
+                )
+            try:
+                ports = [int(p) for p in (data.get("ports") or DEFAULT_SCAN_PORTS)]
+                ports = [p for p in ports if 1 <= p <= 65535]
+            except (TypeError, ValueError):
+                return self._send_json(400, {"ok": False, "message": "รายการพอร์ตไม่ถูกต้อง (คั่นด้วย ,)"})
+            if not ports:
+                return self._send_json(400, {"ok": False, "message": "ไม่มีพอร์ตให้สแกน"})
+            try:
+                ip = socket.gethostbyname(host)
+            except socket.gaierror as exc:
+                return self._send_json(400, {"ok": False, "message": f"resolve {host} ไม่ได้: {exc}"})
+
+            def _probe(port):
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1.5)
+                try:
+                    result = sock.connect_ex((ip, port))
+                except socket.error:
+                    result = -1
+                finally:
+                    sock.close()
+                if result == 0:
+                    status = "open"
+                elif result in (10060, 110, -1):
+                    status = "filtered"
+                else:
+                    status = "closed"
+                return {"port": port, "service": PORT_SERVICES.get(port, ""), "status": status}
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=64) as pool:
+                results = list(pool.map(_probe, ports))
+            results.sort(key=lambda r: r["port"])
+            return self._send_json(200, {"ok": True, "host": host, "ip": ip, "ports": results})
 
         if self.path == "/save-config":
             try:

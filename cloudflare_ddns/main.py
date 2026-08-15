@@ -312,6 +312,24 @@ def cmd_webui(args):
     webui.WebUI(args.config, port=args.port, password=args.password).serve_forever()
 
 
+def cmd_default(args):
+    """รันโดยไม่ใส่คำสั่ง: เปิด Web UI + เบราว์เซอร์ให้เลย (ถ้า config ไม่ครบ wizard จะขึ้นเอง)."""
+    from . import webui
+
+    setup_console_logging()
+    cfg = config_mod.Config(args.config)
+    errors = cfg.validate()
+    if errors:
+        print("ยังไม่ได้ตั้งค่า — กำลังเปิดหน้าตั้งค่า (wizard)...")
+    else:
+        print("เปิด Web UI ที่ http://127.0.0.1:%d (ปิดด้วย Ctrl+C)" % cfg.webui_port)
+    try:
+        webbrowser.open(f"http://127.0.0.1:{cfg.webui_port}")
+    except Exception:
+        pass
+    webui.WebUI(args.config).serve_forever()
+
+
 def run_service_entry():
     from . import service as service_mod
 
@@ -332,7 +350,7 @@ def main(argv=None):
         description="Cloudflare DDNS Updater — Windows service สำหรับอัปเดต DNS อัตโนมัติ",
         parents=[parent],
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")
 
     for name in ("setup", "run", "dry-run", "install", "remove", "start", "stop", "restart", "status", "notify-test"):
         sub.add_parser(name, parents=[parent])
@@ -354,7 +372,10 @@ def main(argv=None):
         "notify-test": cmd_notify_test,
         "webui": cmd_webui,
     }
-    commands[args.command](args)
+    if args.command is None:
+        cmd_default(args)
+    else:
+        commands[args.command](args)
 
 
 if __name__ == "__main__":

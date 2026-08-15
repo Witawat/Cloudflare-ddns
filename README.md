@@ -126,7 +126,7 @@ ipv6 = true
 - `[record:ชื่อ]` ใส่ได้หลายตัว คัดลอก section เพิ่มเรื่อย ๆ ได้เลย
 - `zone`: ชื่อ zone ใน Cloudflare (ถ้าเว้นไว้จะพยายามเดาจากชื่อ record)
 - `proxied`: `true` = ผ่าน orange cloud ของ Cloudflare
-- `ttl`: 120–7200 วินาที
+- `ttl`: 60–7200 วินาที (ใช้ 60 = IP ใหม่กระจายเร็วสุด หลังเน็ตกลับมา/IP เปลี่ยน)
 - `ipv4` / `ipv6`: เปิด/ปิดการอัปเดต A / AAAA ของ record นั้น
 - `interval_seconds`: ความถี่ในการตรวจ (ขั้นต่ำ 15)
 

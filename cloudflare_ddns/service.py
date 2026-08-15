@@ -63,7 +63,7 @@ def _make_service_class():
             self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
             self._stop_event.set()
 
-        def SvcRun(self):
+        def SvcDoRun(self):
             import servicemanager
 
             servicemanager.LogMsg(
@@ -74,23 +74,47 @@ def _make_service_class():
             cfg = config_mod.Config(config_mod.DEFAULT_CONFIG_PATH)
             setup_file_logging(cfg.log_dir)
             log.info("service เริ่มทำงาน (interval=%ss)", cfg.interval_seconds)
-            ddns.run_forever(
-                config_mod.DEFAULT_CONFIG_PATH,
-                dry_run=False,
-                stop_event=self._stop_event,
-            )
+
+            # เปิด Web UI ไปพร้อมกันด้วย (เข้าผ่าน http://127.0.0.1:8123 ได้ตลอด)
+            web_ui = None
+            try:
+                from . import webui as webui_mod
+
+                web_ui = webui_mod.WebUI(config_mod.DEFAULT_CONFIG_PATH)
+                web_ui.start()
+                log.info("Web UI เปิดที่ http://127.0.0.1:%d", web_ui.port)
+            except Exception as exc:
+                log.warning("เปิด Web UI ไม่ได้: %s", exc)
+
+            try:
+                ddns.run_forever(
+                    config_mod.DEFAULT_CONFIG_PATH,
+                    dry_run=False,
+                    stop_event=self._stop_event,
+                )
+            finally:
+                if web_ui is not None:
+                    try:
+                        web_ui.stop()
+                    except Exception:
+                        pass
             log.info("service หยุดทำงาน")
 
     return CloudflareDDNSService
 
 
 def run_service_entry():
-    """entry ที่ Windows Service Control Manager เรียก (ผ่าน pythonw.exe)."""
+    """entry ที่ Windows Service Control Manager เรียก (ผ่าน exe/pythonw)."""
     import servicemanager
 
     servicemanager.Initialize()
     cls = _make_service_class()
-    servicemanager.PrepareServiceHost(cls)
+    if hasattr(servicemanager, "PrepareServiceHost"):
+        # pywin32 รุ่นเก่า
+        servicemanager.PrepareServiceHost(cls)
+    else:
+        # pywin32 306+ เปลี่ยนชื่อ API
+        servicemanager.PrepareToHostSingle(cls)
     servicemanager.StartServiceCtrlDispatcher()
 
 
@@ -107,12 +131,20 @@ def _service_util():
 def install_service():
     """ลงทะเบียน service เข้า Windows (ต้องรันด้วยสิทธิ์ administrator).
 
+    - ถ้าติดตั้งไว้แล้ว จะลบ (และหยุด) อันเก่าก่อน แล้วติดตั้งใหม่ทับ
     - โหมด exe (PyInstaller frozen): ติดตั้งด้วยตัว exe เอง
     - โหมด source: ติดตั้งด้วย pythonw.exe + path ของ main.py
     """
     import sys
 
     win32service, win32serviceutil = _service_util()
+    status = service_status()
+    if status.get("installed"):
+        try:
+            win32serviceutil.StopService(SERVICE_NAME)
+        except Exception:
+            pass
+        win32serviceutil.RemoveService(SERVICE_NAME)
     if getattr(sys, "frozen", False):
         exe = sys.executable
         exe_args = "run-service"
@@ -134,7 +166,10 @@ def install_service():
 
 def remove_service():
     win32service, win32serviceutil = _service_util()
-    win32serviceutil.StopService(SERVICE_NAME)
+    try:
+        win32serviceutil.StopService(SERVICE_NAME)
+    except Exception:
+        pass  # 1062 = service ไม่ได้ start อยู่ — ข้ามได้
     win32serviceutil.RemoveService(SERVICE_NAME)
     return f"ลบ service '{SERVICE_NAME}' เรียบร้อย"
 
