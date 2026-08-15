@@ -351,7 +351,15 @@ __LOGIN__
         <input id="webui_password" type="password" autocomplete="off" placeholder="ตั้งไว้ถ้าไม่อยากให้ใครเปิดหน้าได้">
       </label>
       <label class="field">พอร์ตหน้าเว็บ
-        <input id="webui_port" type="number" min="1" max="65535" style="display:none">
+        <input id="webui_port" type="number" min="1" max="65535" placeholder="8123">
+      </label>
+    </div>
+    <div class="grid2">
+      <label class="field">ที่เก็บ log (เว้นว่าง = โฟลเดอร์เดียวกับ exe)
+        <input id="log_dir" type="text" class="mono" autocomplete="off" placeholder="เช่น D:\CloudflareDDNS\logs">
+      </label>
+      <label class="field">ที่เก็บข้อมูล (state, คิว) — เว้นว่าง = โฟลเดอร์เดียวกับ exe
+        <input id="data_dir" type="text" class="mono" autocomplete="off" placeholder="(คงที่: โฟลเดอร์เดียวกับ exe)" disabled>
       </label>
     </div>
     <div class="toggles">
@@ -526,7 +534,9 @@ async function loadConfig() {
     $("use_ipv6").checked = !!c.cloudflare.use_ipv6;
     $("webui_password").value = c.cloudflare.webui_password;
     currentWebuiPassword = c.cloudflare.webui_password;
+    $("webui_port").value = c.cloudflare.webui_port || 8123;
     currentWebuiPort = c.cloudflare.webui_port || 8123;
+    $("log_dir").value = c.cloudflare.log_dir || "";
     $("tg_token").value = c.telegram.bot_token;
     $("tg_chat").value = c.telegram.chat_id;
     $("notify_start").checked = !!c.telegram.notify_start;
@@ -608,8 +618,9 @@ async function saveConfig() {
       interval_seconds: Math.max(15, Math.floor(+$("interval").value || 60)),
       use_ipv4: $("use_ipv4").checked,
       use_ipv6: $("use_ipv6").checked,
-      webui_port: currentWebuiPort,
+      webui_port: Math.max(1, Math.min(65535, Math.floor(+$("webui_port").value || currentWebuiPort))),
       webui_password: $("webui_password").value.trim(),
+      log_dir: $("log_dir").value.trim(),
     },
     telegram: {
       bot_token: $("tg_token").value.trim(),
@@ -634,8 +645,12 @@ async function saveConfig() {
     toast(j.ok ? "บันทึกสำเร็จ — มีผลในรอบถัดไป" : "บันทึกไม่สำเร็จ: " + j.message, j.ok ? "ok" : "err");
     if (j.ok) {
       const pwChanged = $("webui_password").value.trim() !== currentWebuiPassword;
+      const portChanged = payload.cloudflare.webui_port !== currentWebuiPort;
       loadConfig();
       loadStatus();
+      if (portChanged) {
+        toast("เปลี่ยนพอร์ตหน้าเว็บแล้ว — restart service (restart.bat) เพื่อให้มีผล", "ok");
+      }
       if (pwChanged) {
         toast(payload.cloudflare.webui_password ? "ตั้งรหัสผ่านหน้าเว็บแล้ว — กำลังรีเฟรช ต้องเข้าสู่ระบบใหม่" : "ลบรหัสผ่านหน้าเว็บแล้ว", "ok");
         setTimeout(() => location.reload(), 1500);
@@ -1210,6 +1225,7 @@ def _cfg_to_dict(cfg):
             "use_ipv6": cfg.use_ipv6,
             "webui_port": cfg.webui_port,
             "webui_password": cfg.webui_password,
+            "log_dir": cfg.log_dir if cfg.log_dir != config_mod.DEFAULT_LOG_DIR else "",
         },
         "telegram": {
             "bot_token": cfg.telegram_bot_token,
@@ -1251,6 +1267,7 @@ def _dict_to_ini(data):
     kv("use_ipv6", str(bool(cf.get("use_ipv6"))).lower())
     kv("webui_port", int(cf.get("webui_port", 8123)))
     kv("webui_password", str(cf.get("webui_password", "")).strip())
+    kv("log_dir", str(cf.get("log_dir", "")).strip())
     kv("telegram_bot_token", str(tg.get("bot_token", "")).strip())
     kv("telegram_chat_id", str(tg.get("chat_id", "")).strip())
     kv("notify_start", str(bool(tg.get("notify_start", True))).lower())
