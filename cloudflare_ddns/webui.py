@@ -288,7 +288,11 @@ __LOGIN__
     <div class="tg-row">
       <span id="tgstatus" class="tg-status">กำลังโหลด…</span>
       <button id="tgTest" class="btn-secondary">ส่งข้อความทดสอบ</button>
+      <button id="tgQueueBtn" class="btn-secondary">ดูคิว</button>
+      <button id="tgFlushBtn" class="btn-secondary">ลองส่งใหม่</button>
+      <button id="tgClearBtn" class="btn-secondary">ล้างคิว</button>
     </div>
+    <div id="tg-queue" hidden style="margin-top:10px"></div>
   </section>
 
   <section class="panel">
@@ -764,6 +768,53 @@ async function tgTest() {
   }
 }
 
+async function tgQueue() {
+  const box = $("tg-queue");
+  if (!box.hidden) { box.hidden = true; return; }
+  try {
+    const r = await fetch("/notify-queue");
+    const j = await r.json();
+    const items = j.queue || [];
+    box.hidden = false;
+    if (!items.length) {
+      box.innerHTML = '<p style="color:var(--muted)">คิวว่าง — ไม่มีข้อความค้างส่ง</p>';
+      return;
+    }
+    box.innerHTML = '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden"><table style="font-size:0.85rem;width:100%">' +
+      '<tr style="background:var(--surface-2)"><th style="padding:5px 10px;text-align:left">#</th><th style="padding:5px 10px;text-align:left">ข้อความ</th></tr>' +
+      items.map((m, i) => '<tr><td style="padding:5px 10px;color:var(--muted)">' + (i + 1) + '</td><td style="padding:5px 10px;white-space:pre-wrap;word-break:break-all">' + escapeHtml(m) + "</td></tr>").join("") +
+      "</table></div>" +
+      '<p style="margin-top:6px;font-size:0.85rem;color:var(--muted)">รวม ' + items.length + " ข้อความ — กด “ลองส่งใหม่” เพื่อส่งทันที หรือ “ล้างคิว” เพื่อทิ้ง</p>";
+  } catch (e) {
+    toast("อ่านคิวไม่ได้: " + e, "err");
+  }
+}
+
+async function tgFlush() {
+  try {
+    const r = await fetch("/notify-queue/flush", { method: "POST" });
+    const j = await r.json();
+    toast(j.ok ? "ส่งใหม่ " + j.sent + " ข้อความ (เหลือค้าง " + j.failed + ")" : "ไม่สำเร็จ: " + j.message, j.ok ? (j.failed ? "err" : "ok") : "err");
+    tgQueue();
+    loadStatus();
+  } catch (e) {
+    toast("error: " + e, "err");
+  }
+}
+
+async function tgClear() {
+  if (!confirm("ล้างข้อความค้างส่งทั้งหมดในคิว?")) return;
+  try {
+    const r = await fetch("/notify-queue/clear", { method: "POST" });
+    const j = await r.json();
+    toast(j.ok ? "ล้างคิวแล้ว" : "ไม่สำเร็จ: " + j.message, j.ok ? "ok" : "err");
+    tgQueue();
+    loadStatus();
+  } catch (e) {
+    toast("error: " + e, "err");
+  }
+}
+
 /* ---------- โหมดแก้ไขไฟล์โดยตรง ---------- */
 
 let fileLoaded = false;
@@ -1131,6 +1182,9 @@ $("addRecord").addEventListener("click", () => {
   renderRecordsEditor();
 });
 $("tgTest").addEventListener("click", tgTest);
+$("tgQueueBtn").addEventListener("click", tgQueue);
+$("tgFlushBtn").addEventListener("click", tgFlush);
+$("tgClearBtn").addEventListener("click", tgClear);
 
 loadStatus();
 loadConfig();
@@ -1306,6 +1360,11 @@ async function doLogin(ev) {
             if result["ipv4"]:
                 result["nat"] = ip_detect.nat_report(result["ipv4"], timeout=5)
             return self._send_json(200, result)
+
+        if self.path == "/notify-queue":
+            if not self._authed():
+                return self._send_json(401, {"ok": False, "message": "unauthorized"})
+            return self._send_json(200, {"ok": True, "queue": notifier.load_queue()})
 
         if self.path == "/log":
             import os
@@ -1504,6 +1563,21 @@ async function doLogin(ev) {
             results.sort(key=lambda r: r["port"])
             return self._send_json(200, {"ok": True, "host": host, "ip": ip, "ports": results})
 
+        if self.path == "/notify-queue/flush":
+            if not self._authed():
+                return self._send_json(401, {"ok": False, "message": "unauthorized"})
+            notify = notifier.TelegramNotifier.from_config(self.cfg)
+            if not notify.enabled:
+                return self._send_json(400, {"ok": False, "message": "ยังไม่ได้ตั้งค่า Telegram ใน config"})
+            sent, failed = notify.flush()
+            return self._send_json(200, {"ok": True, "sent": sent, "failed": failed})
+
+        if self.path == "/notify-queue/clear":
+            if not self._authed():
+                return self._send_json(401, {"ok": False, "message": "unauthorized"})
+            notifier.clear_queue()
+            return self._send_json(200, {"ok": True, "message": "ล้างคิวแล้ว"})
+
         if self.path == "/save-config":
             try:
                 data = json.loads(body)
@@ -1525,6 +1599,7 @@ async function doLogin(ev) {
 
 class WebUI:
     def __init__(self, config_path=config_mod.DEFAULT_CONFIG_PATH, port=None, password=None):
+        config_mod.migrate_legacy_data()
         self.config_path = config_path
         self.cfg = config_mod.Config(config_path)
         self.port = port or self.cfg.webui_port

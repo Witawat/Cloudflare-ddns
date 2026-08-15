@@ -264,6 +264,7 @@ def _send_daily_report(engine, cfg, notify):
 def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_event=None):
     """ลูปหลัก: รันทุก interval ตาม config (อ่าน config ใหม่ทุกรอบ)."""
     log.info("เริ่ม DDNS loop (dry_run=%s)", dry_run)
+    config_mod.migrate_legacy_data()
     cfg0 = config_mod.Config(config_path)
     notify = notifier.TelegramNotifier.from_config(cfg0)
     if not dry_run:

@@ -32,11 +32,44 @@ if getattr(sys, "frozen", False):
 else:
     PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_CONFIG_PATH = os.path.join(PROJECT_DIR, "config.ini")
-DEFAULT_DATA_DIR = os.path.join(
-    os.environ.get("PROGRAMDATA", r"C:\ProgramData"), "CloudflareDDNS"
-)
+# ข้อมูลทั้งหมด (state, queue, log) อยู่ข้าง exe เพื่อให้ย้ายโฟลเดอร์ได้ทั้งชุด
+DEFAULT_DATA_DIR = PROJECT_DIR
 DEFAULT_LOG_DIR = os.path.join(DEFAULT_DATA_DIR, "logs")
 DEFAULT_STATE_PATH = os.path.join(DEFAULT_DATA_DIR, "state.json")
+# ตำแหน่งเดิม (ก่อนย้าย) ใช้ย้ายข้อมูลให้อัตโนมัติครั้งเดียว
+LEGACY_DATA_DIR = os.path.join(
+    os.environ.get("PROGRAMDATA", r"C:\ProgramData"), "CloudflareDDNS"
+)
+
+
+def migrate_legacy_data():
+    """ย้ายข้อมูลจากโฟลเดอร์ ProgramData เดิมมาข้าง exe (ครั้งเดียว, idempotent).
+
+    ย้าย: state.json, notify_queue.json และโฟลเดอร์ logs/ ทั้งหมด
+    """
+    if LEGACY_DATA_DIR == DEFAULT_DATA_DIR:
+        return
+    if not os.path.isdir(LEGACY_DATA_DIR):
+        return
+    import shutil
+
+    for name in ("state.json", "notify_queue.json"):
+        src = os.path.join(LEGACY_DATA_DIR, name)
+        dst = os.path.join(DEFAULT_DATA_DIR, name)
+        if os.path.isfile(src) and not os.path.isfile(dst):
+            try:
+                shutil.copy2(src, dst)
+                log.info("ย้าย %s มาอยู่ข้าง exe แล้ว", name)
+            except OSError as exc:
+                log.warning("ย้าย %s ไม่ได้: %s", name, exc)
+    src_logs = os.path.join(LEGACY_DATA_DIR, "logs")
+    dst_logs = os.path.join(DEFAULT_DATA_DIR, "logs")
+    if os.path.isdir(src_logs) and not os.path.isdir(dst_logs):
+        try:
+            shutil.copytree(src_logs, dst_logs)
+            log.info("ย้ายโฟลเดอร์ logs มาอยู่ข้าง exe แล้ว")
+        except OSError as exc:
+            log.warning("ย้าย logs ไม่ได้: %s", exc)
 
 DEFAULT_INTERVAL = 60
 MIN_INTERVAL = 15

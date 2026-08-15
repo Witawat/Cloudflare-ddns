@@ -85,18 +85,19 @@ class TelegramNotifier:
     # ---- จุดเรียกจากภายนอก ----
 
     def notify(self, event, text):
-        """แจ้งเหตุการณ์: ตรวจ enable -> กันซ้ำ -> ส่ง หรือเก็บคิวถ้าส่งไม่ได้."""
+        """แจ้งเหตุการณ์: สร้างข้อความ -> ตรวจ enable -> กันซ้ำ -> เก็บคิว."""
         if not self.enabled:
             return
         if not self.event_enabled(event):
             return
+        message = build_message(event, text)
         # กันสแปม: error ข้อความเดิมซ้ำกับรอบก่อน ไม่ส่งซ้ำ
-        dedupe_key = f"{event}|{text}"
+        dedupe_key = f"{event}|{message}"
         if event == EVENT_ERROR and dedupe_key == self._last_dedupe_key:
-            log.debug("ข้ามการแจ้ง (ซ้ำ): %s", text)
+            log.debug("ข้ามการแจ้ง (ซ้ำ): %s", message)
             return
         self._last_dedupe_key = dedupe_key
-        self._enqueue(text)
+        self._enqueue(message)
 
     def _enqueue(self, text):
         items = load_queue()
@@ -156,6 +157,11 @@ def queue_size():
     return len(load_queue())
 
 
+def clear_queue():
+    """ล้างคิวทั้งหมด (ปุ่มใน Web UI)"""
+    save_queue([])
+
+
 def _tg_api(bot_token, method, timeout=10):
     """เรียก Telegram Bot API ตรง ๆ คืน dict ที่ parse แล้ว"""
     url = "https://api.telegram.org/bot{}/{}".format(bot_token.strip(), method)
@@ -207,17 +213,32 @@ def get_chat_id(bot_token, timeout=10):
     return "", "ยังไม่มีข้อความจาก bot — เปิดแชทกับ bot แล้วกด /start ก่อนลองใหม่"
 
 
-# ---- ตัวอย่างข้อความ ----
+# ---- ข้อความแจ้งเตือน ----
+
+
+def short_error(text, limit=110):
+    """ย่อข้อความ error ให้อ่านง่าย (ตัด JSON/รายละเอียดยาว ๆ ทิ้ง)."""
+    text = str(text or "").strip()
+    if not text:
+        return "ไม่ทราบสาเหตุ"
+    # ตัด JSON (เช่น HTTP 400: {"success":false,...}) ทิ้ง เหลือเฉพาะข้อความหลัก
+    if "{" in text:
+        text = text.split("{", 1)[0].strip()
+    if len(text) > limit:
+        text = text[: limit - 1].rstrip() + "…"
+    return text
+
 
 def build_message(event, detail=None):
+    """สร้างข้อความแจ้งเตือนรูปแบบอ่านง่าย (ภาษาไทย สั้น กระชับ)."""
     if event == EVENT_START:
-        return "🟢 Cloudflare DDNS เริ่มทำงาน" + (f"\n{detail}" if detail else "")
+        return "🟢 DDNS เริ่มทำงาน\n" + (detail or "")
     if event == EVENT_STOP:
-        return "🔴 Cloudflare DDNS หยุดทำงาน" + (f"\n{detail}" if detail else "")
+        return "🔴 DDNS หยุดทำงาน" + (f"\n{detail}" if detail else "")
     if event == EVENT_IP_CHANGE:
-        return f"🔄 IP เปลี่ยน: {detail}"
+        return "🔄 IP เปลี่ยน\n" + (detail or "")
     if event == EVENT_CREATED:
-        return f"🆕 สร้าง record ใหม่: {detail}"
+        return "🆕 สร้าง record ใหม่\n" + (detail or "")
     if event == EVENT_ERROR:
-        return f"⚠️ เกิดปัญหา: {detail}"
+        return "⚠️ มีปัญหา\n" + short_error(detail)
     return detail or ""
