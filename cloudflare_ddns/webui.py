@@ -151,7 +151,7 @@ label.field input:focus, label.field select:focus {
 
 /* records editor */
 .rec-edit {
-  display: grid; grid-template-columns: minmax(160px, 1.4fr) minmax(130px, 1fr) 112px 92px 78px auto;
+  display: grid; grid-template-columns: minmax(160px, 1.4fr) minmax(130px, 1fr) 120px 100px 122px auto;
   gap: 8px; align-items: center; margin-bottom: 8px;
 }
 .rec-edit input[type="text"], .rec-edit input[type="number"] {
@@ -211,6 +211,8 @@ label.field input:focus, label.field select:focus {
 /* แท็บเล็ต/จอเล็ก: record editor เปลี่ยนเป็น 2 คอลัมน์ (ชื่อ+zone / proxy+ttl / 4-6+ลบ) */
 @media (max-width: 860px) {
   .rec-edit { grid-template-columns: 1fr 1fr; }
+  .rec-edit .mini label { padding: 4px 6px; }
+  .rec-edit .btn-del { justify-self: end; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
@@ -292,7 +294,7 @@ __LOGIN__
   <section class="panel">
     <div class="panel-head">
       <h2>สถานะ IP</h2>
-      <p>กดที่ IP เพื่อคัดลอก</p>
+      <p>กดที่ชื่อหรือ IP เพื่อคัดลอก</p>
     </div>
     <div id="public-ip" class="tg-row" style="margin-bottom:12px;padding:10px 12px;background:var(--surface-2);border-radius:8px">
       <span class="tg-status"><b>IP สาธารณะปัจจุบัน</b> <span class="mono" id="pub-ipv4" style="color:var(--ink-2)">ตรวจ…</span><span class="muted" style="color:var(--muted)"> · IPv6: </span><span class="mono" id="pub-ipv6" style="color:var(--muted)">ตรวจ…</span><br><span id="nat-status" style="font-size:0.85rem;color:var(--muted)"></span></span>
@@ -491,8 +493,8 @@ async function loadStatus() {
         const timeText = t ? new Date(t).toLocaleString("th-TH") : "—";
         return '<div class="record-row ' + kind + '">' +
           '<span class="rec-dot"></span>' +
-          '<span class="rec-name mono">' + escapeHtml(key) + "</span>" +
-          '<span class="rec-ip mono clickable" title="กดเพื่อคัดลอก" onclick="copyIp(this)">' + (ip || "ยังไม่ตั้งค่า") + "</span>" +
+          '<span class="rec-name mono clickable" title="กดเพื่อคัดลอกชื่อ" onclick="copyIp(this)">' + escapeHtml(key) + "</span>" +
+          '<span class="rec-ip mono clickable" title="กดเพื่อคัดลอก IP" onclick="copyIp(this)">' + (ip || "ยังไม่ตั้งค่า") + "</span>" +
           '<span class="rec-meta">' + (err ? escapeHtml(err) : "อัปเดตล่าสุด " + timeText) + "</span></div>";
       }).join("");
     }
@@ -512,13 +514,13 @@ async function loadStatus() {
     if (!hist.length) {
       histBox.innerHTML = '<p style="color:var(--muted)">ยังไม่มีประวัติ (รอการอัปเดตครั้งแรก)</p>';
     } else {
-      histBox.innerHTML = '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden"><table style="font-size:0.85rem;width:100%">' +
-        '<tr style="background:var(--surface-2)"><th style="padding:5px 10px;text-align:left">เวลา</th><th style="padding:5px 10px;text-align:left">record</th><th style="padding:5px 10px;text-align:left">การกระทำ</th><th style="padding:5px 10px;text-align:left">IP</th></tr>' +
+      histBox.innerHTML = '<div style="border:1px solid var(--border);border-radius:8px;overflow-x:auto"><table style="font-size:0.85rem;width:100%;min-width:560px">' +
+        '<tr style="background:var(--surface-2)"><th style="padding:5px 10px;text-align:left;white-space:nowrap">เวลา</th><th style="padding:5px 10px;text-align:left">record</th><th style="padding:5px 10px;text-align:left;white-space:nowrap">การกระทำ</th><th style="padding:5px 10px;text-align:left;white-space:nowrap">IP</th></tr>' +
         hist.slice().reverse().map(h => {
           const t = h.time ? new Date(h.time).toLocaleString("th-TH") : "-";
           const act = { updated: "อัปเดต IP", created: "สร้าง record" }[h.action] || h.action;
           const cls = h.action === "updated" ? "" : "ok";
-          return '<tr class="' + cls + '"><td style="padding:5px 10px;color:var(--muted)">' + t + '</td><td class="mono" style="padding:5px 10px">' + escapeHtml(h.record) + " (" + escapeHtml(h.type || "") + ')</td><td style="padding:5px 10px">' + act + '</td><td class="mono" style="padding:5px 10px">' + escapeHtml(h.ip || "-") + "</td></tr>";
+          return '<tr class="' + cls + '"><td style="padding:5px 10px;color:var(--muted);white-space:nowrap">' + t + '</td><td class="mono" style="padding:5px 10px;word-break:break-all">' + escapeHtml(h.record) + " (" + escapeHtml(h.type || "") + ')</td><td style="padding:5px 10px;white-space:nowrap">' + act + '</td><td class="mono" style="padding:5px 10px;white-space:nowrap">' + escapeHtml(h.ip || "-") + "</td></tr>";
         }).join("") + "</table></div>";
     }
   } catch (e) {
