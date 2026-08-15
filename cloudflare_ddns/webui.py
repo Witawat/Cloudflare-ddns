@@ -985,7 +985,7 @@ function renderTunnelWizard() {
       '<button class="btn-secondary" type="button" id="twz-help">ดูวิธีหา token</button></div>' +
       '<label class="field">Tunnel Token<input id="twz-token" type="password" autocomplete="off" placeholder="eyJhIjoi..."></label>' +
       '<div id="twz-msg"></div>' +
-      '<div class="wz-help" id="twz-steps" hidden><b>วิธีหา token (ทีละขั้น):</b><ol>' +
+      '<div class="wz-help" id="twz-token-steps" hidden><b>วิธีหา token (ทีละขั้น):</b><ol>' +
       "<li>กดปุ่ม “เปิด Zero Trust” แล้วล็อกอิน</li>" +
       "<li>เมนูซ้าย: Networks → Tunnels → Create a tunnel</li>" +
       "<li>ตั้งชื่อ (เช่น home) → เลือกวิธี Cloudflare-managed → ต่อไป</li>" +
@@ -995,7 +995,7 @@ function renderTunnelWizard() {
     $("twz-back").addEventListener("click", () => { twzStep = 1; renderTunnelWizard(); });
     $("twz-open-zt").addEventListener("click", () => window.open("https://one.dash.cloudflare.com/?to=/:account/networks/tunnels", "_blank"));
     $("twz-help").addEventListener("click", () => {
-      const h = $("twz-steps");
+      const h = $("twz-token-steps");
       h.hidden = !h.hidden;
       $("twz-help").textContent = h.hidden ? "ดูวิธีหา token" : "ซ่อนวิธีทำ";
     });
