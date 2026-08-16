@@ -174,3 +174,4 @@ powershell -File <temp>\svc-reinstall.cmd # remove+install+start
 - ไม่ push โดยไม่ได้รับคำสั่ง
 - ถ้าผู้ใช้ติดตั้ง service อยู่: หลัง rebuild **ต้อง reinstall/restart** ไม่งั้นผู้ใช้ยังใช้ exe เก่า (เว็บจะไม่เห็นฟีเจอร์ใหม่)
 - อัปเดต `CHANGELOG.md` เมื่อ feature/fix สำคัญ
+- **เครื่อง dev (เครื่องนี้): ห้ามติดตั้ง service** — ใช้ `build.bat` (build อย่างเดียว ไม่ต้อง admin ถ้าไม่มี service) · webui ทดสอบรันด้วย `python -m cloudflare_ddns.main webui` (ปิดด้วย Ctrl+C) — ถ้า build เจอ `PermissionError` (exe ล็อก) = มี webui/python ค้าง ต้องปิดก่อน · release แนบ exe ที่ build จากเครื่อง dev นี้ (ใช้ `build-install.bat` เฉพาะเครื่องปลายทางที่ต้องการ service)

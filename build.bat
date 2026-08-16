@@ -10,21 +10,26 @@ set "RED=%ESC%[91m"
 set "CYN=%ESC%[96m"
 set "RST=%ESC%[0m"
 
-rem Relaunch with admin rights if needed (stopping the service requires admin)
-net session >nul 2>&1
-if errorlevel 1 (
-    echo %YEL%[*]%RST% Requesting administrator privileges...
-    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
-    exit /b
-)
-
 cd /d "%~dp0"
 
-rem Stop the service if running (the exe is locked while the service is running)
+rem Admin only needed when the service is installed (stopping it requires admin).
+rem On a dev machine without the service, build directly as normal user.
+set "HAS_SVC=0"
 sc query CloudflareDDNS >nul 2>&1
 if errorlevel 1 (
-    echo %YEL%[*]%RST% Service not installed - nothing to stop.
+    echo %YEL%[*]%RST% Service not installed - no admin needed.
 ) else (
+    set "HAS_SVC=1"
+    net session >nul 2>&1
+    if errorlevel 1 (
+        echo %YEL%[*]%RST% Requesting administrator privileges...
+        powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+        exit /b
+    )
+)
+
+rem Stop the service if running (the exe is locked while the service is running)
+if "%HAS_SVC%"=="1" (
     echo %YEL%[*]%RST% Stopping service ^(build only - will NOT restart^)...
     sc stop CloudflareDDNS >nul 2>&1
     taskkill /F /IM cloudflare-ddns.exe >nul 2>&1
@@ -39,7 +44,7 @@ python -m PyInstaller --noconfirm --clean --onefile --console ^
     --hidden-import win32service ^
     run.py
 if errorlevel 1 (
-    echo %RED%[x]%RST% Build failed.
+    echo %RED%[x]%RST% Build failed ^(exe locked? close webui/python first^).
     pause
     exit /b 1
 )
