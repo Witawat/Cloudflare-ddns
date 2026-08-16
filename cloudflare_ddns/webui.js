@@ -489,10 +489,11 @@ async function loadIp() {
     v6.textContent = j.ipv6 || "ไม่มี (IPv6)";
     if (j.nat) {
       // แดง = CGNAT ของ ISP / IP private (DDNS ใช้ไม่ได้จริง)
-      // เขียว = NAT ส่วนตัวในบ้าน (double-nat กี่ชั้นก็ได้) / public — ใช้งานได้ปกติ
+      // เขียว = NAT ส่วนตัวในบ้าน (double-nat กี่ชั้นก็ได้) / public (nat 1:1) — ใช้งานได้ปกติ
       const bad = j.nat.nat_type === "cg-nat" || j.nat.nat_type === "private-ip";
+      const cls = bad ? "var(--danger)" : "var(--ok)";
       const icon = bad ? "⚠" : "✓";
-      nat.innerHTML = '<span class="pill ' + (bad ? "err" : "ok") + '" style="display:inline-block;margin-top:6px;white-space:normal;text-align:left">' + icon + " " + escapeHtml(j.nat.message) + "</span>";
+      nat.innerHTML = '<span style="color:' + cls + '">' + icon + " " + escapeHtml(j.nat.message) + "</span>";
     }
   } catch (e) {
     logClientError("loadIp", e);
