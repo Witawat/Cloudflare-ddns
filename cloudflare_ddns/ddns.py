@@ -330,16 +330,10 @@ class DDNSEngine:
 
 
 def _build_start_message(cfg):
-    """สร้างเนื้อหาข้อความ 'เริ่มทำงาน' (หัวข้อและเวลา build_message เติมให้):
-    เครื่อง / IP ที่ตรวจได้ / รายการ DDNS + Tunnel"""
-    import socket as _socket
-
+    """สร้างเนื้อหาข้อความ 'เริ่มทำงาน' (หัวข้อ/เวลา/ชื่อเครื่อง build_message เติมให้):
+    IP ที่ตรวจได้ / รายการ DDNS + Tunnel"""
     lines = []
-    try:
-        hostname = _socket.gethostname() or "?"
-    except Exception:
-        hostname = "?"
-    lines.append(f"เครื่อง: {hostname} · ตรวจทุก {int(cfg.interval_seconds)} วิ")
+    lines.append(f"ตรวจทุก {int(cfg.interval_seconds)} วิ")
     lines.append("")
 
     ips = []

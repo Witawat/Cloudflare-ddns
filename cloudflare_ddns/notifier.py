@@ -253,24 +253,41 @@ def short_error(text, limit=110):
     return text
 
 
+_hostname_cache = ""
+
+
+def _hostname():
+    """ชื่อเครื่อง (แคช) — ระบุที่มาของข้อความในทุกการแจ้งเตือน (ใช้ bot กลางร่วมหลายเครื่อง)"""
+    global _hostname_cache
+    if not _hostname_cache:
+        import socket as _socket
+
+        try:
+            _hostname_cache = _socket.gethostname() or "?"
+        except Exception:
+            _hostname_cache = "?"
+    return _hostname_cache
+
+
 def _now_ts():
     """เวลาปัจจุบันในรูปแบบ [dd/MM HH:MM] กำกับท้ายข้อความ"""
     return datetime.now().strftime("[%d/%m %H:%M]")
 
 
 def build_message(event, detail=None):
-    """สร้างข้อความแจ้งเตือนรูปแบบอ่านง่าย (ภาษาไทย สั้น กระชับ + เวลาเกิด)."""
+    """สร้างข้อความแจ้งเตือนรูปแบบอ่านง่าย (ภาษาไทย สั้น กระชับ + เวลาเกิด + ชื่อเครื่อง)."""
     ts = _now_ts()
+    host = _hostname()
     if event == EVENT_START:
-        return f"🟢 DDNS เริ่มทำงาน {ts}\n" + (detail or "")
+        return f"🟢 DDNS เริ่มทำงาน {ts} · {host}\n" + (detail or "")
     if event == EVENT_STOP:
-        return f"🔴 DDNS หยุดทำงาน {ts}" + (f"\n{detail}" if detail else "")
+        return f"🔴 DDNS หยุดทำงาน {ts} · {host}" + (f"\n{detail}" if detail else "")
     if event == EVENT_IP_CHANGE:
-        return f"🔄 IP เปลี่ยน {ts}\n" + (detail or "")
+        return f"🔄 IP เปลี่ยน {ts} · {host}\n" + (detail or "")
     if event == EVENT_CREATED:
-        return f"🆕 สร้าง record ใหม่ {ts}\n" + (detail or "")
+        return f"🆕 สร้าง record ใหม่ {ts} · {host}\n" + (detail or "")
     if event == EVENT_ERROR:
-        return f"⚠️ มีปัญหา {ts}\n" + short_error(detail)
+        return f"⚠️ มีปัญหา {ts} · {host}\n" + short_error(detail)
     if event == EVENT_ROUND:
-        return f"✅ ตรวจรอบเสร็จ {ts}\n" + (detail or "")
+        return f"✅ ตรวจรอบเสร็จ {ts} · {host}\n" + (detail or "")
     return detail or ""

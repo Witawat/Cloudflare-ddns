@@ -2414,7 +2414,7 @@ async function doLogin(ev) {
             try:
                 request = urllib.request.Request(
                     "https://api.github.com/repos/Witawat/Cloudflare-ddns/releases/latest",
-                    headers={"User-Agent": "cloudflare-ddns-updater/1.0", "Accept": "application/vnd.github+json"},
+                    headers={"User-Agent": config_mod.user_agent(), "Accept": "application/vnd.github+json"},
                 )
                 with urllib.request.urlopen(request, timeout=8) as response:
                     release = json.loads(response.read().decode("utf-8", "replace"))

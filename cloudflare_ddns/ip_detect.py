@@ -7,7 +7,7 @@ import struct
 import time
 import urllib.request
 
-USER_AGENT = "cloudflare-ddns-updater/1.0"
+from . import config as config_mod
 
 PROVIDERS = {
     4: [
@@ -34,7 +34,7 @@ PRIVATE_NETWORKS = [
 
 
 def _http_get(url, timeout):
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    request = urllib.request.Request(url, headers={"User-Agent": config_mod.user_agent()})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return response.read().decode("utf-8", "replace").strip()
 

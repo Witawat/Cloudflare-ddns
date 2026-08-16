@@ -6,10 +6,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from . import config as config_mod
+
 log = logging.getLogger("cloudflare-ddns")
 
 API_BASE = "https://api.cloudflare.com/client/v4"
-USER_AGENT = "cloudflare-ddns-updater/1.0"
 
 # สถิติสะสมการเรียก API (นับในหน่วยความจำ — เริ่มใหม่เมื่อโปรแกรม/service เริ่ม)
 _stats = {"calls": 0, "errors": 0, "rate_limited": 0}
@@ -33,7 +34,7 @@ class CloudflareAPI:
         self._headers = {
             "Authorization": "Bearer " + token.strip(),
             "Content-Type": "application/json",
-            "User-Agent": USER_AGENT,
+            "User-Agent": config_mod.user_agent(),
         }
 
     # ---- ขั้นพื้นฐาน ----

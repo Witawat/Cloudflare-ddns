@@ -22,7 +22,10 @@ import configparser
 import logging
 import os
 import re
+import socket
 import sys
+
+from . import __version__
 
 log = logging.getLogger("cloudflare-ddns")
 
@@ -73,6 +76,25 @@ def migrate_legacy_data():
 
 DEFAULT_INTERVAL = 60
 MIN_INTERVAL = 15
+
+_hostname_cache = ""
+
+
+def _hostname():
+    """ชื่อเครื่อง (แคช) — ใช้ระบุที่มาใน User-Agent/log"""
+    global _hostname_cache
+    if not _hostname_cache:
+        try:
+            _hostname_cache = socket.gethostname() or "?"
+        except Exception:
+            _hostname_cache = "?"
+    return _hostname_cache
+
+
+def user_agent():
+    """User-Agent พร้อมชื่อเครื่อง — ฝั่งบริการ (Healthchecks/Cloudflare/provider) ดู log แล้วรู้ว่าเครื่องไหนส่ง"""
+    return f"cloudflare-ddns-updater/{__version__} ({_hostname()})"
+
 
 RECORD_SECTION_RE = re.compile(r"^record:(.+)$", re.IGNORECASE)
 

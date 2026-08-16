@@ -77,7 +77,7 @@ def ensure_installed(cfg=None):
     try:
         log.info("กำลังดาวน์โหลด cloudflared จาก GitHub...")
         request = urllib.request.Request(
-            DOWNLOAD_URL, headers={"User-Agent": "cloudflare-ddns-updater/1.0"}
+            DOWNLOAD_URL, headers={"User-Agent": config_mod.user_agent()}
         )
         with urllib.request.urlopen(request, timeout=120) as response, open(tmp, "wb") as handle:
             while True:
