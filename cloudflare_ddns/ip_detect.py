@@ -311,10 +311,18 @@ def nat_report(public_ip=None, timeout=5, trace=True, stun_rounds=4):
             "DDNS ไม่สามารถใช้งานได้ ควรใช้ Cloudflare Tunnel หรือ IPv6 แทน"
         )
     elif trace_v == "double-nat":
+        # นับชั้น NAT ส่วนตัวในบ้าน (private IP ต่อเนื่องตั้งแต่ฮอปแรก — ไม่นับ core ISP หลัง public)
+        layers = 1
+        for ip in (hops or [])[1:]:
+            if is_private_ip(ip):
+                layers += 1
+            else:
+                break
         result["nat_type"] = "double-nat"
+        result["nat_layers"] = layers
         result["message"] = (
-            "พบ NAT ซ้อนหลายชั้น (ฮอปแรกหลัง WAN เป็น IP private) — DDNS อัปเดต IP ได้ "
-            "แต่คนนอกเข้าถึงไม่ได้จนกว่าจะเปิด port ทุกชั้น หรือใช้ Cloudflare Tunnel"
+            f"เป็น NAT ส่วนตัวในบ้าน (ซ้อน {layers} ชั้น) — IP สาธารณะปกติ ใช้งานได้ตามปกติ "
+            "(ถ้ามีบริการให้คนนอกเข้าถึง ต้องเปิด port ทุกชั้น หรือใช้ Cloudflare Tunnel)"
         )
     elif stun and result["stun_ip"] and result["stun_ip"] != public_ip:
         result["nat_type"] = "mismatch"
