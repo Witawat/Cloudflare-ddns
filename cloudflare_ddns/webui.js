@@ -522,6 +522,7 @@ async function loadCloudflareRecords() {
       if (!sel.value) return;
       const row = recordsData.find(x => !x.name) || recordsData[recordsData.length - 1];
       row.name = shortenName(sel.value, zone);
+      row.zone = zone;
       renderRecordsEditor();
       sel.value = "";
     };
