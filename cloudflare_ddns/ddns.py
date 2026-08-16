@@ -435,7 +435,7 @@ def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_
         # ตรวจ NAT ครั้งเดียวตอนเริ่ม: ถ้าเป็น CGNAT/private เตือนทันที (DDNS จะไม่เวิร์ก)
         try:
             nat = ip_detect.nat_report(timeout=6)
-            if nat["nat_type"] in ("cg-nat", "private-ip"):
+            if nat["nat_type"] in ("cg-nat", "private-ip", "double-nat"):
                 log.warning("NAT: %s", nat["message"])
                 notify.notify(notifier.EVENT_ERROR, nat["message"])
             else:

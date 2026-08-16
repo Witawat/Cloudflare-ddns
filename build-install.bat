@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 setlocal
-title Cloudflare DDNS - Build EXE (build only)
+title Cloudflare DDNS - Build + Install Service
 
 set "ESC="
 set "GRN=%ESC%[92m"
@@ -10,7 +10,7 @@ set "RED=%ESC%[91m"
 set "CYN=%ESC%[96m"
 set "RST=%ESC%[0m"
 
-rem Relaunch with admin rights if needed (stopping the service requires admin)
+rem Relaunch with admin rights if needed
 net session >nul 2>&1
 if errorlevel 1 (
     echo %YEL%[*]%RST% Requesting administrator privileges...
@@ -20,17 +20,17 @@ if errorlevel 1 (
 
 cd /d "%~dp0"
 
-rem Stop the service if running (the exe is locked while the service is running)
+rem Stop the service first (the exe is locked while the service is running)
 sc query CloudflareDDNS >nul 2>&1
 if errorlevel 1 (
-    echo %YEL%[*]%RST% Service not installed - nothing to stop.
+    echo %YEL%[*]%RST% Service not installed yet.
 ) else (
-    echo %YEL%[*]%RST% Stopping service ^(build only - will NOT restart^)...
+    echo %YEL%[*]%RST% Stopping service...
     sc stop CloudflareDDNS >nul 2>&1
     taskkill /F /IM cloudflare-ddns.exe >nul 2>&1
 )
 
-echo %GRN%[1/2]%RST% Building exe ^(dist\cloudflare-ddns.exe^)...
+echo %GRN%[1/3]%RST% Building exe ^(dist\cloudflare-ddns.exe^)...
 python -m PyInstaller --noconfirm --clean --onefile --console ^
     --name cloudflare-ddns ^
     --icon assets\icon.ico ^
@@ -44,9 +44,18 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo %GRN%[2/3]%RST% Installing service...
+dist\cloudflare-ddns.exe remove >nul 2>&1
+dist\cloudflare-ddns.exe install
+if errorlevel 1 (
+    echo %RED%[x]%RST% Install failed.
+    pause
+    exit /b 1
+)
+
+echo %GRN%[3/3]%RST% Starting service...
+dist\cloudflare-ddns.exe start
+
 echo.
-echo %GRN%[+]%RST% Done ^(build only - service NOT started^).
-echo     %CYN%dist\cloudflare-ddns.exe%RST%
-echo     Run %CYN%build-install.bat%RST% to install/start the service,
-echo     or %CYN%dist\cloudflare-ddns.exe start%RST% manually.
+echo %GRN%[+]%RST% Done.
 pause

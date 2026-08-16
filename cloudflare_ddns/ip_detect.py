@@ -2,8 +2,11 @@
 
 import ipaddress
 import random
+import re
+import shutil
 import socket
 import struct
+import subprocess
 import time
 import urllib.request
 
@@ -179,14 +182,87 @@ def _stun_binding(stun_host="stun.l.google.com", port=19302, timeout=5):
     return None
 
 
-def nat_report(public_ip=None, timeout=5):
-    """ตรวจสถานะ NAT ของเครื่อง.
+def _tracert_hops(target="8.8.8.8", max_hops=5, wait_ms=250, timeout=20):
+    """เรียก tracert.exe (Windows) แล้วคืน list IP ของแต่ละฮอป ตามลำดับ (เรียงจากใกล้สุด).
+
+    ใช้ UDP TTL เองบน Windows ไม่ได้ (ICMP ถูก drop เข้า UDP socket -> err 10052)
+    จึงพึ่ง tracert.exe — ทำงานได้โดยไม่ต้อง admin.
+    คืน None ถ้าเรียกไม่ได้ (ไม่มี tracert / timeout / parse ไม่ได้)
+    """
+    exe = shutil.which("tracert")
+    if not exe:
+        return None
+    try:
+        proc = subprocess.run(
+            [exe, "-d", "-h", str(max_hops), "-w", str(wait_ms), target],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    pattern = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+    hops = []
+    for line in proc.stdout.splitlines():
+        m = pattern.search(line)
+        if not m:
+            continue
+        ip = m.group(0)
+        if ip == target:
+            continue
+        hops.append(ip)
+    return hops or None
+
+
+def _trace_verdict(hops):
+    """ตีความผล tracert: จุดแรกที่ข้าม router บ้าน (ฮอป 2 หรือฮอปเดียวสุดท้าย) เป็น IP แบบไหน.
+
+    คืน 'cg-nat' | 'double-nat' | 'public-route' | None (ตัดสินไม่ได้)
+    - เห็น 100.64/10 ที่ฮอปใด -> CGNAT ของ ISP (หลัง WAN ตรง ๆ)
+    - ฮอป 2 เป็น private -> มี NAT ซ้อน (double NAT — inbound ต้อง forward ทีละชั้น)
+    - ฮอป 2 เป็น public -> ไม่มีชั้น private คั่น (ต่อตรงหรือ NAT 1:1)
+    """
+    if not hops:
+        return None
+    if any(is_cgnat_ip(ip) for ip in hops):
+        return "cg-nat"
+    probe = hops[1] if len(hops) > 1 else hops[0]
+    if is_private_ip(probe):
+        if len(hops) == 1:
+            return None
+        return "double-nat"
+    return "public-route"
+
+
+def _stun_stability(rounds=4, timeout=5, delay=0.3):
+    """ถาม STUN ซ้ำหลายรอบ ดูว่า mapped IP/port เปลี่ยนไหม (สัญญาณ NAT แบบ dynamic).
+
+    คืน dict {'ips': [..], 'ports': [..], 'count': n} หรือ None ถ้าถามไม่ได้เลย
+    """
+    ips, ports = set(), set()
+    n = 0
+    for _ in range(rounds):
+        r = _stun_binding(timeout=timeout)
+        if r:
+            n += 1
+            ips.add(r[0])
+            ports.add(r[1])
+        time.sleep(delay)
+    if not n:
+        return None
+    return {"ips": sorted(ips), "ports": sorted(ports), "count": n}
+
+
+def nat_report(public_ip=None, timeout=5, trace=True, stun_rounds=4):
+    """ตรวจสถานะ NAT ของเครื่อง 3 ชั้น: provider IP + tracert (ฮอปแรกหลัง WAN) + STUN ซ้ำ.
 
     คืน dict:
         public_ip      - IP ที่ตรวจได้จาก provider ภายนอก
         stun_ip        - IP ที่ STUN server เห็น (mapped)
         stun_port      - mapped port
-        nat_type       - 'public' | 'cg-nat' | 'private-ip' | 'mismatch' | 'unknown'
+        tracert        - list IP ต่อฮอป (Windows tracert) หรือ [] ถ้าใช้ไม่ได้
+        stun_rounds    - dict จาก _stun_stability หรือ None
+        nat_type       - 'public' | 'cg-nat' | 'private-ip' | 'double-nat' | 'mismatch' | 'unknown'
         message        - คำอธิบายภาษาไทย
     """
     if not public_ip:
@@ -195,6 +271,8 @@ def nat_report(public_ip=None, timeout=5):
         "public_ip": public_ip or "",
         "stun_ip": "",
         "stun_port": 0,
+        "tracert": [],
+        "stun_rounds": None,
         "nat_type": "unknown",
         "message": "ตรวจ NAT ไม่ได้",
     }
@@ -204,6 +282,15 @@ def nat_report(public_ip=None, timeout=5):
     stun = _stun_binding(timeout=timeout)
     if stun:
         result["stun_ip"], result["stun_port"] = stun
+
+    trace_v = None
+    if trace:
+        hops = _tracert_hops()
+        result["tracert"] = hops or []
+        trace_v = _trace_verdict(hops)
+    stuns = _stun_stability(rounds=stun_rounds, timeout=timeout) if stun_rounds else None
+    result["stun_rounds"] = stuns
+    port_flips = bool(stuns and len(stuns["ports"]) > 1)
 
     if is_cgnat_ip(public_ip):
         result["nat_type"] = "cg-nat"
@@ -217,18 +304,37 @@ def nat_report(public_ip=None, timeout=5):
             "IP ที่ตรวจได้เป็น IP ภายใน (private) — อาจต่อผ่าน VPN/proxy หรือผิดปกติ "
             "DDNS จะอัปเดต IP นี้ไป ซึ่งไม่ใช่ IP ที่คนนอกเข้าถึงได้"
         )
+    elif trace_v == "cg-nat":
+        result["nat_type"] = "cg-nat"
+        result["message"] = (
+            "tracert เห็น 100.64.0.0/10 หลัง WAN ของเราโดยตรง — อยู่หลัง CGNAT ของ ISP "
+            "DDNS ไม่สามารถใช้งานได้ ควรใช้ Cloudflare Tunnel หรือ IPv6 แทน"
+        )
+    elif trace_v == "double-nat":
+        result["nat_type"] = "double-nat"
+        result["message"] = (
+            "พบ NAT ซ้อนหลายชั้น (ฮอปแรกหลัง WAN เป็น IP private) — DDNS อัปเดต IP ได้ "
+            "แต่คนนอกเข้าถึงไม่ได้จนกว่าจะเปิด port ทุกชั้น หรือใช้ Cloudflare Tunnel"
+        )
     elif stun and result["stun_ip"] and result["stun_ip"] != public_ip:
         result["nat_type"] = "mismatch"
         result["message"] = (
             f"IP ที่เห็นจาก provider ({public_ip}) ไม่ตรงกับที่ STUN เห็น ({result['stun_ip']}) "
             "— สัญญาณว่า IP อาจไม่เสถียร/ผ่านตัวกลางหลายชั้น ตรวจสอบเองเพิ่มเติม"
         )
+        if port_flips:
+            result["message"] += " และ mapped port เปลี่ยนทุกครั้ง (NAT แบบ dynamic)"
     elif stun and result["stun_ip"]:
         result["nat_type"] = "public"
         result["message"] = (
-            "IP สาธารณะตรงปกติ (NAT แบบ 1:1 หรือไม่มี NAT) — DDNS ใช้งานได้ตามปกติ "
+            "IP สาธารณะตรงปกติ (ไม่มี NAT ซ้อน หรือ NAT แบบ 1:1) — DDNS ใช้งานได้ตามปกติ "
             "(ถ้ามีเราเตอร์ที่บ้าน อย่าลืมตั้ง port forward สำหรับบริการภายใน)"
         )
+        if port_flips:
+            result["message"] += (
+                " หมายเหตุ: mapped port เปลี่ยนทุกครั้ง (symmetric mapping) — "
+                "port forward ต้องตั้ง static mapping ที่เราเตอร์"
+            )
     else:
         result["nat_type"] = "unknown"
         result["message"] = "ตรวจ STUN ไม่ได้ — IP เป็น public แต่ไม่สามารถยืนยัน NAT ได้"

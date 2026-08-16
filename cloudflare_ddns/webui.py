@@ -1153,7 +1153,10 @@ async function loadIp() {
     v6.textContent = j.ipv6 || "ไม่มี (IPv6)";
     if (j.nat) {
       const bad = j.nat.nat_type === "cg-nat" || j.nat.nat_type === "private-ip";
-      nat.innerHTML = (bad ? '<span style="color:var(--danger)">⚠ ' : '<span style="color:var(--ok)">✓ ') + escapeHtml(j.nat.message) + "</span>";
+      const warn = j.nat.nat_type === "double-nat";
+      const cls = bad ? "var(--danger)" : (warn ? "var(--warn)" : "var(--ok)");
+      const icon = bad ? "⚠" : (warn ? "⚠" : "✓");
+      nat.innerHTML = '<span style="color:' + cls + '">' + icon + " " + escapeHtml(j.nat.message) + "</span>";
     }
   } catch (e) {
     logClientError("loadIp", e);
