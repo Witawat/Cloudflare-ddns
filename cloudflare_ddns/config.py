@@ -129,6 +129,7 @@ class Config:
         self.healthchecks_url = ""
         self.uptimekuma_url = ""
         self.webui_port = 8123
+        self.webui_host = "127.0.0.1"
         self.webui_password = ""
         self.log_dir = DEFAULT_LOG_DIR
         self.telegram_bot_token = ""
@@ -138,6 +139,7 @@ class Config:
         self.notify_ip_change = True
         self.notify_error = True
         self.notify_created = True
+        self.notify_round = False
         self.daily_report = True
         self.daily_report_time = "08:00"
         # Cloudflare Tunnel (cloudflared)
@@ -174,6 +176,7 @@ class Config:
         self.healthchecks_url = section.get("healthchecks_url", "").strip()
         self.uptimekuma_url = section.get("uptimekuma_url", "").strip()
         self.webui_port = max(1, min(65535, int(self._as_float(section, "webui_port", 8123))))
+        self.webui_host = section.get("webui_host", "127.0.0.1").strip() or "127.0.0.1"
         self.webui_password = section.get("webui_password", "").strip()
         self.log_dir = section.get("log_dir", "").strip() or DEFAULT_LOG_DIR
 
@@ -185,6 +188,7 @@ class Config:
         self.notify_ip_change = self._as_bool(section, "notify_ip_change", True)
         self.notify_error = self._as_bool(section, "notify_error", True)
         self.notify_created = self._as_bool(section, "notify_created", True)
+        self.notify_round = self._as_bool(section, "notify_round", False)
         self.daily_report = self._as_bool(section, "daily_report", True)
         self.daily_report_time = section.get("daily_report_time", "08:00").strip() or "08:00"
         self.tunnel_enabled = self._as_bool(section, "tunnel_enabled", False)
@@ -270,6 +274,10 @@ class Config:
                 errors.append(f"daily_report_time ต้องเป็น HH:MM (0-23:0-59) เช่น 08:00 (ตอนนี้: {self.daily_report_time})")
         if not (1 <= self.webui_port <= 65535):
             errors.append(f"webui_port ต้องอยู่ระหว่าง 1-65535 (ตอนนี้: {self.webui_port})")
+        if not re.fullmatch(r"[A-Za-z0-9.\-_\[\]:]+", self.webui_host):
+            errors.append(
+                f"webui_host ไม่ถูกต้อง (ต้องเป็น IP/hostname เช่น 127.0.0.1 หรือ 0.0.0.0 — ตอนนี้: {self.webui_host})"
+            )
         for key, value in (
             ("healthchecks_url", self.healthchecks_url),
             ("uptimekuma_url", self.uptimekuma_url),
@@ -362,6 +370,7 @@ class Config:
         self.healthchecks_url = section.get("healthchecks_url", "").strip()
         self.uptimekuma_url = section.get("uptimekuma_url", "").strip()
         self.webui_port = max(1, min(65535, int(self._as_float(section, "webui_port", 8123))))
+        self.webui_host = section.get("webui_host", "127.0.0.1").strip() or "127.0.0.1"
         self.webui_password = section.get("webui_password", "").strip()
         self.log_dir = section.get("log_dir", "").strip() or DEFAULT_LOG_DIR
 
@@ -372,6 +381,7 @@ class Config:
         self.notify_ip_change = self._as_bool(section, "notify_ip_change", True)
         self.notify_error = self._as_bool(section, "notify_error", True)
         self.notify_created = self._as_bool(section, "notify_created", True)
+        self.notify_round = self._as_bool(section, "notify_round", False)
         self.daily_report = self._as_bool(section, "daily_report", True)
         self.daily_report_time = section.get("daily_report_time", "08:00").strip() or "08:00"
         self.tunnel_enabled = self._as_bool(section, "tunnel_enabled", False)

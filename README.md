@@ -114,7 +114,7 @@ cloudflared_path =                ; เว้นว่าง = ดาวน์�
 - **Cloudflare Tunnel**: สถานะ (รวมเวอร์ชัน cloudflared) + wizard ตั้งค่า + ดู hostname ที่ผูกแล้ว + เริ่ม/หยุด/ดาวน์โหลด cloudflared
 - **สแกนพอร์ต**: สแกน host ใน config (resolve IP ปัจจุบัน) แสดงพอร์ตเปิด/ปิด + ชื่อบริการ
 - **ประวัติการอัปเดต**: 50 รายการล่าสุด (เวลา/record/การกระทำ/IP)
-- **Log ล่าสุด**: 200 บรรทัด + ปุ่มโหลดใหม่ + ปุ่มเปิดโฟลเดอร์ข้อมูล (config/state/logs)
+- **Log ล่าสุด**: 200 บรรทัด + ปุ่มโหลดใหม่ + ปุ่มเปิดโฟลเดอร์ข้อมูล (config/state/logs — รันใน service จะคัดลอก path ให้แทน เพราะเปิดหน้าต่างจาก session ของ service ไม่ได้)
 - **ตั้งค่า**: ฟอร์ม (token/interval/password/พอร์ต/log/Tunnel/Telegram/records) + โหมด "แก้ไขไฟล์โดยตรง" (textarea + ตรวจ syntax) + auto-backup config (เก็บ 5 อัน)
 - **wizard ครั้งแรก** ขึ้นเองอัตโนมัติเมื่อ config ไม่ครบ + wizard Tunnel แยก
 - ตั้ง `webui_password` ได้ในฟอร์ม (ต้อง login หลังตั้ง) · **กันสุ่มรหัสผ่าน** (ผิด 5 ครั้งติด → ล็อก 5 นาที) · responsive มือถือ

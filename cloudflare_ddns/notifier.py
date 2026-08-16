@@ -8,8 +8,11 @@
 import json
 import logging
 import os
+import threading
+import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 
 from . import config as config_mod
 
@@ -18,12 +21,19 @@ log = logging.getLogger("cloudflare-ddns")
 QUEUE_PATH = os.path.join(config_mod.DEFAULT_DATA_DIR, "notify_queue.json")
 MAX_QUEUE = 50
 
+# ล็อกคิว (ddns thread + webui thread อ่าน-เขียนพร้อมกันได้) + กันสแปม error ข้าม instance
+_queue_lock = threading.Lock()
+# error ซ้ำข้อความเดิมภายใน 10 นาที -> ไม่ส่งซ้ำ (key = event|detail ไม่รวม timestamp)
+ERROR_DEDUPE_SECONDS = 600
+_error_dedupe = {}
+
 # ประเภทเหตุการณ์
 EVENT_START = "start"
 EVENT_STOP = "stop"
 EVENT_IP_CHANGE = "ip_change"
 EVENT_ERROR = "error"
 EVENT_CREATED = "created"
+EVENT_ROUND = "round"
 
 API_URL = "https://api.telegram.org/bot{token}/sendMessage"
 
@@ -50,6 +60,7 @@ class TelegramNotifier:
                 EVENT_IP_CHANGE: cfg.notify_ip_change,
                 EVENT_ERROR: cfg.notify_error,
                 EVENT_CREATED: cfg.notify_created,
+                EVENT_ROUND: cfg.notify_round,
             },
         )
 
@@ -91,44 +102,54 @@ class TelegramNotifier:
         if not self.event_enabled(event):
             return
         message = build_message(event, text)
-        # กันสแปม: error ข้อความเดิมซ้ำกับรอบก่อน ไม่ส่งซ้ำ
-        dedupe_key = f"{event}|{message}"
-        if event == EVENT_ERROR and dedupe_key == self._last_dedupe_key:
-            log.debug("ข้ามการแจ้ง (ซ้ำ): %s", message)
-            return
-        self._last_dedupe_key = dedupe_key
+        # กันสแปม: error ข้อความเดิม (ไม่รวม timestamp) ซ้ำภายใน 10 นาที -> ข้าม
+        # เก็บที่ระดับโมดูล -> instance ใหม่ทุกรอบ/สลับเหตุการณ์ก็ยังกันได้
+        dedupe_key = f"{event}|{text}"
+        if event == EVENT_ERROR:
+            last = _error_dedupe.get(dedupe_key, 0)
+            if time.time() - last < ERROR_DEDUPE_SECONDS:
+                log.debug("ข้ามการแจ้ง (ซ้ำภายใน %d นาที): %s", ERROR_DEDUPE_SECONDS // 60, message)
+                return
+            _error_dedupe[dedupe_key] = time.time()
         self._enqueue(message)
 
     def _enqueue(self, text):
-        items = load_queue()
-        items.append(text)
-        if len(items) > MAX_QUEUE:
-            dropped = items[: len(items) - MAX_QUEUE]
-            items = items[-MAX_QUEUE:]
-            log.warning("คิวแจ้งเตือนเต็ม ตัดทิ้ง %d ข้อความเก่า", len(dropped))
-        save_queue(items)
-        log.info("เพิ่มข้อความแจ้งเตือนลงคิว (รวม %d ข้อความ)", len(items))
+        with _queue_lock:
+            items = load_queue()
+            items.append(text)
+            if len(items) > MAX_QUEUE:
+                dropped = items[: len(items) - MAX_QUEUE]
+                items = items[-MAX_QUEUE:]
+                log.warning("คิวแจ้งเตือนเต็ม ตัดทิ้ง %d ข้อความเก่า", len(dropped))
+            save_queue(items)
+            log.info("เพิ่มข้อความแจ้งเตือนลงคิว (รวม %d ข้อความ)", len(items))
 
     # ---- queue ----
 
-    def flush(self):
-        """พยายามส่งคิวทั้งหมด คืน (sent, failed)."""
-        items = load_queue()
-        if not items:
-            return 0, 0
-        sent = 0
-        remaining = []
-        for text in items:
-            ok, error = self.send_raw(text)
-            if ok:
-                sent += 1
-            else:
-                log.warning("ส่ง Telegram ไม่สำเร็จ (เก็บไว้ส่งใหม่): %s", error)
-                remaining.append(text)
-        save_queue(remaining)
-        if sent:
-            log.info("ส่งแจ้งเตือน Telegram สำเร็จ %d ข้อความ (คิวเหลือ %d)", sent, len(remaining))
-        return sent, len(remaining)
+    def flush(self, max_seconds=60):
+        """พยายามส่งคิวทั้งหมด (จำกัดเวลา max_seconds กัน block นาน) คืน (sent, failed)."""
+        with _queue_lock:
+            items = load_queue()
+            if not items:
+                return 0, 0
+            sent = 0
+            remaining = []
+            started = time.monotonic()
+            for text in items:
+                if time.monotonic() - started > max_seconds:
+                    log.warning("flush ถึงเวลาจำกัด (%d วิ) — เหลือ %d ข้อความไว้รอบถัดไป", max_seconds, len(items) - sent - len(remaining))
+                    remaining.extend(items[sent + len(remaining):])
+                    break
+                ok, error = self.send_raw(text)
+                if ok:
+                    sent += 1
+                else:
+                    log.warning("ส่ง Telegram ไม่สำเร็จ (เก็บไว้ส่งใหม่): %s", error)
+                    remaining.append(text)
+            save_queue(remaining)
+            if sent:
+                log.info("ส่งแจ้งเตือน Telegram สำเร็จ %d ข้อความ (คิวเหลือ %d)", sent, len(remaining))
+            return sent, len(remaining)
 
 
 # ---- ฟังก์ชันระดับโมดูล ----
@@ -138,7 +159,10 @@ def load_queue():
         with open(QUEUE_PATH, "r", encoding="utf-8") as handle:
             items = json.load(handle)
         return items if isinstance(items, list) else []
-    except (OSError, ValueError):
+    except ValueError as exc:
+        log.warning("อ่านคิวแจ้งเตือนไม่ได้ (ไฟล์เสีย?) — ถือว่าว่าง: %s", exc)
+        return []
+    except OSError:
         return []
 
 
@@ -229,16 +253,24 @@ def short_error(text, limit=110):
     return text
 
 
+def _now_ts():
+    """เวลาปัจจุบันในรูปแบบ [dd/MM HH:MM] กำกับท้ายข้อความ"""
+    return datetime.now().strftime("[%d/%m %H:%M]")
+
+
 def build_message(event, detail=None):
-    """สร้างข้อความแจ้งเตือนรูปแบบอ่านง่าย (ภาษาไทย สั้น กระชับ)."""
+    """สร้างข้อความแจ้งเตือนรูปแบบอ่านง่าย (ภาษาไทย สั้น กระชับ + เวลาเกิด)."""
+    ts = _now_ts()
     if event == EVENT_START:
-        return "🟢 DDNS เริ่มทำงาน\n" + (detail or "")
+        return f"🟢 DDNS เริ่มทำงาน {ts}\n" + (detail or "")
     if event == EVENT_STOP:
-        return "🔴 DDNS หยุดทำงาน" + (f"\n{detail}" if detail else "")
+        return f"🔴 DDNS หยุดทำงาน {ts}" + (f"\n{detail}" if detail else "")
     if event == EVENT_IP_CHANGE:
-        return "🔄 IP เปลี่ยน\n" + (detail or "")
+        return f"🔄 IP เปลี่ยน {ts}\n" + (detail or "")
     if event == EVENT_CREATED:
-        return "🆕 สร้าง record ใหม่\n" + (detail or "")
+        return f"🆕 สร้าง record ใหม่ {ts}\n" + (detail or "")
     if event == EVENT_ERROR:
-        return "⚠️ มีปัญหา\n" + short_error(detail)
+        return f"⚠️ มีปัญหา {ts}\n" + short_error(detail)
+    if event == EVENT_ROUND:
+        return f"✅ ตรวจรอบเสร็จ {ts}\n" + (detail or "")
     return detail or ""

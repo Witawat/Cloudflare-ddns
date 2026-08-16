@@ -3,6 +3,7 @@
 import logging
 import os
 import threading
+import time
 from logging.handlers import TimedRotatingFileHandler
 
 from . import config as config_mod
@@ -117,16 +118,20 @@ def _make_service_class():
                     stop_event=self._stop_event,
                 )
             finally:
+                # รอ thread เริ่ม tunnel ให้ทันก่อนหยุด (กัน cloudflared ค้าง
+                # ถ้ายังอยู่ในช่วงดาวน์โหลด/start ไม่ทันบันทึก pid)
+                if tunnel_mgr is not None:
+                    time.sleep(1.0)
                 if tunnel_mgr is not None:
                     try:
                         tunnel_mgr.stop()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.warning("หยุด Cloudflare Tunnel ไม่ได้: %s", exc)
                 if web_ui is not None:
                     try:
                         web_ui.stop()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.warning("หยุด Web UI ไม่ได้: %s", exc)
             log.info("service หยุดทำงาน")
 
     return CloudflareDDNSService

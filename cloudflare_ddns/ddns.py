@@ -18,10 +18,36 @@ log = logging.getLogger("cloudflare-ddns")
 RECORD_TYPES = {4: "A", 6: "AAAA"}
 
 
+class _NullNotifier:
+    """ตัวแทน notifier ตอน dry-run — ไม่ส่ง Telegram ไม่เขียนคิว ไม่ทำอะไรเลย"""
+
+    enabled = False
+
+    def notify(self, event, text):
+        pass
+
+    def flush(self):
+        return 0, 0
+
+
 def _is_zone_not_found(message):
     """เช็คว่า error เป็น 'zone ไม่พบ' (id cache เก่า) หรือไม่"""
     msg = str(message).lower()
     return "not found" in msg or "9109" in msg or ("404" in msg and "zone" in msg)
+
+
+# แจ้ง rate limit ครั้งเดียวต่อ 10 นาที (กันสแปม Telegram)
+_RATE_LIMIT_NOTIFY_INTERVAL = 600
+_last_rate_limit_notify = 0.0
+
+
+def _notify_rate_limit(notify, exc):
+    """แจ้ง Telegram ว่าโดน rate limit — กันซ้ำภายใน 10 นาที"""
+    global _last_rate_limit_notify
+    now = time.time()
+    if now - _last_rate_limit_notify >= _RATE_LIMIT_NOTIFY_INTERVAL:
+        _last_rate_limit_notify = now
+        notify.notify(notifier.EVENT_ERROR, f"โดน rate limit ของ Cloudflare — ข้ามรอบนี้ ({exc})")
 
 
 class DDNSEngine:
@@ -50,8 +76,8 @@ class DDNSEngine:
             if not self.dry_run:
                 try:
                     self._save_state()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("บันทึก state หลังลบ zone cache ไม่ได้: %s", exc)
 
     def _save_state(self):
         os.makedirs(os.path.dirname(config_mod.DEFAULT_STATE_PATH), exist_ok=True)
@@ -95,7 +121,8 @@ class DDNSEngine:
         zone_cache = self._state.setdefault("zones", {})
 
         api = cloudflare_api.CloudflareAPI(cfg.api_token)
-        notify = notifier.TelegramNotifier.from_config(cfg)
+        # dry-run: ไม่ส่ง Telegram จริง (กันส่งข้อความ/เขียนคิวโดยไม่ตั้งใจ)
+        notify = _NullNotifier() if self.dry_run else notifier.TelegramNotifier.from_config(cfg)
         zone_name_cache = {}
         summary = []
         rate_limited = False
@@ -118,7 +145,7 @@ class DDNSEngine:
             except cloudflare_api.CloudflareRateLimit as exc:
                 rate_limited = True
                 log.warning("rate limit ระหว่างหา zone: %s", exc)
-                notify.notify(notifier.EVENT_ERROR, f"โดน rate limit ของ Cloudflare — ข้ามรอบนี้ ({exc})")
+                _notify_rate_limit(notify, exc)
                 summary.append({"record": rec.name, "family": 0, "action": "skip", "message": str(exc)})
                 continue
             except cloudflare_api.CloudflareError as exc:
@@ -162,6 +189,20 @@ class DDNSEngine:
         self._state["last_run"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         if not self.dry_run:
             self._save_state()
+        # ส่งข้อความสรุปการอัปเดตเป็นข้อความเดียว (IP เปลี่ยน A+AAAA พร้อมกันไม่สแปม 2 อัน)
+        changes = [e for e in summary if e.get("action") in ("updated", "created")]
+        if changes:
+            lines = []
+            for entry in changes:
+                rtype = RECORD_TYPES.get(entry.get("family", 0), "")
+                prefix = "🆕 " if entry.get("action") == "created" else ""
+                lines.append(f"• {prefix}{entry['record']} ({rtype}): {entry['message']}")
+            event = (
+                notifier.EVENT_CREATED
+                if all(e.get("action") == "created" for e in changes)
+                else notifier.EVENT_IP_CHANGE
+            )
+            notify.notify(event, "\n".join(lines))
         notify.flush()
         if not self.dry_run:
             bad = any(e.get("action") in ("error", "no-ip", "skip") for e in summary)
@@ -223,7 +264,7 @@ class DDNSEngine:
             current = api.get_record(zone_id, fqdn, rtype)
         except cloudflare_api.CloudflareRateLimit as exc:
             log.warning("%s %s: rate limit: %s", fqdn, rtype, exc)
-            notify.notify(notifier.EVENT_ERROR, f"โดน rate limit ของ Cloudflare — ข้ามรอบนี้ ({exc})")
+            _notify_rate_limit(notify, exc)
             return {"record": fqdn, "family": family, "action": "skip", "message": str(exc)}
         except cloudflare_api.CloudflareError as exc:
             log.warning("%s %s: อ่าน record ไม่ได้: %s", fqdn, rtype, exc)
@@ -272,20 +313,10 @@ class DDNSEngine:
             )
             self._state["history"] = self._state["history"][-50:]
             log.info("%s %s: %s (%s)", fqdn, rtype, action, message)
-            if action == "updated":
-                notify.notify(
-                    notifier.EVENT_IP_CHANGE,
-                    f"{fqdn} ({rtype})\n{message}",
-                )
-            elif action == "created":
-                notify.notify(
-                    notifier.EVENT_CREATED,
-                    f"{fqdn} ({rtype}) = {public_ip}",
-                )
             return {"record": fqdn, "family": family, "action": action, "message": message}
         except cloudflare_api.CloudflareRateLimit as exc:
             log.warning("%s %s: rate limit: %s", fqdn, rtype, exc)
-            notify.notify(notifier.EVENT_ERROR, f"โดน rate limit ของ Cloudflare — ข้ามรอบนี้ ({exc})")
+            _notify_rate_limit(notify, exc)
             return {"record": fqdn, "family": family, "action": "skip", "message": str(exc)}
         except cloudflare_api.CloudflareError as exc:
             log.warning("%s %s: %s ล้มเหลว: %s", fqdn, rtype, "อัปเดต" if current else "สร้าง", exc)
@@ -296,6 +327,63 @@ class DDNSEngine:
                 f"{fqdn} ({rtype}): {'อัปเดต' if current else 'สร้าง'} ล้มเหลว ({exc})",
             )
             return {"record": fqdn, "family": family, "action": "error", "message": str(exc)}
+
+
+def _build_start_message(cfg):
+    """สร้างเนื้อหาข้อความ 'เริ่มทำงาน' (หัวข้อและเวลา build_message เติมให้):
+    เครื่อง / IP ที่ตรวจได้ / รายการ DDNS + Tunnel"""
+    import socket as _socket
+
+    lines = []
+    try:
+        hostname = _socket.gethostname() or "?"
+    except Exception:
+        hostname = "?"
+    lines.append(f"เครื่อง: {hostname} · ตรวจทุก {int(cfg.interval_seconds)} วิ")
+    lines.append("")
+
+    ips = []
+    for family in (4, 6):
+        try:
+            ip = ip_detect.get_public_ip(family, timeout=6)
+        except Exception:
+            ip = None
+        if ip:
+            ips.append(f"{ip} (IPv{family})")
+    if ips:
+        lines.append(f"IP สาธารณะ: {' · '.join(ips)} — รวม {len(ips)}")
+    else:
+        lines.append("IP สาธารณะ: ตรวจไม่ได้ (เช็คเน็ต/ไฟร์วอลล์)")
+
+    active = [
+        r for r in cfg.records
+        if (r.ipv4 and cfg.use_ipv4) or (r.ipv6 and cfg.use_ipv6)
+    ]
+    if active:
+        lines.append("")
+        lines.append(f"📋 DDNS ({len(active)}):")
+        for rec in active:
+            types = [
+                rtype
+                for fam, rtype in ((4, "A"), (6, "AAAA"))
+                if (rec.ipv4 if fam == 4 else rec.ipv6)
+                and (cfg.use_ipv4 if fam == 4 else cfg.use_ipv6)
+            ]
+            lines.append(f"• {fqdn_name(rec.name, rec.zone)} — {', '.join(types)}")
+    else:
+        lines.append("")
+        lines.append("📋 DDNS: ยังไม่มี record")
+
+    if cfg.tunnel_enabled:
+        lines.append("")
+        if cfg.tunnel_hosts:
+            lines.append(f"🌐 Tunnel ({len(cfg.tunnel_hosts)}):")
+            for host in cfg.tunnel_hosts:
+                name = host.get("hostname", "") + host.get("path", "")
+                lines.append(f"• {name} → {host.get('service', '')}")
+        else:
+            lines.append("🌐 Tunnel: เปิดอยู่ (ยังไม่มี hostname)")
+    return "\n".join(lines)
 
 
 def _send_daily_report(engine, cfg, notify):
@@ -339,8 +427,8 @@ def _send_daily_report(engine, cfg, notify):
     try:
         engine._state["daily_report_last"] = today
         engine._save_state()
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("บันทึก daily_report_last ไม่ได้: %s", exc)
 
 
 def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_event=None):
@@ -359,29 +447,47 @@ def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_
             else:
                 log.info("NAT: %s", nat["message"])
         except Exception as exc:
-            log.debug("ตรวจ NAT ไม่ได้: %s", exc)
+            log.warning("ตรวจ NAT ไม่ได้: %s", exc)
         notify.notify(
             notifier.EVENT_START,
-            f"ตรวจ IP ทุก {int(cfg0.interval_seconds)} วิ · {len(cfg0.records)} records",
+            _build_start_message(cfg0),
         )
         notify.flush()
         heartbeat.send_ping(cfg0, ok=True)
+    loop_started = time.monotonic()
+    round_count = 0
     while True:
         started = time.monotonic()
         try:
             engine = DDNSEngine(config_path, dry_run=dry_run)
-            engine.run_once()
+            result = engine.run_once()
         except Exception:
+            result = [{"record": "", "family": 0, "action": "error", "message": "exception ใน loop"}]
             log.exception("เกิดข้อผิดพลาดไม่คาดคิดในรอบ DDNS (รันรอบถัดไปต่อ)")
             try:
                 notify.notify(notifier.EVENT_ERROR, "เกิดข้อผิดพลาดใน DDNS loop ดู log ไฟล์เพิ่มเติม")
                 notify.flush()
                 heartbeat.send_ping(config_mod.Config(config_path), ok=False)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("แจ้งเตือน/ส่ง heartbeat หลัง error ล้มเหลว: %s", exc)
         cfg = config_mod.Config(config_path)
+        round_count += 1
         interval = max(cfg.interval_seconds, config_mod.MIN_INTERVAL)
         elapsed = time.monotonic() - started
+
+        # สรุปผลทุกรอบ (ไม่บังคับ — เปิดด้วย notify_round = true)
+        try:
+            if not dry_run and cfg.notify_round:
+                changed = sum(1 for e in result if e.get("action") in ("updated", "created"))
+                problems = sum(1 for e in result if e.get("action") in ("error", "no-ip", "skip"))
+                total = len(result)
+                if not result:
+                    text = "ตรวจ record ทั้งหมดตรง ไม่มีการเปลี่ยน"
+                else:
+                    text = f"ตรวจ {total} รายการ · เปลี่ยน {changed} · มีปัญหา {problems}"
+                notify.notify(notifier.EVENT_ROUND, text)
+        except Exception as exc:
+            log.warning("notify_round error: %s", exc)
 
         # รายงานสรุปประจำวัน (ส่งครั้งเดียวต่อวัน ตามเวลาที่ตั้งใน config)
         try:
@@ -390,14 +496,21 @@ def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_
                 if now_hm == cfg.daily_report_time and engine._state.get("last_run"):
                     _send_daily_report(engine, cfg, notify)
         except Exception as exc:
-            log.debug("daily report error: %s", exc)
+            log.warning("daily report error: %s", exc)
 
         wait = max(min(interval - elapsed, 5), 1)
         if stop_event is not None:
             if stop_event.wait(wait):
                 log.info("หยุด loop ตามคำสั่ง")
                 if not dry_run:
-                    notify.notify(notifier.EVENT_STOP, "")
+                    duration = time.monotonic() - loop_started
+                    hours, rem = divmod(int(duration), 3600)
+                    minutes = rem // 60
+                    notify.notify(
+                        notifier.EVENT_STOP,
+                        f"สาเหตุ: หยุดตามคำสั่ง (service stop/ปิดเครื่อง)\n"
+                        f"รันต่อเนื่อง: {hours} ชม. {minutes} นาที · ผ่าน {round_count} รอบ",
+                    )
                     notify.flush()
                     heartbeat.send_ping(config_mod.Config(config_path), ok=False, stopped=True)
                 break

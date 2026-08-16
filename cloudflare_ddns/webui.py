@@ -351,6 +351,7 @@ __LOGIN__
     <div>
       <h1>Cloudflare DDNS</h1>
       <p class="sub">อัปเดต IP อัตโนมัติ · รอบล่าสุด <span id="lastrun" class="mono">-</span></p>
+      <p id="cfg-err" class="sub" style="color:var(--danger);margin-top:2px" hidden></p>
     </div>
   </div>
   <div class="top-right">
@@ -520,6 +521,12 @@ __LOGIN__
       </label>
     </div>
     <div class="grid2">
+      <label class="field">หน้าเว็บเปิดที่ (host)
+        <input id="webui_host" type="text" class="mono" autocomplete="off" placeholder="127.0.0.1" title="127.0.0.1 = เฉพาะเครื่องนี้ · 0.0.0.0 = เข้าจากเครื่องอื่นในเน็ตเวิร์กได้ (ต้องตั้งรหัสผ่าน + เปิดพอร์ต firewall)">
+      </label>
+      <label class="field" title="ต้องตั้ง webui_password ก่อนเปิด 0.0.0.0">คำเตือน: 0.0.0.0 = ใครในวง LAN เข้าได้ — ตั้งรหัสผ่านด้านบนเสมอ</label>
+    </div>
+    <div class="grid2">
       <label class="field">ที่เก็บ log (เว้นว่าง = โฟลเดอร์เดียวกับ exe)
         <input id="log_dir" type="text" class="mono" autocomplete="off" placeholder="เช่น D:\CloudflareDDNS\logs">
       </label>
@@ -559,6 +566,7 @@ __LOGIN__
       <label><input id="notify_ip_change" type="checkbox"> IP เปลี่ยน</label>
       <label><input id="notify_error" type="checkbox"> Error</label>
       <label><input id="notify_created" type="checkbox"> สร้าง record ใหม่</label>
+      <label title="ส่งสรุปสั้นทุกครั้งที่ตรวจรอบ (ระวัง: รอบสั้น = ข้อความเยอะ)"><input id="notify_round" type="checkbox"> สรุปทุกรอบ</label>
     </div>
     <div class="toggles">
       <label><input id="daily_report" type="checkbox"> สรุปรายวันทาง Telegram</label>
@@ -643,11 +651,28 @@ function toast(text, kind) {
   t.className = "show " + (kind || "");
   clearTimeout(t._timer);
   t._timer = setTimeout(() => { t.className = ""; }, 3200);
+  if (kind === "err") logClientError("toast", text);
 }
 
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+
+/* ---------- log error ฝั่งหน้าเว็บ ไปไฟล์ log (ฝั่ง server) ---------- */
+
+function logClientError(context, err) {
+  try {
+    const message = String(err && err.message ? err.message : err).slice(0, 500);
+    fetch("/log-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ context: String(context).slice(0, 120), message }),
+    }).catch(() => {});
+  } catch (e) { /* ไม่ต้องทำอะไร — กันลูป */ }
+}
+
+window.addEventListener("error", ev => logClientError("window.onerror", ev.message + " @" + (ev.filename || "") + ":" + (ev.lineno || "?")));
+window.addEventListener("unhandledrejection", ev => logClientError("unhandledrejection", ev.reason));
 
 /* ---------- สถานะ ---------- */
 
@@ -665,6 +690,13 @@ async function loadStatus() {
     } else {
       pill.textContent = "พร้อมใช้งาน";
       pill.className = "pill ok";
+    }
+    const cfgErr = $("cfg-err");
+    if (s.config_errors && s.config_errors.length) {
+      cfgErr.hidden = false;
+      cfgErr.textContent = "⚠ " + s.config_errors.join(" · ");
+    } else {
+      cfgErr.hidden = true;
     }
     const last = s.last_run ? new Date(s.last_run).toLocaleString("th-TH") : "ยังไม่เคยรัน";
     $("lastrun").textContent = last;
@@ -688,7 +720,7 @@ async function loadStatus() {
         return '<div class="record-row ' + kind + '">' +
           '<span class="rec-dot"></span>' +
           '<span class="rec-name mono clickable" title="กดเพื่อคัดลอกชื่อ" onclick="copyIp(this)">' + escapeHtml(name) + "</span>" +
-          '<span class="rec-ip mono clickable" title="กดเพื่อคัดลอก IP" onclick="copyIp(this)">' + (ip || "ยังไม่ตั้งค่า") + "</span>" +
+          '<span class="rec-ip mono clickable" title="กดเพื่อคัดลอก IP" onclick="copyIp(this)">' + escapeHtml(ip || "ยังไม่ตั้งค่า") + "</span>" +
           '<span class="rec-meta">' + meta + "</span></div>";
       }).join("");
     }
@@ -717,10 +749,11 @@ async function loadStatus() {
           const t = h.time ? new Date(h.time).toLocaleString("th-TH") : "-";
           const act = { updated: "อัปเดต IP", created: "สร้าง record" }[h.action] || h.action;
           const cls = h.action === "updated" ? "" : "ok";
-          return '<tr class="' + cls + '"><td style="padding:5px 10px;color:var(--muted);white-space:nowrap">' + t + '</td><td class="mono" style="padding:5px 10px;word-break:break-all">' + escapeHtml(h.record) + " (" + escapeHtml(h.type || "") + ')</td><td style="padding:5px 10px;white-space:nowrap">' + act + '</td><td class="mono" style="padding:5px 10px;white-space:nowrap">' + escapeHtml(h.ip || "-") + "</td></tr>";
+          return '<tr class="' + cls + '"><td style="padding:5px 10px;color:var(--muted);white-space:nowrap">' + t + '</td><td class="mono" style="padding:5px 10px;word-break:break-all">' + escapeHtml(h.record) + " (" + escapeHtml(h.type || "") + ')</td><td style="padding:5px 10px;white-space:nowrap">' + escapeHtml(act) + '</td><td class="mono" style="padding:5px 10px;white-space:nowrap">' + escapeHtml(h.ip || "-") + "</td></tr>";
         }).join("") + "</table></div>";
     }
   } catch (e) {
+    logClientError("loadStatus", e);
     $("pill").textContent = "อ่านสถานะไม่ได้";
     $("pill").className = "pill err";
   }
@@ -771,11 +804,12 @@ async function loadServiceStatus() {
       return;
     }
     const stateNames = { running: "กำลังทำงาน", stopped: "หยุดอยู่", starting: "กำลังเริ่ม", stopping: "กำลังหยุด", resuming: "กำลังเริ่มต่อ", pausing: "กำลังพัก", paused: "พักอยู่" };
-    const label = stateNames[svc.state] || svc.state;
+    const label = escapeHtml(stateNames[svc.state] || svc.state);
     box.innerHTML = svc.running
       ? '<span class="ok">ติดตั้งแล้ว — ' + label + '</span>'
       : '<span class="err">ติดตั้งแล้ว — ' + label + "</span>";
   } catch (e) {
+    logClientError("loadServiceStatus", e);
     $("svc-status").textContent = "อ่านสถานะไม่ได้: " + e;
   }
 }
@@ -831,8 +865,18 @@ async function openDataFolder() {
   try {
     const r = await fetch("/open-data-folder", { method: "POST" });
     const j = await r.json();
-    toast(j.ok ? j.message : "ไม่สำเร็จ: " + j.message, j.ok ? "ok" : "err");
+    if (j.ok && j.path) {
+      try {
+        await navigator.clipboard.writeText(j.path);
+        toast(j.message + " — คัดลอก path ลงคลิปบอร์ดแล้ว (Win+R → วาง → Enter)", "ok");
+      } catch (e) {
+        toast(j.message, "ok");
+      }
+    } else {
+      toast(j.ok ? j.message : "ไม่สำเร็จ: " + j.message, j.ok ? "ok" : "err");
+    }
   } catch (e) {
+    logClientError("openDataFolder", e);
     toast("error: " + e, "err");
   }
 }
@@ -840,6 +884,7 @@ async function openDataFolder() {
 /* ---------- ตั้งค่า ---------- */
 
 let recordsData = [];
+let tunnelHostsData = [];
 let currentWebuiPassword = "";
 let currentWebuiPort = 8123;
 
@@ -858,6 +903,7 @@ async function loadConfig() {
     currentWebuiPassword = c.cloudflare.webui_password;
     $("webui_port").value = c.cloudflare.webui_port || 8123;
     currentWebuiPort = c.cloudflare.webui_port || 8123;
+    $("webui_host").value = c.cloudflare.webui_host || "127.0.0.1";
     $("log_dir").value = c.cloudflare.log_dir || "";
     $("tg_token").value = c.telegram.bot_token;
     $("tg_chat").value = c.telegram.chat_id;
@@ -866,15 +912,18 @@ async function loadConfig() {
     $("notify_ip_change").checked = !!c.telegram.notify_ip_change;
     $("notify_error").checked = !!c.telegram.notify_error;
     $("notify_created").checked = !!c.telegram.notify_created;
+    $("notify_round").checked = !!c.telegram.notify_round;
     $("daily_report").checked = !!c.telegram.daily_report;
     $("daily_report_time").value = c.telegram.daily_report_time || "08:00";
     $("tunnel_enabled").checked = !!c.tunnel.enabled;
     $("tunnel_token").value = c.tunnel.token;
     $("cloudflared_path").value = c.tunnel.cloudflared_path || "";
+    tunnelHostsData = c.tunnel.hosts || [];
     recordsData = c.records.map(r => ({ ...r }));
     renderRecordsEditor();
     loadScanHosts();
   } catch (e) {
+    logClientError("loadConfig", e);
     toast("โหลด config ไม่ได้: " + e, "err");
   }
 }
@@ -947,6 +996,7 @@ async function saveConfig() {
       healthchecks_url: $("hc_url").value.trim(),
       uptimekuma_url: $("kuma_url").value.trim(),
       webui_port: Math.max(1, Math.min(65535, Math.floor(+$("webui_port").value || currentWebuiPort))),
+      webui_host: $("webui_host").value.trim() || "127.0.0.1",
       webui_password: $("webui_password").value.trim(),
       log_dir: $("log_dir").value.trim(),
     },
@@ -958,6 +1008,7 @@ async function saveConfig() {
       notify_ip_change: $("notify_ip_change").checked,
       notify_error: $("notify_error").checked,
       notify_created: $("notify_created").checked,
+      notify_round: $("notify_round").checked,
       daily_report: $("daily_report").checked,
       daily_report_time: $("daily_report_time").value.trim() || "08:00",
     },
@@ -965,6 +1016,7 @@ async function saveConfig() {
       enabled: $("tunnel_enabled").checked,
       token: $("tunnel_token").value.trim(),
       cloudflared_path: $("cloudflared_path").value.trim(),
+      hosts: tunnelHostsData,
     },
     records: recordsData,
   };
@@ -979,17 +1031,27 @@ async function saveConfig() {
     if (j.ok) {
       const pwChanged = $("webui_password").value.trim() !== currentWebuiPassword;
       const portChanged = payload.cloudflare.webui_port !== currentWebuiPort;
-      loadConfig();
-      loadStatus();
-      if (portChanged) {
-        toast("เปลี่ยนพอร์ตหน้าเว็บแล้ว — ต้อง restart service (dist\\cloudflare-ddns.exe restart) เพื่อให้มีผล", "ok");
-      }
       if (pwChanged) {
-        toast(payload.cloudflare.webui_password ? "ตั้งรหัสผ่านหน้าเว็บแล้ว — กำลังรีเฟรช ต้องเข้าสู่ระบบใหม่" : "ลบรหัสผ่านหน้าเว็บแล้ว", "ok");
-        setTimeout(() => location.reload(), 1500);
+        // cookie เก่าใช้ไม่ได้แล้ว — อย่าโหลด config ตอนนี้ (จะ error 401) — login ใหม่แล้ว reload
+        toast(payload.cloudflare.webui_password ? "ตั้งรหัสผ่านหน้าเว็บแล้ว — กำลังเข้าสู่ระบบใหม่" : "ลบรหัสผ่านหน้าเว็บแล้ว", "ok");
+        setTimeout(async () => {
+          if (payload.cloudflare.webui_password) {
+            try {
+              await fetch("/login", { method: "POST", body: new URLSearchParams({ pw: payload.cloudflare.webui_password }) });
+            } catch (e) { logClientError("auto-login หลังเปลี่ยนรหัส", e); }
+          }
+          location.reload();
+        }, 1200);
+      } else {
+        loadConfig();
+        loadStatus();
+        if (portChanged) {
+          toast("เปลี่ยนพอร์ตหน้าเว็บแล้ว — ต้อง restart service (dist\\cloudflare-ddns.exe restart) เพื่อให้มีผล", "ok");
+        }
       }
     }
   } catch (e) {
+    logClientError("saveConfig", e);
     toast("บันทึกไม่ได้: " + e, "err");
   }
   btn.disabled = false;
@@ -1012,6 +1074,7 @@ async function loadIp() {
       nat.innerHTML = (bad ? '<span style="color:var(--danger)">⚠ ' : '<span style="color:var(--ok)">✓ ') + escapeHtml(j.nat.message) + "</span>";
     }
   } catch (e) {
+    logClientError("loadIp", e);
     v4.textContent = "อ่านไม่ได้: " + e;
   }
 }
@@ -1090,6 +1153,7 @@ async function scanPorts() {
       '<p style="margin-top:8px;font-size:0.85rem;color:var(--ink-2)">' + escapeHtml(j.host) + " → " + escapeHtml(j.ip) +
       " · เปิด " + open.length + " · ปิด " + (j.ports.length - open.length - filtered.length) + " · ไม่มีตอบ " + filtered.length + "</p>";
   } catch (e) {
+    logClientError('scanPorts', e);
     box.innerHTML = '<p style="color:var(--danger)">error: ' + escapeHtml(e) + "</p>";
   }
   btn.disabled = false;
@@ -1098,10 +1162,19 @@ async function scanPorts() {
 async function loadLog() {
   const box = $("logview");
   try {
-    const r = await fetch("/log");
+    const r = await fetch("/log?t=" + Date.now());
+    if (!r.ok) {
+      if (r.status === 401 || r.status === 403) {
+        box.textContent = "session หมดอายุ — กดรีเฟรชหน้าเว็บ (F5/Ctrl+R) เพื่อเข้าสู่ระบบใหม่ แล้วลองอีกครั้ง";
+      } else {
+        box.textContent = "อ่าน log ไม่ได้ (HTTP " + r.status + ") — รีเฟรชหน้าเว็บแล้วลองใหม่";
+      }
+      return;
+    }
     box.textContent = await r.text();
     box.scrollTop = box.scrollHeight;
   } catch (e) {
+    logClientError('loadLog', e);
     box.textContent = "อ่าน log ไม่ได้: " + e;
   }
 }
@@ -1115,11 +1188,12 @@ async function loadTunnelStatus() {
     const parts = [];
     if (!t.enabled) parts.push('<span style="color:var(--muted)">ปิดใช้งาน (ตั้งค่าในฟอร์มด้านล่าง)</span>');
     if (!t.installed) parts.push('<span class="err">cloudflared ยังไม่ติดตั้ง</span>');
-    if (t.running) parts.push('<span class="ok">รันอยู่ (pid ' + t.pid + ")</span>");
+    if (t.running) parts.push('<span class="ok">รันอยู่ (pid ' + escapeHtml(String(t.pid)) + ")</span>");
     else if (t.enabled) parts.push('<span>ยังไม่รัน</span>');
     if (t.installed && t.version) parts.push('<span style="color:var(--muted)">cloudflared ' + escapeHtml(t.version) + "</span>");
     box.innerHTML = parts.join(" · ");
   } catch (e) {
+    logClientError('loadTunnelStatus', e);
     $("tunnel-status").textContent = "อ่านสถานะไม่ได้: " + e;
   }
 }
@@ -1168,6 +1242,7 @@ async function tunnelHosts() {
       }
     }));
   } catch (e) {
+    logClientError('tunnelHosts', e);
     box.innerHTML = '<p style="color:var(--danger)">error: ' + escapeHtml(e) + "</p>";
   }
 }
@@ -1191,6 +1266,7 @@ async function tunnelAddHost() {
       domainSel.innerHTML = '<option value="">— ใส่โดเมนไม่ได้ (API token ไม่มีสิทธิ์) —</option>';
     }
   } catch (e) {
+    logClientError('tunnelAddHost', e);
     domainSel.innerHTML = '<option value="">— โหลดโดเมนไม่ได้ —</option>';
   }
   // เปลี่ยนโดเมน -> โหลดชื่อแนะนำใหม่
@@ -1245,6 +1321,7 @@ async function thBind() {
     msg.innerHTML = j.ok ? '<p style="color:var(--ok)">✓ ' + escapeHtml(j.message) + "</p>" : '<p style="color:var(--danger)">' + escapeHtml(j.message) + "</p>";
     if (j.ok) { tunnelHosts(); loadTunnelStatus(); }
   } catch (e) {
+    logClientError('thBind', e);
     msg.innerHTML = '<p style="color:var(--danger)">error: ' + escapeHtml(e) + "</p>";
   }
 }
@@ -1414,6 +1491,7 @@ function renderTunnelWizard() {
         twzStep = 3;
         renderTunnelWizard();
       } catch (e) {
+    logClientError('renderTunnelWizard', e);
         $("twz-msg").innerHTML = wzMsg("err", "error: " + e);
         btn.disabled = false;
       }
@@ -1457,6 +1535,7 @@ function renderTunnelWizard() {
           sel.innerHTML = '<option value="">— ใส่เองไม่ได้ (API token ไม่มีสิทธิ์) —</option>';
         }
       } catch (e) {
+    logClientError('renderTunnelWizard', e);
         sel.innerHTML = '<option value="">— โหลดโดเมนไม่ได้ —</option>';
       }
       sel.onchange = () => fillSubList("twz-sub", "twz-domain", "twz-sub-list");
@@ -1484,6 +1563,7 @@ function renderTunnelWizard() {
         msg.innerHTML = j.ok ? wzMsg("ok", "✓ " + j.message) : wzMsg("err", j.message);
         if (j.ok) loadTwzBound();
       } catch (e) {
+    logClientError('renderTunnelWizard', e);
         msg.innerHTML = wzMsg("err", "error: " + e);
       }
       btn.disabled = false;
@@ -1561,6 +1641,7 @@ function renderTunnelWizard() {
         loadConfig();
         loadTunnelStatus();
       } catch (e) {
+    logClientError('renderTunnelWizard', e);
         $("twz-save-msg").innerHTML = wzMsg("err", "error: " + e);
         btn.disabled = false;
       }
@@ -1605,6 +1686,7 @@ async function loadTwzBound() {
       }
     }));
   } catch (e) {
+    logClientError('loadTwzBound', e);
     box.innerHTML = '<p style="color:var(--danger)">error: ' + escapeHtml(e) + "</p>";
   }
 }
@@ -1744,6 +1826,7 @@ function renderWizard() {
         wzStep = 3;
         renderWizard();
       } catch (e) {
+    logClientError('renderWizard', e);
         $("wz-token-msg").innerHTML = wzMsg("err", "ติดต่อเซิร์ฟเวอร์ไม่ได้: " + e);
         $("wz-next").disabled = false;
       }
@@ -1902,7 +1985,11 @@ function renderWizard() {
           interval_seconds: existing.cloudflare.interval_seconds || 60,
           use_ipv4: existing.cloudflare.use_ipv4 !== false,
           use_ipv6: existing.cloudflare.use_ipv6 !== false,
+          reject_cloudflare_ips: existing.cloudflare.reject_cloudflare_ips !== false,
+          healthchecks_url: existing.cloudflare.healthchecks_url || "",
+          uptimekuma_url: existing.cloudflare.uptimekuma_url || "",
           webui_port: existing.cloudflare.webui_port || 8123,
+          webui_host: existing.cloudflare.webui_host || "127.0.0.1",
           webui_password: existing.cloudflare.webui_password || "",
           log_dir: existing.cloudflare.log_dir || "",
         },
@@ -1914,6 +2001,7 @@ function renderWizard() {
           notify_ip_change: tgl.notify_ip_change !== false,
           notify_error: tgl.notify_error !== false,
           notify_created: tgl.notify_created !== false,
+          notify_round: tgl.notify_round === true,
           daily_report: tgl.daily_report !== false,
           daily_report_time: tgl.daily_report_time || "08:00",
         },
@@ -1942,6 +2030,7 @@ function renderWizard() {
         loadStatus();
         loadConfig();
       } catch (e) {
+    logClientError('renderWizard', e);
         $("wz-save-msg").innerHTML = wzMsg("err", "error: " + e);
         btn.disabled = false;
       }
@@ -2047,6 +2136,7 @@ def _cfg_to_dict(cfg):
             "healthchecks_url": cfg.healthchecks_url,
             "uptimekuma_url": cfg.uptimekuma_url,
             "webui_port": cfg.webui_port,
+            "webui_host": cfg.webui_host,
             "webui_password": cfg.webui_password,
             "log_dir": cfg.log_dir if cfg.log_dir != config_mod.DEFAULT_LOG_DIR else "",
         },
@@ -2058,6 +2148,7 @@ def _cfg_to_dict(cfg):
             "notify_ip_change": cfg.notify_ip_change,
             "notify_error": cfg.notify_error,
             "notify_created": cfg.notify_created,
+            "notify_round": cfg.notify_round,
             "daily_report": cfg.daily_report,
             "daily_report_time": cfg.daily_report_time,
         },
@@ -2081,6 +2172,14 @@ def _cfg_to_dict(cfg):
     }
 
 
+def _as_int(value, default):
+    """แปลงค่าเป็น int อย่างปลอดภัย (client ส่งค่าผิด -> ใช้ default กัน 500)"""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _dict_to_ini(data):
     """สร้างข้อความ config.ini จาก dict (โครงสร้างเดียวกับ _cfg_to_dict)."""
     cf = data.get("cloudflare", {})
@@ -2091,13 +2190,14 @@ def _dict_to_ini(data):
         lines.append(f"{key} = {value}")
 
     kv("api_token", str(cf.get("api_token", "")).strip())
-    kv("interval_seconds", int(cf.get("interval_seconds", 60)))
+    kv("interval_seconds", _as_int(cf.get("interval_seconds", 60), 60))
     kv("use_ipv4", str(bool(cf.get("use_ipv4"))).lower())
     kv("use_ipv6", str(bool(cf.get("use_ipv6"))).lower())
     kv("reject_cloudflare_ips", str(bool(cf.get("reject_cloudflare_ips", True))).lower())
     kv("healthchecks_url", str(cf.get("healthchecks_url", "")).strip())
     kv("uptimekuma_url", str(cf.get("uptimekuma_url", "")).strip())
-    kv("webui_port", max(1, min(65535, int(cf.get("webui_port", 8123)))))
+    kv("webui_port", _as_int(cf.get("webui_port", 8123), 8123))
+    kv("webui_host", str(cf.get("webui_host", "127.0.0.1")).strip() or "127.0.0.1")
     kv("webui_password", str(cf.get("webui_password", "")).strip())
     kv("log_dir", str(cf.get("log_dir", "")).strip())
     kv("telegram_bot_token", str(tg.get("bot_token", "")).strip())
@@ -2107,6 +2207,7 @@ def _dict_to_ini(data):
     kv("notify_ip_change", str(bool(tg.get("notify_ip_change", True))).lower())
     kv("notify_error", str(bool(tg.get("notify_error", True))).lower())
     kv("notify_created", str(bool(tg.get("notify_created", True))).lower())
+    kv("notify_round", str(bool(tg.get("notify_round", False))).lower())
     kv("daily_report", str(bool(tg.get("daily_report", True))).lower())
     kv("daily_report_time", str(tg.get("daily_report_time", "08:00")).strip() or "08:00")
     tu = data.get("tunnel", {})
@@ -2122,7 +2223,7 @@ def _dict_to_ini(data):
         lines.append(f"[record:{name}]")
         kv("zone", str(rec.get("zone", "")).strip().rstrip("."))
         kv("proxied", str(bool(rec.get("proxied", False))).lower())
-        kv("ttl", max(int(rec.get("ttl", 60)), 60))
+        kv("ttl", max(_as_int(rec.get("ttl", 60), 60), 60))
         kv("ipv4", str(bool(rec.get("ipv4", True))).lower())
         kv("ipv6", str(bool(rec.get("ipv6", True))).lower())
         lines.append("")
@@ -2222,7 +2323,9 @@ async function doLogin(ev) {
                 return self._send_json(401, {"ok": False, "message": "unauthorized"})
             return self._send_json(200, {"ok": True, "queue": notifier.load_queue()})
 
-        if self.path == "/log":
+        if self.path.split("?", 1)[0] == "/log":
+            if not self._authed():
+                return self._send_json(401, {"ok": False, "message": "unauthorized"})
             import os
 
             log_path = os.path.join(self.cfg.log_dir, "cloudflare-ddns.log")
@@ -2330,13 +2433,31 @@ async function doLogin(ev) {
             return self._send_json(200, data)
 
         if not self._authed():
-            return self._send(200, PAGE.replace("__LOGIN__", self._login_block()).replace("__VERSION__", __version__))
+            # หน้า login แบบเดี่ยว — ห้ามส่ง PAGE หลัก (script หลักจะรันแล้วโชว์ error 401 ใต้หน้าล็อกอิน)
+            style_start = PAGE.index("<style>")
+            style_end = PAGE.index("</style>") + len("</style>")
+            css = PAGE[style_start:style_end]
+            login_html = (
+                "<!DOCTYPE html><html lang=\"th\"><head><meta charset=\"utf-8\">"
+                '<meta name="viewport" content="width=device-width, initial-scale=1">'
+                "<title>Cloudflare DDNS — เข้าสู่ระบบ</title>"
+                + css
+                + "</head><body>"
+                + self._login_block()
+                + "</body></html>"
+            )
+            return self._send(200, login_html)
         return self._send(200, PAGE.replace("__LOGIN__", "").replace("__VERSION__", __version__))
 
     # ---- POST ----
 
     def _read_body(self):
-        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            length = 0
+        if length < 0:
+            length = 0
         return self.rfile.read(length).decode("utf-8", "replace")
 
     def do_POST(self):
@@ -2369,6 +2490,19 @@ async function doLogin(ev) {
                 _login_guard["fails"] = 0
                 log.warning("login ผิด %d ครั้งติดต่อกัน — ล็อกชั่วคราว %d นาที", _LOGIN_MAX_FAILS, _LOGIN_LOCK_SECONDS // 60)
             return self._send_json(401, {"ok": False, "message": "รหัสผ่านไม่ถูกต้อง"})
+
+        if self.path == "/log-event":
+            """รับ error จากฝั่งหน้าเว็บ (JS) มาเขียนลงไฟล์ log — เปิดเสมอ ไม่ต้อง login"""
+            try:
+                data = json.loads(body) if body else {}
+            except ValueError:
+                data = {}
+            log.warning(
+                "Web UI (JS) %s: %s",
+                str(data.get("context", "?")),
+                str(data.get("message", ""))[:500],
+            )
+            return self._send_json(200, {"ok": True})
 
         if not self._authed():
             return self._send_json(401, {"ok": False, "message": "unauthorized"})
@@ -2818,6 +2952,17 @@ async function doLogin(ev) {
                     },
                 )
             if self.path == "/service/install":
+                if _in_service():
+                    return self._send_json(
+                        400,
+                        {
+                            "ok": False,
+                            "message": (
+                                "เว็บนี้รันใน service อยู่แล้ว — service กำลังทำงาน (ติดตั้งอยู่แล้ว ไม่ต้องติดตั้งใหม่) "
+                                "ใช้ปุ่ม Restart แทน (ห้ามติดตั้งทับตัวเอง: จะลบ service ที่รันอยู่ทิ้งแล้วหยุดกลางคัน)"
+                            ),
+                        },
+                    )
                 if service_mod.service_status().get("installed"):
                     return self._send_json(400, {"ok": False, "message": "service ติดตั้งอยู่แล้ว — ใช้ปุ่ม Restart หรือถอนก่อนถ้าอยากติดตั้งใหม่"})
                 try:
@@ -2877,15 +3022,24 @@ async function doLogin(ev) {
                 except Exception as exc:
                     return self._send_json(400, {"ok": False, "message": f"หยุดไม่ได้: {exc}"})
                 return self._send_json(200, {"ok": True, "message": message})
-            # restart: รอให้ response กลับไปก่อน แล้วค่อย restart (กัน request ค้างเพราะตัวเองถูกหยุด)
+            # restart: ต้องสั่งผ่าน process ภายนอก (cmd.exe) ทั้งชุด stop+start —
+            # ถ้าเรียก stop จาก thread ในตัวเอง กระบวนการตายก่อน start รัน -> service ค้าง
             def _do_restart():
+                import subprocess as _sp
                 import time as _t
 
                 _t.sleep(2)
                 try:
-                    service_mod.restart_service()
-                except Exception:
-                    pass
+                    sc = r"C:\Windows\System32\sc.exe"
+                    cmd = (
+                        f'"{sc}" stop {service_mod.SERVICE_NAME}'
+                        f' & ping -n 3 127.0.0.1 >nul'
+                        f' & "{sc}" start {service_mod.SERVICE_NAME}'
+                    )
+                    _sp.run(["cmd", "/c", cmd], capture_output=True, timeout=60)
+                    log.info("restart service สำเร็จ (ผ่าน cmd/sc)")
+                except Exception as exc:
+                    log.warning("restart service ไม่ได้: %s", exc)
 
             if not service_mod.service_status().get("installed"):
                 return self._send_json(400, {"ok": False, "message": "ยังไม่ได้ติดตั้ง service — กด 'ติดตั้ง service' ก่อน"})
@@ -2913,17 +3067,39 @@ async function doLogin(ev) {
         if self.path == "/open-data-folder":
             import os
 
+            path = config_mod.DEFAULT_DATA_DIR
+            if _in_service():
+                # รันใน service (SYSTEM) — startfile เปิด explorer ใน session 0 ที่ผู้ใช้มองไม่เห็น
+                # -> ส่ง path กลับไปให้หน้าเว็บคัดลอก (JS จัดการคัดลอกให้อัตโนมัติ)
+                return self._send_json(
+                    200,
+                    {
+                        "ok": True,
+                        "path": path,
+                        "message": (
+                            "เว็บนี้รันใน service — ไม่สามารถเปิดโฟลเดอร์จาก session ของคุณได้ "
+                            f"คัดลอก path ให้แล้ว: {path} (กด Win+R → วาง → Enter)"
+                        ),
+                    },
+                )
             try:
-                os.startfile(config_mod.DEFAULT_DATA_DIR)
+                os.startfile(path)
             except Exception as exc:
                 return self._send_json(400, {"ok": False, "message": f"เปิดโฟลเดอร์ไม่ได้: {exc}"})
-            return self._send_json(200, {"ok": True, "message": f"เปิดโฟลเดอร์ข้อมูลแล้ว ({config_mod.DEFAULT_DATA_DIR})"})
+            return self._send_json(200, {"ok": True, "path": path, "message": f"เปิดโฟลเดอร์ข้อมูลแล้ว ({path})"})
 
         if self.path == "/save-config":
             try:
                 data = json.loads(body)
             except ValueError:
                 return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+            # เติม field ที่ client ไม่ได้ส่งจาก config ปัจจุบัน (กันบันทึกแล้วข้อมูลหาย
+            # เช่น client/เวอร์ชันเก่า, wizard ที่ payload ไม่ครบ)
+            if isinstance(data, dict):
+                current = _cfg_to_dict(self.cfg)
+                for section in ("cloudflare", "telegram", "tunnel"):
+                    for key, value in current.get(section, {}).items():
+                        data.setdefault(section, {}).setdefault(key, value)
             ini_text = _dict_to_ini(data)
             ok, message = self.cfg.save_text(ini_text)
             return self._send_json(200 if ok else 400, {"ok": ok, "message": message})
@@ -2939,22 +3115,23 @@ async function doLogin(ev) {
 
 
 class WebUI:
-    def __init__(self, config_path=config_mod.DEFAULT_CONFIG_PATH, port=None, password=None):
+    def __init__(self, config_path=config_mod.DEFAULT_CONFIG_PATH, port=None, password=None, host=None):
         config_mod.migrate_legacy_data()
         self.config_path = config_path
         self.cfg = config_mod.Config(config_path)
         self.port = port or self.cfg.webui_port
+        self.host = host or self.cfg.webui_host or "127.0.0.1"
         if password is not None:
             self.cfg.webui_password = password
         handler = type("Handler", (WebUIHandler,), {})
-        self.server = ThreadingHTTPServer(("127.0.0.1", self.port), handler)
+        self.server = ThreadingHTTPServer((self.host, self.port), handler)
         self.server.cfg = self.cfg
         self.server.config_path = config_path
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
     def start(self):
         self.thread.start()
-        log.info("Web UI เปิดที่ http://127.0.0.1:%d", self.port)
+        log.info("Web UI เปิดที่ http://%s:%d (เข้าจากเครื่องนี้เท่านั้น)", self.host, self.port)
 
     def serve_forever(self):
         self.start()

@@ -184,8 +184,15 @@ def cmd_setup(args):
         }
 
     os.makedirs(os.path.dirname(os.path.abspath(args.config)) or ".", exist_ok=True)
-    with open(args.config, "w", encoding="utf-8") as handle:
-        parser.write(handle)
+    # เขียนแบบ atomic (temp + replace) — กันไฟล์เสียกลางคัน/มี service อ่านอยู่
+    tmp_path = args.config + ".tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            parser.write(handle)
+        os.replace(tmp_path, args.config)
+    except OSError as exc:
+        print(f"✗ เขียน config ไม่ได้: {exc}")
+        return
 
     print()
     print(f"✓ เขียน config แล้ว: {args.config}")
@@ -241,9 +248,8 @@ def cmd_notify_test(args):
         print("✓ ส่งข้อความทดสอบสำเร็จ — ตรวจใน Telegram ได้เลย")
         return 0
     print(f"✗ ส่งไม่สำเร็จ: {error}")
-    items = notifier.load_queue()
-    items.append("✅ ทดสอบการแจ้งเตือนจาก Cloudflare DDNS (รอส่งใหม่)")
-    notifier.save_queue(items)
+    # เก็บคิวผ่าน _enqueue (กัน race กับ service ที่อ่าน-เขียนคิวพร้อมกัน)
+    notify._enqueue("✅ ทดสอบการแจ้งเตือนจาก Cloudflare DDNS (รอส่งใหม่)")
     print("  ข้อความถูกเก็บในคิวและจะส่งใหม่ในรอบถัดไปโดยอัตโนมัติ")
     return 1
 
@@ -320,16 +326,19 @@ def cmd_status(args):
               f"cloudflared: {'ติดตั้งแล้ว' if tunnel_status['installed'] else 'ยังไม่ติดตั้ง'} | "
               f"รันอยู่: {'ใช่' if tunnel_status['running'] else 'ไม่'}"
               + (f" (pid {tunnel_status['pid']})" if tunnel_status["pid"] else ""))
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("อ่านสถานะ Cloudflare Tunnel ไม่ได้: %s", exc)
+        print(f"  (อ่านสถานะ tunnel ไม่ได้: {exc})")
 
 
 def cmd_webui(args):
     from . import webui
 
     setup_console_logging()
-    log.info("เปิด Web UI ที่ http://127.0.0.1:%s (ปิดด้วย Ctrl+C)", args.port or "(จาก config)")
-    webui.WebUI(args.config, port=args.port, password=args.password).serve_forever()
+    ui = webui.WebUI(args.config, port=args.port, password=args.password)
+    host = "127.0.0.1" if ui.host in ("0.0.0.0", "::") else ui.host
+    log.info("เปิด Web UI ที่ http://%s:%s (ปิดด้วย Ctrl+C)", host, args.port or "(จาก config)")
+    ui.serve_forever()
 
 
 def cmd_default(args):

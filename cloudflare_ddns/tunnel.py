@@ -11,6 +11,7 @@ import time
 import urllib.request
 
 from . import config as config_mod
+from . import notifier
 
 log = logging.getLogger("cloudflare-ddns")
 
@@ -42,8 +43,14 @@ def cloudflared_version(cfg=None):
             if token[:1].isdigit():
                 _version_cache.update(time=now, version=token)
                 return token
-    except Exception:
-        pass
+        # อ่านได้แต่หาเวอร์ชันไม่เจอ — log ครั้งเดียวต่อ 10 นาที
+        if now - _version_cache["time"] > 600:
+            _version_cache["time"] = now
+            log.warning("อ่านเวอร์ชัน cloudflared ไม่ได้: %r", text[:120])
+    except Exception as exc:
+        if now - _version_cache["time"] > 600:
+            _version_cache["time"] = now
+            log.warning("อ่านเวอร์ชัน cloudflared ไม่ได้: %s", exc)
     return ""
 
 
@@ -106,6 +113,21 @@ def _pid_alive(pid):
         return False
 
 
+def _process_is_cloudflared(pid):
+    """เช็คว่า pid นั้นเป็น cloudflared.exe จริงหรือไม่ (กัน kill ผิด process ตอน pid reuse)"""
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            timeout=10,
+            text=True,
+        )
+        name = (result.stdout or "").strip().split(",")[0].strip('"').lower()
+        return name == "cloudflared.exe"
+    except Exception:
+        return True  # ตรวจไม่ได้ -> ถือว่าใช่ (รักษาพฤติกรรมเดิม)
+
+
 class TunnelManager:
     def __init__(self):
         self._proc = None
@@ -121,8 +143,10 @@ class TunnelManager:
     def _save_pid(self, pid):
         try:
             os.makedirs(config_mod.DEFAULT_DATA_DIR, exist_ok=True)
-            with open(_pid_path(), "w", encoding="utf-8") as handle:
+            tmp = _pid_path() + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as handle:
                 handle.write(str(pid))
+            os.replace(tmp, _pid_path())
         except OSError as exc:
             log.warning("บันทึก tunnel pid ไม่ได้: %s", exc)
 
@@ -158,9 +182,16 @@ class TunnelManager:
             return True, f"tunnel รันอยู่แล้ว (pid {self.status(cfg)['pid']})"
         if not getattr(cfg, "tunnel_token", "").strip():
             return False, "ไม่พบ tunnel_token (สร้างได้ที่ Zero Trust → Networks → Tunnels)"
+        was_installed = is_installed(cfg)
         ok, message = ensure_installed(cfg)
         if not ok:
             return False, message
+        if not was_installed:
+            self._notify(
+                cfg,
+                notifier.EVENT_START,
+                f"⬇️ ดาวน์โหลด cloudflared สำเร็จ (เวอร์ชัน {cloudflared_version(cfg) or '?'})",
+            )
         args = [
             cloudflared_path(cfg),
             "tunnel",
@@ -179,6 +210,18 @@ class TunnelManager:
             return False, f"เริ่ม cloudflared ไม่ได้: {exc}"
         self._save_pid(self._proc.pid)
         log.info("เริ่ม Cloudflare Tunnel แล้ว (pid %s)", self._proc.pid)
+        hosts = getattr(cfg, "tunnel_hosts", [])
+        lines = [f"🌐 Tunnel เริ่มทำงาน (pid {self._proc.pid})"]
+        if hosts:
+            lines.append("")
+            lines.append(f"ผูก {len(hosts)} hostname:")
+            for host in hosts:
+                name = host.get("hostname", "") + host.get("path", "")
+                lines.append(f"• {name} → {host.get('service', '')}")
+        else:
+            lines.append("")
+            lines.append("ยังไม่มี hostname ที่ผูก (ตั้งในเว็บ: การ์ด Cloudflare Tunnel)")
+        self._notify(cfg, notifier.EVENT_START, "\n".join(lines))
         return True, f"เริ่ม tunnel แล้ว (pid {self._proc.pid})"
 
     def stop(self):
@@ -192,18 +235,36 @@ class TunnelManager:
                 pass
             self._proc = None
         if _pid_alive(self._pid):
-            try:
-                subprocess.run(
-                    ["taskkill", "/PID", str(self._pid), "/F"],
-                    capture_output=True,
-                    timeout=10,
+            if not _process_is_cloudflared(self._pid):
+                log.warning(
+                    "pid %s ไม่ใช่ cloudflared (pid reuse?) — ข้าม taskkill กัน kill ผิด process",
+                    self._pid,
                 )
-                stopped = True
-            except Exception:
-                pass
+            else:
+                try:
+                    subprocess.run(
+                        ["taskkill", "/PID", str(self._pid), "/F"],
+                        capture_output=True,
+                        timeout=10,
+                    )
+                    stopped = True
+                except Exception as exc:
+                    log.warning("taskkill cloudflared (pid %s) ไม่ได้: %s", self._pid, exc)
         self._clear_pid()
         self._pid = None
         if stopped:
             log.info("หยุด Cloudflare Tunnel แล้ว")
+            self._notify(config_mod.Config(), notifier.EVENT_STOP, "🌐 Tunnel หยุดทำงาน")
             return True, "หยุด tunnel แล้ว"
         return True, "tunnel ไม่ได้รันอยู่"
+
+    def _notify(self, cfg, event, text):
+        """ส่งแจ้งเตือน Telegram (ถ้าตั้งค่าไว้) — ไม่ล้มเหลวถ้า Telegram พัง"""
+        try:
+            from .notifier import TelegramNotifier
+
+            notifier_obj = TelegramNotifier.from_config(cfg)
+            notifier_obj.notify(event, text)
+            notifier_obj.flush()
+        except Exception as exc:
+            log.warning("แจ้งเตือน tunnel ไม่ได้: %s", exc)
