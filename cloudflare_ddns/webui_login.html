@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cloudflare DDNS — เข้าสู่ระบบ</title>
+<style>
+__CSS__
+</style>
+</head>
+<body>
+<div style="display:flex;min-height:100vh;align-items:center;justify-content:center">
+<div class="panel" style="width:320px;margin:0">
+  <h2 style="margin-bottom:14px">เข้าสู่ระบบ</h2>
+  <form onsubmit="doLogin(event)">
+    <span class="eye-wrap">
+      <input id="pw" type="password" placeholder="รหัสผ่าน webui_password" autocomplete="current-password" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg)">
+      <button type="button" class="eye-toggle" aria-label="แสดง/ซ่อนรหัส" onclick="togglePw(this)">👁</button>
+    </span>
+    <p id="login-err" style="margin:8px 0 0;font-size:0.85rem;color:var(--danger)" hidden>รหัสผ่านไม่ถูกต้อง</p>
+    <p style="margin-top:12px"><button class="btn-primary" type="submit" style="width:100%">เข้าสู่ระบบ</button></p>
+  </form>
+</div></div>
+<script>
+async function doLogin(ev) {
+  ev.preventDefault();
+  const r = await fetch("/login", { method: "POST", body: new URLSearchParams({ pw: document.getElementById("pw").value }) });
+  if (r.ok) { location.reload(); return; }
+  document.getElementById("login-err").hidden = false;
+}
+function togglePw(btn) {
+  const inp = document.getElementById("pw");
+  inp.type = inp.type === "password" ? "text" : "password";
+  btn.textContent = inp.type === "password" ? "👁" : "🙈";
+}
+</script>
+</body>
+</html>

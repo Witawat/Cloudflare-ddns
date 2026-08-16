@@ -1529,7 +1529,6 @@ $("wz-skip").addEventListener("click", closeWizard);
 
 $("logReload").addEventListener("click", loadLog);
 $("logClear").addEventListener("click", clearLog);
-$("refresh").addEventListener("click", loadStatus);
 $("recheckIp").addEventListener("click", loadIp);
 $("scanBtn").addEventListener("click", scanPorts);
 $("saveBtn").addEventListener("click", saveConfig);
@@ -1561,6 +1560,17 @@ $("svcUninstall").addEventListener("click", () => {
 });
 $("ddnsRun").addEventListener("click", ddnsRunNow);
 $("openFolder").addEventListener("click", openDataFolder);
+$("refresh").addEventListener("click", refreshAll);
+
+/* โหลดทุกส่วนใหม่หมด (ปุ่มรีเฟรช) — เหมือนตอนเปิดหน้าแรก */
+function refreshAll() {
+  loadStatus();
+  loadConfig();
+  loadIp();
+  loadLog();
+  loadTunnelStatus();
+  loadServiceStatus();
+}
 
 loadStatus();
 loadConfig();

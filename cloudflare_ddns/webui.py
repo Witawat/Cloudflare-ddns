@@ -135,6 +135,8 @@ def _read_static(name):
 PAGE = _read_static("webui.html")
 # JavaScript ทั้งหมด (serve ผ่าน /webui.js — script src ใน PAGE)
 PAGE_JS = _read_static("webui.js")
+# หน้า login แยกไฟล์ — CSS ยืมจาก PAGE (placeholder __CSS__)
+PAGE_LOGIN = _read_static("webui_login.html")
 
 
 
@@ -298,33 +300,6 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 return True
         return False
 
-    def _login_block(self):
-        return """<div style="display:flex;min-height:100vh;align-items:center;justify-content:center">
-<div class="panel" style="width:320px;margin:0">
-  <h2 style="margin-bottom:14px">เข้าสู่ระบบ</h2>
-  <form onsubmit="doLogin(event)">
-    <span class="eye-wrap">
-      <input id="pw" type="password" placeholder="รหัสผ่าน webui_password" autocomplete="current-password" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg)">
-      <button type="button" class="eye-toggle" aria-label="แสดง/ซ่อนรหัส" onclick="togglePw(this)">👁</button>
-    </span>
-    <p id="login-err" style="margin:8px 0 0;font-size:0.85rem;color:var(--danger)" hidden>รหัสผ่านไม่ถูกต้อง</p>
-    <p style="margin-top:12px"><button class="btn-primary" type="submit" style="width:100%">เข้าสู่ระบบ</button></p>
-  </form>
-</div></div>
-<script>
-async function doLogin(ev) {
-  ev.preventDefault();
-  const r = await fetch("/login", { method: "POST", body: new URLSearchParams({ pw: document.getElementById("pw").value }) });
-  if (r.ok) { location.reload(); return; }
-  document.getElementById("login-err").hidden = false;
-}
-function togglePw(btn) {
-  const inp = document.getElementById("pw");
-  inp.type = inp.type === "password" ? "text" : "password";
-  btn.textContent = inp.type === "password" ? "👁" : "🙈";
-}
-</script>"""
-
     # ---- GET ----
 
     def do_GET(self):
@@ -479,20 +454,12 @@ function togglePw(btn) {
             return self._send(200, PAGE_JS, "application/javascript; charset=utf-8")
 
         if not self._authed():
-            # หน้า login แบบเดี่ยว — ห้ามส่ง PAGE หลัก (script หลักจะรันแล้วโชว์ error 401 ใต้หน้าล็อกอิน)
+            # หน้า login แบบเดี่ยว (ไฟล์แยก webui_login.html) — ห้ามส่ง PAGE หลัก
+            # (script หลักจะรันแล้วโชว์ error 401 ใต้หน้าล็อกอิน) — CSS ยืมจาก PAGE
             style_start = PAGE.index("<style>")
             style_end = PAGE.index("</style>") + len("</style>")
             css = PAGE[style_start:style_end]
-            login_html = (
-                "<!DOCTYPE html><html lang=\"th\"><head><meta charset=\"utf-8\">"
-                '<meta name="viewport" content="width=device-width, initial-scale=1">'
-                "<title>Cloudflare DDNS — เข้าสู่ระบบ</title>"
-                + css
-                + "</head><body>"
-                + self._login_block()
-                + "</body></html>"
-            )
-            return self._send(200, login_html)
+            return self._send(200, PAGE_LOGIN.replace("__CSS__", css))
         return self._send(200, PAGE.replace("__LOGIN__", "").replace("__VERSION__", __version__))
 
     # ---- POST ----

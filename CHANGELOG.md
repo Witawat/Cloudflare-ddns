@@ -34,6 +34,7 @@
 ### ปรับปรุง (Development)
 
 - **แยก HTML/CSS และ JavaScript ออกจาก webui.py**: หน้าเว็บทั้งหมดย้ายไป `cloudflare_ddns/webui.html` (HTML+CSS) + `cloudflare_ddns/webui.js` (JS ล้วน) — webui.py เหลือแค่ Python logic (handler/endpoints) — แก้หน้าตา/JS ไม่ต้องยุ่ง Python string escape (ปัญหา `\"`/quote หายไป) · build scripts เพิ่ม `--add-data` ฝังไฟล์ทั้ง 2 เข้า exe (serve ผ่าน `/` และ `/webui.js`)
+- **แยกหน้า login เป็นไฟล์ `webui_login.html`** (เดิมเป็น Python string ใน webui.py) — ยังใช้ CSS เดียวกับหน้า main · **ปุ่ม "รีเฟรช" โหลดทุกส่วนใหม่หมด** (สถานะ/IP/NAT/log/tunnel/service/config) — จากเดิมโหลดแค่สถานะ
 
 ## [1.7.18] — 2026-08-16
 

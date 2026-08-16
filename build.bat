@@ -44,6 +44,7 @@ python -m PyInstaller --noconfirm --clean --onefile --console ^
     --hidden-import win32service ^
     --add-data "cloudflare_ddns\webui.html;cloudflare_ddns" ^
     --add-data "cloudflare_ddns\webui.js;cloudflare_ddns" ^
+    --add-data "cloudflare_ddns\webui_login.html;cloudflare_ddns" ^
     run.py
 if errorlevel 1 (
     echo %RED%[x]%RST% Build failed ^(exe locked? close webui/python first^).
