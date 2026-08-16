@@ -81,6 +81,16 @@ main { max-width: 860px; margin: 0 auto; padding: 24px 28px 80px; }
 .record-row + .record-row { margin-top: 6px; }
 .record-row.ok { background: var(--ok-soft); }
 .record-row.err { background: var(--danger-soft); }
+/* สถานะ NAT แบบแถว (คล้าย records) — พื้นหลังสีอ่อนสดใสกว่า soft ปกติ */
+.nat-box {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; border-radius: 8px; margin-top: 8px;
+  font-size: 0.85rem; line-height: 1.4;
+}
+.nat-box.ok { background: color-mix(in oklch, var(--ok) 20%, var(--bg)); }
+.nat-box.err { background: color-mix(in oklch, var(--danger) 18%, var(--bg)); }
+.nat-box.ok .rec-dot { background: var(--ok); }
+.nat-box.err .rec-dot { background: var(--danger); }
 .record-row.idle { background: var(--surface-2); }
 .rec-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .ok .rec-dot { background: var(--ok); }
