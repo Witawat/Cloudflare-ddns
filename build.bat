@@ -35,21 +35,56 @@ if "%HAS_SVC%"=="1" (
     taskkill /F /IM cloudflare-ddns.exe >nul 2>&1
 )
 
+rem ---- หา UPX (บีบ exe ให้เล็กลง ~17% — ถ้าไม่มี ข้ามได้) ----
+set "UPX_EXE="
+set "UPXDIR="
+if exist "%~dp0tools\upx.exe" (
+    set "UPX_EXE=%~dp0tools\upx.exe"
+    set "UPXDIR=%~dp0tools"
+) else (
+    where upx >nul 2>&1 && set "UPX_EXE=upx"
+)
+if defined UPX_EXE (
+    echo %YEL%[*]%RST% UPX: %UPX_EXE% ^(จะบีบ exe หลัง build^)
+) else (
+    echo %YEL%[*]%RST% ไม่พบ UPX — ข้ามการบีบอัด ^(exe จะใหญ่ ~9.7MB แทน 8MB^)
+)
+
 echo %GRN%[1/2]%RST% Building exe ^(dist\cloudflare-ddns.exe^)...
-python -m PyInstaller --noconfirm --clean --onefile --console ^
-    --name cloudflare-ddns ^
-    --icon assets\icon.ico ^
-    --hidden-import servicemanager ^
-    --hidden-import win32serviceutil ^
-    --hidden-import win32service ^
-    --add-data "cloudflare_ddns\webui.html;cloudflare_ddns" ^
-    --add-data "cloudflare_ddns\webui.js;cloudflare_ddns" ^
-    --add-data "cloudflare_ddns\webui_login.html;cloudflare_ddns" ^
-    run.py
+if defined UPXDIR (
+    python -m PyInstaller --noconfirm --clean --onefile --console ^
+        --name cloudflare-ddns ^
+        --icon assets\icon.ico ^
+        --hidden-import servicemanager ^
+        --hidden-import win32serviceutil ^
+        --hidden-import win32service ^
+        --add-data "cloudflare_ddns\webui.html;cloudflare_ddns" ^
+        --add-data "cloudflare_ddns\webui.js;cloudflare_ddns" ^
+        --add-data "cloudflare_ddns\webui_login.html;cloudflare_ddns" ^
+        --upx-dir "%UPXDIR%" ^
+        run.py
+) else (
+    python -m PyInstaller --noconfirm --clean --onefile --console ^
+        --name cloudflare-ddns ^
+        --icon assets\icon.ico ^
+        --hidden-import servicemanager ^
+        --hidden-import win32serviceutil ^
+        --hidden-import win32service ^
+        --add-data "cloudflare_ddns\webui.html;cloudflare_ddns" ^
+        --add-data "cloudflare_ddns\webui.js;cloudflare_ddns" ^
+        --add-data "cloudflare_ddns\webui_login.html;cloudflare_ddns" ^
+        run.py
+)
 if errorlevel 1 (
     echo %RED%[x]%RST% Build failed ^(exe locked? close webui/python first^).
     pause
     exit /b 1
+)
+
+rem ---- บีบ exe หลักขั้นสุด (--force = ลบ CFG header ที่ UPX ไม่รองรับ) ----
+if defined UPX_EXE (
+    echo %GRN%[2/2]%RST% Compressing exe with UPX...
+    "%UPX_EXE%" --force --best --lzma dist\cloudflare-ddns.exe >nul 2>&1
 )
 
 echo.

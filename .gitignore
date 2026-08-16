@@ -13,3 +13,5 @@ cloudflared.exe
 tunnel.pid
 .playwright-mcp/
 *.png
+
+tools/
