@@ -12,6 +12,8 @@
 
 ### เพิ่ม (Features)
 
+- **กด exe เปล่า ๆ (double-click) = รัน DDNS loop + Web UI พร้อมกัน** — จากเดิมเปิดแค่หน้าเว็บรอเฉย ๆ (ไม่มีอัปเดต) — ตอนนี้เปิด exe ครั้งเดียวทำงานเต็มรูปแบบ เหมือน service แต่เป็น foreground (ปิดด้วย Ctrl+C — จะแจ้ง Telegram "หยุดทำงาน" ให้)
+- **กันข้อความว่างเข้าคิว Telegram**: เดิมถ้ามีเหตุการณ์ที่สร้างข้อความว่าง (เช่น คิวเก่า/ค่า config ซ้ำ) จะติดคิวและส่งไม่สำเร็จ HTTP 400 ซ้ำไม่จบ — ตอนนี้ข้ามข้อความว่างทันที (log debug)
 - **ตรวจ NAT 3 ชั้น (เจอ CGNAT/double NAT ได้แม่นขึ้น)**: นอกจากการเช็ค IP จาก provider + STUN รอบเดียว — เพิ่ม (1) tracert ดูฮอปแรกหลัง WAN (เห็น 100.64/10 = CGNAT ของ ISP · เห็น IP private = NAT ซ้อนหลายชั้น) (2) STUN ซ้ำ 4 รอบเช็ค mapped port เปลี่ยนไหม (symmetric mapping) — ผลใหม่มี `tracert` + `stun_rounds` และ `nat_type` ใหม่ **`double-nat`** (DDNS อัปเดต IP ได้ แต่คนนอกเข้าไม่ถึง — ต้องเปิด port ทุกชั้นหรือใช้ Tunnel) — หน้าเว็บ: CGNAT/private = ⚠ แดง · double NAT = ⚠ เหลือง (เตือน) · ปกติ = ✓ เขียว — service เตือนผ่าน Telegram เมื่อเจอ double NAT ด้วย
 
 ## [1.7.18] — 2026-08-16

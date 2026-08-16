@@ -16,6 +16,7 @@ import getpass
 import logging
 import os
 import sys
+import threading
 import webbrowser
 
 from . import cloudflare_api
@@ -342,7 +343,9 @@ def cmd_webui(args):
 
 
 def cmd_default(args):
-    """รันโดยไม่ใส่คำสั่ง: เปิด Web UI + เบราว์เซอร์ให้เลย (ถ้า config ไม่ครบ wizard จะขึ้นเอง)."""
+    """รันโดยไม่ใส่คำสั่ง: เปิด Web UI + DDNS loop พร้อมกัน (กด exe ครั้งเดียวทำงานเต็มรูปแบบ).
+    ปิดด้วย Ctrl+C — จะหยุด webui + loop (และแจ้ง Telegram 'หยุดทำงาน')"""
+    from . import service as service_mod
     from . import webui
 
     setup_console_logging()
@@ -351,12 +354,43 @@ def cmd_default(args):
     if errors:
         print("ยังไม่ได้ตั้งค่า — กำลังเปิดหน้าตั้งค่า (wizard)...")
     else:
-        print("เปิด Web UI ที่ http://127.0.0.1:%d (ปิดด้วย Ctrl+C)" % cfg.webui_port)
+        print("เปิด Web UI + DDNS loop (ปิดด้วย Ctrl+C)")
+    service_mod.setup_file_logging(cfg.log_dir)
+
+    web_ui = None
+    try:
+        web_ui = webui.WebUI(args.config)
+        web_ui.start()
+        print("Web UI เปิดที่ http://127.0.0.1:%d" % web_ui.port)
+    except Exception as exc:
+        log.warning("เปิด Web UI ไม่ได้: %s", exc)
     try:
         webbrowser.open(f"http://127.0.0.1:{cfg.webui_port}")
     except Exception:
         pass
-    webui.WebUI(args.config).serve_forever()
+
+    stop_event = threading.Event()
+    loop_thread = threading.Thread(
+        target=ddns.run_forever,
+        args=(args.config,),
+        kwargs={"dry_run": False, "stop_event": stop_event},
+        daemon=True,
+    )
+    loop_thread.start()
+    try:
+        while loop_thread.is_alive():
+            stop_event.wait(1)
+    except KeyboardInterrupt:
+        print("Ctrl+C — กำลังหยุด DDNS loop...")
+        stop_event.set()
+        loop_thread.join(timeout=15)
+    finally:
+        if web_ui is not None:
+            try:
+                web_ui.stop()
+            except Exception:
+                pass
+    log.info("ปิด Web UI + DDNS loop เรียบร้อย")
 
 
 def run_service_entry():

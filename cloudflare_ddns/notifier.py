@@ -102,6 +102,10 @@ class TelegramNotifier:
         if not self.event_enabled(event):
             return
         message = build_message(event, text)
+        if not message or not message.strip():
+            # กันข้อความว่างเข้าคิว — ส่งให้ Telegram ไม่ได้ (HTTP 400) แล้วจะติดคิวซ้ำไปเรื่อย ๆ
+            log.debug("ข้ามการแจ้ง (ข้อความว่าง) event=%s", event)
+            return
         # กันสแปม: error ข้อความเดิม (ไม่รวม timestamp) ซ้ำภายใน 10 นาที -> ข้าม
         # เก็บที่ระดับโมดูล -> instance ใหม่ทุกรอบ/สลับเหตุการณ์ก็ยังกันได้
         dedupe_key = f"{event}|{text}"
