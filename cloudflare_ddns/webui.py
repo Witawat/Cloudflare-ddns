@@ -8,12 +8,18 @@
 import json
 import logging
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import __version__
 from . import config as config_mod
 from . import ddns
 from . import notifier
+
+# แคชผลตรวจ NAT สำหรับ /ip-check — nat_report ตรวจเต็ม (tracert + STUN หลายรอบ) ช้า ~10 วิ
+# จึงรันเต็มแค่ทุก 60 วิ ระหว่างนั้นตอบผลเดิมทันที (IP/NAT ไม่เปลี่ยนถี่ขนาดนั้น)
+_nat_cache = {"at": 0.0, "result": None}
+NAT_CACHE_TTL = 60.0
 
 log = logging.getLogger("cloudflare-ddns")
 
@@ -2461,18 +2467,23 @@ function togglePw(btn) {
 
             import concurrent.futures
 
-            def check(version):
-                return version, ip_detect.get_public_ip(version, timeout=6)
+            now = time.time()
+            if not _nat_cache["result"] or now - _nat_cache["at"] > NAT_CACHE_TTL:
+                _nat_cache["at"] = now
 
-            result = {"ipv4": "", "ipv6": "", "nat": None}
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-                futures = [pool.submit(check, 4), pool.submit(check, 6)]
-                for future in concurrent.futures.as_completed(futures):
-                    version, ip = future.result()
-                    result["ipv4" if version == 4 else "ipv6"] = ip or ""
-            if result["ipv4"]:
-                result["nat"] = ip_detect.nat_report(result["ipv4"], timeout=5)
-            return self._send_json(200, result)
+                def check(version):
+                    return version, ip_detect.get_public_ip(version, timeout=6)
+
+                result = {"ipv4": "", "ipv6": "", "nat": None}
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                    futures = [pool.submit(check, 4), pool.submit(check, 6)]
+                    for future in concurrent.futures.as_completed(futures):
+                        version, ip = future.result()
+                        result["ipv4" if version == 4 else "ipv6"] = ip or ""
+                if result["ipv4"]:
+                    result["nat"] = ip_detect.nat_report(result["ipv4"], timeout=5)
+                _nat_cache["result"] = result
+            return self._send_json(200, _nat_cache["result"])
 
         if self.path == "/notify-queue":
             if not self._authed():
@@ -2552,8 +2563,6 @@ function togglePw(btn) {
 
         if self.path == "/update-check":
             """เช็คเวอร์ชันใหม่จาก GitHub Releases (cache 6 ชม.)"""
-            import time
-
             now = time.time()
             if _update_cache["time"] and now - _update_cache["time"] < 6 * 3600:
                 return self._send_json(200, _update_cache["data"])
