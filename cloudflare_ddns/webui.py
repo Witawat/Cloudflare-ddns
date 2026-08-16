@@ -216,6 +216,15 @@ label.field input, label.field select, label.field textarea {
   box-sizing: border-box;
 }
 label.field textarea { resize: vertical; min-height: 58px; line-height: 1.4; }
+/* ปุ่มตา (แสดง/ซ่อน) ในช่อง password */
+.eye-wrap { display: block; position: relative; width: 100%; }
+.eye-wrap input { padding-right: 34px; }
+.eye-toggle {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; font-size: 1.05rem;
+  padding: 4px; line-height: 1; color: var(--muted);
+}
+.eye-toggle:hover { color: var(--ink); }
 label.field input:focus, label.field select:focus {
   outline: 2px solid color-mix(in oklch, var(--accent) 40%, transparent); border-color: var(--accent);
 }
@@ -432,7 +441,7 @@ __LOGIN__
       </div>
       <div class="grid2">
         <label class="field">Path (ไม่บังคับ)<input id="th-path" type="text" class="mono" placeholder="/api"></label>
-        <label class="field">ชนิด<select id="th-protocol" class="wz-zone-select"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="udp">UDP</option></select></label>
+        <label class="field">ชนิด<select id="th-protocol" class="wz-zone-select" onchange="adaptServiceToProtocol(this, document.getElementById('th-service'))"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="udp">UDP</option></select></label>
       </div>
       <label class="field">บริการ/พอร์ต<input id="th-service" type="text" class="mono" value="http://localhost:8080" placeholder="http://localhost:8080 หรือ tcp://localhost:22"></label>
       <p style="margin:0 0 10px;font-size:0.8rem;color:var(--muted);line-height:1.5">💡 เลือกชนิดให้ตรงกับบริการ: <b>HTTP</b> = เว็บธรรมดา (เช่น <span class="mono">http://localhost:8080</span>) · <b>HTTPS</b> = พอร์ต SSL เช่น 443/8443 (ต้องเป็น <span class="mono">https://localhost:443</span> — ถ้าผูกเป็น http จะเจอ "Bad Request") · <b>TCP/UDP</b> = SSH/game/VPN (เช่น <span class="mono">tcp://localhost:22</span>)</p>
@@ -505,6 +514,7 @@ __LOGIN__
       <div style="display:flex;gap:10px;align-items:center">
         <button id="openFolder" class="btn-secondary">เปิดโฟลเดอร์ข้อมูล</button>
         <button id="logReload" class="btn-secondary">โหลดใหม่</button>
+        <button id="logClear" class="btn-secondary" title="ล้างไฟล์ log (ไม่กระทบการทำงาน)">ล้าง log</button>
       </div>
     </div>
     <pre id="logview" style="margin:0;padding:10px 12px;background:var(--surface-2);border-radius:8px;font-family:'Cascadia Code',Consolas,monospace;font-size:0.8rem;color:var(--ink-2);max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-all">กำลังโหลด…</pre>
@@ -711,6 +721,40 @@ function logClientError(context, err) {
 
 window.addEventListener("error", ev => logClientError("window.onerror", ev.message + " @" + (ev.filename || "") + ":" + (ev.lineno || "?")));
 window.addEventListener("unhandledrejection", ev => logClientError("unhandledrejection", ev.reason));
+
+/* ปรับ "บริการ/พอร์ต" ให้ตรงกับชนิดที่เลือก (ใช้พอร์ตเริ่มต้นต่อชนิด) */
+function adaptServiceToProtocol(protocolSel, serviceInput) {
+  const defaults = {
+    http: "http://localhost:8080",
+    https: "https://localhost:443",
+    tcp: "tcp://localhost:22",
+    udp: "udp://localhost:51820",
+  };
+  if (defaults[protocolSel.value]) serviceInput.value = defaults[protocolSel.value];
+}
+
+/* เพิ่มปุ่มตา (แสดง/ซ่อน) ให้ทุกช่อง password — กันซ้ำโดยใช้ data-eye */
+function addEyeToggles() {
+  document.querySelectorAll("input[type=password]").forEach(inp => {
+    if (inp.dataset.eye) return;
+    inp.dataset.eye = "1";
+    const wrap = document.createElement("span");
+    wrap.className = "eye-wrap";
+    inp.parentNode.insertBefore(wrap, inp);
+    wrap.appendChild(inp);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "eye-toggle";
+    btn.textContent = "👁";
+    btn.title = "แสดง/ซ่อนรหัส";
+    btn.setAttribute("aria-label", "แสดง/ซ่อนรหัส");
+    btn.addEventListener("click", () => {
+      inp.type = inp.type === "password" ? "text" : "password";
+      btn.textContent = inp.type === "password" ? "👁" : "🙈";
+    });
+    wrap.appendChild(btn);
+  });
+}
 
 /* ---------- สถานะ ---------- */
 
@@ -1217,6 +1261,19 @@ async function loadLog() {
   }
 }
 
+async function clearLog() {
+  if (!confirm("ล้างไฟล์ log ทั้งหมด?")) return;
+  try {
+    const r = await fetch("/log-clear", { method: "POST" });
+    const j = await r.json();
+    toast(j.ok ? j.message : "ล้างไม่สำเร็จ: " + j.message, j.ok ? "ok" : "err");
+    if (j.ok) loadLog();
+  } catch (e) {
+    logClientError("clearLog", e);
+    toast("error: " + e, "err");
+  }
+}
+
 async function loadTunnelStatus() {
   try {
     const r = await fetch("/status.json");
@@ -1608,6 +1665,7 @@ function renderTunnelWizard() {
       sel.onchange = () => fillSubList("twz-sub", "twz-domain", "twz-sub-list");
     })();
 
+    $("twz-protocol").addEventListener("change", () => adaptServiceToProtocol($("twz-protocol"), $("twz-service")));
     $("twz-bind").addEventListener("click", async () => {
       const sub = $("twz-sub").value.trim().replace(/^\.+|\.+$/g, "");
       const domain = $("twz-domain").value.trim();
@@ -2103,6 +2161,7 @@ function renderWizard() {
       }
     });
   }
+  addEyeToggles();
 }
 
 function renderWzRecords() {
@@ -2140,6 +2199,7 @@ $("loadRecords").addEventListener("click", loadCloudflareRecords);
 $("wz-skip").addEventListener("click", closeWizard);
 
 $("logReload").addEventListener("click", loadLog);
+$("logClear").addEventListener("click", clearLog);
 $("refresh").addEventListener("click", loadStatus);
 $("recheckIp").addEventListener("click", loadIp);
 $("scanBtn").addEventListener("click", scanPorts);
@@ -2181,6 +2241,7 @@ loadTunnelStatus();
 loadServiceStatus();
 checkUpdate();
 checkSetup();
+addEyeToggles();
 setInterval(loadStatus, 10000);
 setInterval(loadServiceStatus, 10000);
 </script>
@@ -2350,7 +2411,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
 <div class="panel" style="width:320px;margin:0">
   <h2 style="margin-bottom:14px">เข้าสู่ระบบ</h2>
   <form onsubmit="doLogin(event)">
-    <input id="pw" type="password" placeholder="รหัสผ่าน webui_password" autocomplete="current-password" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg)">
+    <span class="eye-wrap">
+      <input id="pw" type="password" placeholder="รหัสผ่าน webui_password" autocomplete="current-password" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg)">
+      <button type="button" class="eye-toggle" aria-label="แสดง/ซ่อนรหัส" onclick="togglePw(this)">👁</button>
+    </span>
     <p id="login-err" style="margin:8px 0 0;font-size:0.85rem;color:var(--danger)" hidden>รหัสผ่านไม่ถูกต้อง</p>
     <p style="margin-top:12px"><button class="btn-primary" type="submit" style="width:100%">เข้าสู่ระบบ</button></p>
   </form>
@@ -2361,6 +2425,11 @@ async function doLogin(ev) {
   const r = await fetch("/login", { method: "POST", body: new URLSearchParams({ pw: document.getElementById("pw").value }) });
   if (r.ok) { location.reload(); return; }
   document.getElementById("login-err").hidden = false;
+}
+function togglePw(btn) {
+  const inp = document.getElementById("pw");
+  inp.type = inp.type === "password" ? "text" : "password";
+  btn.textContent = inp.type === "password" ? "👁" : "🙈";
 }
 </script>"""
 
@@ -2580,6 +2649,21 @@ async function doLogin(ev) {
                 _login_guard["fails"] = 0
                 log.warning("login ผิด %d ครั้งติดต่อกัน — ล็อกชั่วคราว %d นาที", _LOGIN_MAX_FAILS, _LOGIN_LOCK_SECONDS // 60)
             return self._send_json(401, {"ok": False, "message": "รหัสผ่านไม่ถูกต้อง"})
+
+        if self.path == "/log-clear":
+            """ล้างไฟล์ log (ผู้ใช้กดปุ่ม "ล้าง log") — ต้อง login"""
+            if not self._authed():
+                return self._send_json(401, {"ok": False, "message": "unauthorized"})
+            import os
+
+            log_path = os.path.join(self.cfg.log_dir, "cloudflare-ddns.log")
+            try:
+                with open(log_path, "w", encoding="utf-8"):
+                    pass
+            except OSError as exc:
+                return self._send_json(400, {"ok": False, "message": f"ล้าง log ไม่ได้: {exc}"})
+            log.info("ล้าง log ไฟล์แล้ว (ปุ่มล้าง log ในเว็บ)")
+            return self._send_json(200, {"ok": True, "message": "ล้าง log แล้ว"})
 
         if self.path == "/log-event":
             """รับ error จากฝั่งหน้าเว็บ (JS) มาเขียนลงไฟล์ log — เปิดเสมอ ไม่ต้อง login"""
