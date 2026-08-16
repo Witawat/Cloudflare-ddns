@@ -383,6 +383,17 @@ function recKey(r) {
   return (n + "." + z).toLowerCase();
 }
 
+/* ย่อชื่อ record เต็ม (เช่น home.example.com) ให้เหลือชื่อสั้น + zone (home) —
+   ใช้ตอนเลือก record จาก dropdown "โหลดชื่อ record จาก Cloudflare" */
+function shortenName(full, zone) {
+  const z = (zone || "").trim().replace(/\.+$/, "").toLowerCase();
+  let name = (full || "").trim().replace(/\.+$/, "");
+  if (!name) return "";
+  if (z && name.toLowerCase() === z) return "@";              // root ของ zone
+  if (z && name.toLowerCase().endsWith("." + z)) return name.slice(0, -(z.length + 1));
+  return name;
+}
+
 async function saveConfig() {
   const btn = $("saveBtn");
   btn.disabled = true;
@@ -510,7 +521,7 @@ async function loadCloudflareRecords() {
     sel.onchange = () => {
       if (!sel.value) return;
       const row = recordsData.find(x => !x.name) || recordsData[recordsData.length - 1];
-      row.name = sel.value;
+      row.name = shortenName(sel.value, zone);
       renderRecordsEditor();
       sel.value = "";
     };
@@ -1329,7 +1340,7 @@ function renderWizard() {
         sel.onchange = () => {
           if (!sel.value) return;
           const row = wzData.records.find(x => !x.name) || wzData.records[0];
-          row.name = sel.value;
+          row.name = shortenName(sel.value, $("wz-zone").value);
           renderWzRecords();
           sel.value = "";
         };
