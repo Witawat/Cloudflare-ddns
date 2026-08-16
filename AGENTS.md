@@ -173,6 +173,7 @@ powershell -File <temp>\svc-reinstall.cmd # remove+install+start
 
 - อย่า commit: `config.ini`, `state.json`, `notify_queue.json`, `logs/`, `cloudflared.exe`, `tunnel.pid`, `*.png` (gitignore มีแล้ว)
 - ไม่ push โดยไม่ได้รับคำสั่ง
+- **ห้ามสร้าง GitHub release จนกว่าผู้ใช้จะสั่งโดยตรง** (เคยสั่งลบ release ไปแล้ว — อยากปล่อยเมื่อไหร่ต้องถามก่อน)
 - ถ้าผู้ใช้ติดตั้ง service อยู่: หลัง rebuild **ต้อง reinstall/restart** ไม่งั้นผู้ใช้ยังใช้ exe เก่า (เว็บจะไม่เห็นฟีเจอร์ใหม่)
 - อัปเดต `CHANGELOG.md` เมื่อ feature/fix สำคัญ
 - **เครื่อง dev (เครื่องนี้): ห้ามติดตั้ง service** — ใช้ `build.bat` (build อย่างเดียว ไม่ต้อง admin ถ้าไม่มี service) · webui ทดสอบรันด้วย `python -m cloudflare_ddns.main webui` (ปิดด้วย Ctrl+C) — ถ้า build เจอ `PermissionError` (exe ล็อก) = มี webui/python ค้าง ต้องปิดก่อน · release แนบ exe ที่ build จากเครื่อง dev นี้ (ใช้ `build-install.bat` เฉพาะเครื่องปลายทางที่ต้องการ service)
