@@ -2394,7 +2394,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            # client ตัด connection ก่อน response เสร็จ (เช่น หน้าเว็บโหลดใหม่/ปิด หรือ /ip-check ช้า)
+            # ไม่ใช่ error ของ server — เงียบ ๆ ไป ไม่ log ERROR ไม่ตอบ 500
+            log.debug("client ตัด connection กลางคัน (%s)", self.path)
 
     def _send_json(self, code, payload):
         self._send(code, json.dumps(payload, ensure_ascii=False), "application/json; charset=utf-8")
