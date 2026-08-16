@@ -93,13 +93,29 @@ class DDNSEngine:
             log.warning("บันทึก state ไม่ได้: %s", exc)
 
     def status(self):
-        """ข้อมูลสถานะสำหรับ Web UI / status command"""
+        """ข้อมูลสถานะสำหรับ Web UI / status command
+
+        กรอง records/errors ตาม config ปัจจุบัน — record ที่ถูกลบออกจาก config
+        แล้ว จะไม่โชว์ค้าง (cache เก่าใน state)
+        """
         self._load_state()
+        cfg = config_mod.Config(self.config_path)
+        valid = set()
+        for rec in cfg.records:
+            zone = (rec.zone or "").strip().rstrip(".")
+            fqdn = fqdn_name(rec.name, zone)
+            for family, rtype in RECORD_TYPES.items():
+                rec_enabled = rec.ipv4 if family == 4 else rec.ipv6
+                global_enabled = cfg.use_ipv4 if family == 4 else cfg.use_ipv6
+                if rec_enabled and global_enabled:
+                    valid.add(f"{fqdn.lower()}|{rtype}")
+        records = {k: v for k, v in self._state.get("records", {}).items() if k in valid}
+        errors = {k: v for k, v in self._state.get("record_errors", {}).items() if k in valid}
         return {
             "last_run": self._state.get("last_run", ""),
-            "records": self._state.get("records", {}),
+            "records": records,
             "history": self._state.get("history", [])[-50:],
-            "record_errors": self._state.get("record_errors", {}),
+            "record_errors": errors,
             "dry_run": self.dry_run,
         }
 

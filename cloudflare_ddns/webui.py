@@ -361,7 +361,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 return self._send_json(401, {"ok": False, "message": "unauthorized"})
             engine = ddns.DDNSEngine(self.server.config_path)
             status = engine.status()
-            status["records_time"] = self._load_records_time()
+            # records_time ต้องตรงกับ records ที่ filter แล้ว (record ถูกลบจาก config = ไม่โชว์)
+            valid_keys = set(status.get("records", {}))
+            status["records_time"] = {
+                k: v for k, v in self._load_records_time().items() if k in valid_keys
+            }
             cfg_errors = self.cfg.validate()
             status["config_ok"] = not cfg_errors
             status["config_errors"] = cfg_errors
