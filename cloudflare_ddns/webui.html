@@ -81,14 +81,29 @@ main { max-width: 860px; margin: 0 auto; padding: 24px 28px 80px; }
 .record-row + .record-row { margin-top: 6px; }
 .record-row.ok { background: var(--ok-soft); }
 .record-row.err { background: var(--danger-soft); }
-/* สถานะ NAT แบบแถว — พื้นหลังสีเขียว/แดงตามสถานะ */
+/* สถานะ NAT — การ์ดแถบสี (ไล่โทน + ไอคอนวงกลม + ขอบสีอ่อน) */
 .nat-box {
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 12px; border-radius: 8px; margin-top: 8px;
-  font-size: 0.85rem; line-height: 1.4;
+  padding: 9px 13px; border-radius: 10px; margin-top: 8px;
+  font-size: 0.85rem; line-height: 1.45;
+  border: 1px solid transparent;
 }
-.nat-box.ok { background: color-mix(in oklch, var(--ok) 28%, var(--bg)); }
-.nat-box.err { background: color-mix(in oklch, var(--danger) 26%, var(--bg)); }
+.nat-box.ok {
+  background: linear-gradient(135deg, color-mix(in oklch, var(--ok) 30%, var(--bg)), color-mix(in oklch, var(--ok) 14%, var(--bg)));
+  border-color: color-mix(in oklch, var(--ok) 45%, transparent);
+}
+.nat-box.err {
+  background: linear-gradient(135deg, color-mix(in oklch, var(--danger) 28%, var(--bg)), color-mix(in oklch, var(--danger) 13%, var(--bg)));
+  border-color: color-mix(in oklch, var(--danger) 45%, transparent);
+}
+.nat-box .nat-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%; flex: none;
+  font-size: 0.78rem; box-shadow: 0 1px 2px oklch(0 0 0 / 0.12);
+}
+.nat-box.ok .nat-icon { background: var(--ok); color: oklch(1 0 0); }
+.nat-box.err .nat-icon { background: var(--danger); color: oklch(1 0 0); }
+.nat-box .nat-text { color: var(--ink); }
 .record-row.idle { background: var(--surface-2); }
 .rec-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .ok .rec-dot { background: var(--ok); }
