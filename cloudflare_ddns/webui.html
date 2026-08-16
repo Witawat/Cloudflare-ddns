@@ -18,10 +18,12 @@
   --accent-soft: oklch(0.945 0.05 50);
   --ok: oklch(0.5 0.11 155);
   --ok-soft: oklch(0.955 0.04 155);
+  --ok-light: oklch(0.91 0.075 155);
   --warn: oklch(0.55 0.13 65);
   --warn-soft: oklch(0.96 0.05 70);
   --danger: oklch(0.5 0.19 28);
   --danger-soft: oklch(0.955 0.05 28);
+  --danger-light: oklch(0.92 0.065 25);
   --z-sticky: 10;
   --z-toast: 40;
 }
@@ -89,11 +91,11 @@ main { max-width: 860px; margin: 0 auto; padding: 24px 28px 80px; }
   border: 1px solid transparent;
 }
 .nat-box.ok {
-  background: color-mix(in oklch, var(--ok) 42%, var(--bg));
+  background: var(--ok-light);
   border-color: color-mix(in oklch, var(--ok) 55%, transparent);
 }
 .nat-box.err {
-  background: color-mix(in oklch, var(--danger) 38%, var(--bg));
+  background: var(--danger-light);
   border-color: color-mix(in oklch, var(--danger) 55%, transparent);
 }
 .nat-box .nat-icon {
