@@ -1367,13 +1367,24 @@ function renderWizard() {
       '<p class="wz-step-sub">จะให้แจ้งทาง Telegram เมื่อ IP เปลี่ยน / เกิด error ก็ใส่ตรงนี้ ถ้ายังไม่ต้องการกด "ข้าม" ได้</p>' +
       '<label class="field">Bot token (สร้างจาก @BotFather ใน Telegram)<input id="wz-tg-token" type="password" autocomplete="off" placeholder="123456789:AAHxxx..."></label>' +
       '<div id="wz-tg-msg"></div>' +
+      '<label class="field">Chat ID (กด "ค้นหา" ให้อัตโนมัติ หรือกรอกเองได้ — เลข 9-10 หลัก)<input id="wz-tg-chat" type="text" class="mono" autocomplete="off" placeholder="123456789"></label>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">' +
       '<button class="btn-secondary" type="button" id="wz-tg-find">ค้นหา chat id ให้อัตโนมัติ</button>' +
       '<button class="btn-secondary" type="button" id="wz-tg-test" disabled>ส่งข้อความทดสอบ</button></div>' +
-      '<div class="wz-help">วิธี: เปิด Telegram ค้นหา @BotFather → ส่ง /newbot → ตั้งชื่อ → คัดลอก token มาวาง แล้วเปิดแชทกับ bot ใหม่และกด Start จากนั้นกด "ค้นหา chat id ให้อัตโนมัติ"</div>' +
+      '<div class="wz-help">วิธี: เปิด Telegram ค้นหา @BotFather → ส่ง /newbot → ตั้งชื่อ → คัดลอก token มาวาง แล้วเปิดแชทกับ bot ใหม่และกด Start จากนั้นกด "ค้นหา chat id ให้อัตโนมัติ" — ถ้าหาไม่ได้ (bot เคยถูกใช้แล้ว) เปิดแชทกับ bot → มองหา ID ตัวเลขใน @userinfobot หรือกดปุ่ม Share ID ของ bot</div>' +
       actions(true, "ข้าม →");
     $("wz-back").addEventListener("click", () => { wzStep = 3; renderWizard(); });
     let chatId = "";
+    const setChat = (id) => {
+      chatId = id;
+      $("wz-tg-chat").value = id;
+      $("wz-tg-test").disabled = !(id && $("wz-tg-token").value.trim());
+    };
+    $("wz-tg-chat").addEventListener("input", () => {
+      const id = $("wz-tg-chat").value.trim();
+      chatId = id;
+      $("wz-tg-test").disabled = !(id && $("wz-tg-token").value.trim());
+    });
     $("wz-tg-find").addEventListener("click", async () => {
       const token = $("wz-tg-token").value.trim();
       if (!token) { $("wz-tg-msg").innerHTML = wzMsg("err", "วาง bot token ก่อน"); return; }
@@ -1385,10 +1396,9 @@ function renderWizard() {
           body: JSON.stringify({ bot_token: token }),
         });
         const j = await r.json();
-        if (!j.ok) { $("wz-tg-msg").innerHTML = wzMsg("err", j.message); return; }
-        chatId = j.chat_id;
-        $("wz-tg-msg").innerHTML = wzMsg("ok", "พบ chat id: " + chatId);
-        $("wz-tg-test").disabled = false;
+        if (!j.ok) { $("wz-tg-msg").innerHTML = wzMsg("err", j.message + " — กรอก chat id เองได้ในช่องด้านบน"); return; }
+        setChat(j.chat_id);
+        $("wz-tg-msg").innerHTML = wzMsg("ok", "พบ chat id: " + j.chat_id);
       } catch (e) { $("wz-tg-msg").innerHTML = wzMsg("err", "error: " + e); }
     });
     $("wz-tg-test").addEventListener("click", async () => {
@@ -1404,7 +1414,7 @@ function renderWizard() {
       } catch (e) { $("wz-tg-msg").innerHTML = wzMsg("err", "error: " + e); }
     });
     $("wz-next").addEventListener("click", () => {
-      wzData.tg = { token: $("wz-tg-token").value.trim(), chat_id: chatId };
+      wzData.tg = { token: $("wz-tg-token").value.trim(), chat_id: chatId || $("wz-tg-chat").value.trim() };
       wzStep = 5;
       renderWizard();
     });

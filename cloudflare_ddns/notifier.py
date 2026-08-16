@@ -166,7 +166,15 @@ def load_queue(path=None):
     try:
         with open(path, "r", encoding="utf-8") as handle:
             items = json.load(handle)
-        return items if isinstance(items, list) else []
+        items = items if isinstance(items, list) else []
+        # กรองข้อความว่างออก (ของเก่าจากคิวที่ migrate มา) — ส่งให้ Telegram ไม่ได้ (HTTP 400)
+        cleaned = [t for t in items if t and t.strip()]
+        if len(cleaned) != len(items):
+            try:
+                save_queue(cleaned, path)
+            except Exception:
+                pass
+        return cleaned
     except ValueError as exc:
         log.warning("อ่านคิวแจ้งเตือนไม่ได้ (ไฟล์เสีย?) — ถือว่าว่าง: %s", exc)
         return []
