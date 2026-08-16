@@ -492,7 +492,7 @@ async function loadIp() {
       // เขียว = NAT ส่วนตัวในบ้าน (double-nat กี่ชั้นก็ได้) / public (nat 1:1) — ใช้งานได้ปกติ
       const bad = j.nat.nat_type === "cg-nat" || j.nat.nat_type === "private-ip";
       const icon = bad ? "⚠" : "✓";
-      nat.innerHTML = '<div class="nat-box ' + (bad ? "err" : "ok") + '"><span class="rec-dot"></span><span>' + icon + " " + escapeHtml(j.nat.message) + "</span></div>";
+      nat.innerHTML = '<div class="nat-box ' + (bad ? "err" : "ok") + '"><span>' + icon + " " + escapeHtml(j.nat.message) + "</span></div>";
     }
   } catch (e) {
     logClientError("loadIp", e);
