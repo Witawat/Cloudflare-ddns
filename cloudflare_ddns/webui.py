@@ -456,8 +456,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
         if not self._authed():
             # หน้า login แบบเดี่ยว (ไฟล์แยก webui_login.html) — ห้ามส่ง PAGE หลัก
             # (script หลักจะรันแล้วโชว์ error 401 ใต้หน้าล็อกอิน) — CSS ยืมจาก PAGE
-            style_start = PAGE.index("<style>")
-            style_end = PAGE.index("</style>") + len("</style>")
+            # (สกัดเฉพาะเนื้อหาใน <style> — หน้า login มี <style> ของตัวเองอยู่แล้ว)
+            style_start = PAGE.index("<style>") + len("<style>")
+            style_end = PAGE.index("</style>")
             css = PAGE[style_start:style_end]
             return self._send(200, PAGE_LOGIN.replace("__CSS__", css))
         return self._send(200, PAGE.replace("__LOGIN__", "").replace("__VERSION__", __version__))
