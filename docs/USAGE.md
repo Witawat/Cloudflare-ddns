@@ -185,6 +185,9 @@ python -m cloudflare_ddns.main setup
 api_token            จำเป็น - สิทธิ์ Zone > DNS > Edit
 interval_seconds     60 (ขั้นต่ำ 15)
 use_ipv4/use_ipv6    เปิด-ปิดการอัปเดตแต่ละชนิด
+reject_cloudflare_ips   กัน IP ของ Cloudflare (anycast) ถูกเขียนลง record (ค่าเริ่มต้น true)
+healthchecks_url     Heartbeat: ping URL ของ Healthchecks.io (ว่าง = ปิด)
+uptimekuma_url       Heartbeat: push URL ของ Uptime Kuma (ว่าง = ปิด)
 webui_port           8123
 webui_password       ว่าง = ไม่ต้อง login
 log_dir              ว่าง = logs\ ข้าง exe
@@ -200,6 +203,9 @@ proxied = true/false (orange cloud)
 ttl = 60-7200
 ipv4 / ipv6 = true/false
 ```
+
+- ชื่อ record ใช้ wildcard ได้: `[record:*.example.com]` (หรือ `[record:*]` + zone) — ทุกซับโดเมนชี้มาบ้านนี้
+- **Heartbeat**: ใส่ `healthchecks_url` (สมัครฟรีที่ healthchecks.io → สร้าง Check → คัดลอก Ping URL) หรือ `uptimekuma_url` (self-host: monitor ชนิด Push) — โปรแกรม ping ทุกรอบ DDNS; รอบมีปัญหา = สัญญาณ fail; หยุดโปรแกรม = สัญญาณ exit — ถ้าไม่มาเกินกำหนด บริการนั้นจะแจ้งเตือนให้เอง (อีเมล/Telegram/อื่น ๆ)
 
 แก้ด้วยมือแล้วเซฟผ่านเว็บ (โหมดไฟล์) — ระบบตรวจ syntax/ค่าก่อนเขียน
 

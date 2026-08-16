@@ -126,7 +126,7 @@ class CloudflareAPI:
     def get_record(self, zone_id, name, rtype):
         """คืน record dict หรือ None ถ้ายังไม่มี"""
         query = urllib.parse.urlencode(
-            {"name": name.rstrip("."), "type": rtype, "per_page": 100}
+            {"name": name.rstrip("."), "type": rtype, "per_page": 100}, safe="*"
         )
         result = self._request("GET", f"/zones/{zone_id}/dns_records?{query}")
         return result[0] if result else None

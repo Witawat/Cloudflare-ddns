@@ -1,3 +1,3 @@
 """Cloudflare DDNS Updater - Windows service ตรวจและอัปเดต IP สาธารณะไปยัง Cloudflare DNS."""
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"

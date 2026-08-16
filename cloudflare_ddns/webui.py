@@ -530,6 +530,18 @@ __LOGIN__
     <div class="toggles">
       <label><input id="use_ipv4" type="checkbox"> อัปเดต IPv4 (A record)</label>
       <label><input id="use_ipv6" type="checkbox"> อัปเดต IPv6 (AAAA record)</label>
+      <label title="กัน IP ที่เป็นของ Cloudflare เอง (anycast/CDN) ถูกเขียนลง record โดยไม่ตั้งใจ"><input id="reject_cf_ips" type="checkbox"> กัน IP ของ Cloudflare (anycast)</label>
+    </div>
+
+    <h3>Heartbeat (ไม่บังคับ)</h3>
+    <p style="color:var(--muted);font-size:0.85rem;margin-top:0">ส่งสัญญาณ "ยังทำงาน" ทุกรอบให้บริการเฝ้าดู — รู้ว่าเครื่อง/program ตายหรือไม่จากนอกบ้าน (กรอก URL อันใดอันหนึ่งหรือทั้งคู่)</p>
+    <div class="grid2">
+      <label class="field">Healthchecks.io ping URL (ฟรี: healthchecks.io)
+        <input id="hc_url" type="text" class="mono" autocomplete="off" placeholder="https://hc-ping.com/xxxxxxxx-xxxx">
+      </label>
+      <label class="field">Uptime Kuma push URL (self-host)
+        <input id="kuma_url" type="text" class="mono" autocomplete="off" placeholder="https://kuma.example.com/api/push/xxxx">
+      </label>
     </div>
 
     <h3>แจ้งเตือน Telegram</h3>
@@ -839,6 +851,9 @@ async function loadConfig() {
     $("interval").value = c.cloudflare.interval_seconds;
     $("use_ipv4").checked = !!c.cloudflare.use_ipv4;
     $("use_ipv6").checked = !!c.cloudflare.use_ipv6;
+    $("reject_cf_ips").checked = c.cloudflare.reject_cloudflare_ips !== false;
+    $("hc_url").value = c.cloudflare.healthchecks_url || "";
+    $("kuma_url").value = c.cloudflare.uptimekuma_url || "";
     $("webui_password").value = c.cloudflare.webui_password;
     currentWebuiPassword = c.cloudflare.webui_password;
     $("webui_port").value = c.cloudflare.webui_port || 8123;
@@ -872,7 +887,7 @@ function renderRecordsEditor() {
   }
   box.innerHTML = recordsData.map((r, i) => `
     <div class="rec-edit">
-      <input type="text" data-i="${i}" data-k="name" value="${escapeHtml(r.name)}" placeholder="home (เติม .zone ให้) หรือ @">
+      <input type="text" data-i="${i}" data-k="name" value="${escapeHtml(r.name)}" placeholder="home (เติม .zone ให้) / @ / *.zone (wildcard)">
       <input type="text" data-i="${i}" data-k="zone" value="${escapeHtml(r.zone)}" placeholder="zone (เว้น = เดาให้)">
       <div class="mini" title="ผ่าน orange cloud ของ Cloudflare">
         <label><input type="checkbox" data-i="${i}" data-k="proxied" ${r.proxied ? "checked" : ""}> proxy</label>
@@ -928,6 +943,9 @@ async function saveConfig() {
       interval_seconds: Math.max(15, Math.floor(+$("interval").value || 60)),
       use_ipv4: $("use_ipv4").checked,
       use_ipv6: $("use_ipv6").checked,
+      reject_cloudflare_ips: $("reject_cf_ips").checked,
+      healthchecks_url: $("hc_url").value.trim(),
+      uptimekuma_url: $("kuma_url").value.trim(),
       webui_port: Math.max(1, Math.min(65535, Math.floor(+$("webui_port").value || currentWebuiPort))),
       webui_password: $("webui_password").value.trim(),
       log_dir: $("log_dir").value.trim(),
@@ -2025,6 +2043,9 @@ def _cfg_to_dict(cfg):
             "interval_seconds": cfg.interval_seconds,
             "use_ipv4": cfg.use_ipv4,
             "use_ipv6": cfg.use_ipv6,
+            "reject_cloudflare_ips": cfg.reject_cloudflare_ips,
+            "healthchecks_url": cfg.healthchecks_url,
+            "uptimekuma_url": cfg.uptimekuma_url,
             "webui_port": cfg.webui_port,
             "webui_password": cfg.webui_password,
             "log_dir": cfg.log_dir if cfg.log_dir != config_mod.DEFAULT_LOG_DIR else "",
@@ -2073,6 +2094,9 @@ def _dict_to_ini(data):
     kv("interval_seconds", int(cf.get("interval_seconds", 60)))
     kv("use_ipv4", str(bool(cf.get("use_ipv4"))).lower())
     kv("use_ipv6", str(bool(cf.get("use_ipv6"))).lower())
+    kv("reject_cloudflare_ips", str(bool(cf.get("reject_cloudflare_ips", True))).lower())
+    kv("healthchecks_url", str(cf.get("healthchecks_url", "")).strip())
+    kv("uptimekuma_url", str(cf.get("uptimekuma_url", "")).strip())
     kv("webui_port", max(1, min(65535, int(cf.get("webui_port", 8123)))))
     kv("webui_password", str(cf.get("webui_password", "")).strip())
     kv("log_dir", str(cf.get("log_dir", "")).strip())

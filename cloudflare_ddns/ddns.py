@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from . import cloudflare_api
 from . import config as config_mod
+from . import heartbeat
 from . import ip_detect
 from . import notifier
 from .config import fqdn_name
@@ -85,6 +86,8 @@ class DDNSEngine:
         if errors:
             for msg in errors:
                 log.warning("config: %s", msg)
+            if not self.dry_run:
+                heartbeat.send_ping(cfg, ok=False)
             return [{"record": "", "family": 0, "action": "error", "message": "; ".join(errors)}]
 
         self._load_state()
@@ -135,7 +138,10 @@ class DDNSEngine:
                 enabled = rec.ipv4 if family == 4 else rec.ipv6
                 if not enabled or not (cfg.use_ipv4 if family == 4 else cfg.use_ipv6):
                     continue
-                entry = self._sync_family(api, zone_id, rec, fqdn, family, notify, zone_key=rec.zone.lower())
+                entry = self._sync_family(
+                    api, zone_id, rec, fqdn, family, notify,
+                    zone_key=rec.zone.lower(), reject_cloudflare_ips=cfg.reject_cloudflare_ips,
+                )
                 if entry:
                     if entry.get("action") == "skip":
                         rate_limited = True
@@ -157,6 +163,9 @@ class DDNSEngine:
         if not self.dry_run:
             self._save_state()
         notify.flush()
+        if not self.dry_run:
+            bad = any(e.get("action") in ("error", "no-ip", "skip") for e in summary)
+            heartbeat.send_ping(cfg, ok=not bad)
         return summary
 
     def _set_record_error(self, rec, message, family=None):
@@ -180,7 +189,7 @@ class DDNSEngine:
             for fam, rtype in RECORD_TYPES.items():
                 errs.pop(f"{rec.name.lower()}|{rtype}", None)
 
-    def _sync_family(self, api, zone_id, rec, fqdn, family, notify, zone_key=""):
+    def _sync_family(self, api, zone_id, rec, fqdn, family, notify, zone_key="", reject_cloudflare_ips=True):
         rtype = RECORD_TYPES[family]
         key = f"{fqdn.lower()}|{rtype}"
         cached = self._state.get("records", {}).get(key, "")
@@ -194,6 +203,17 @@ class DDNSEngine:
             )
             self._set_record_error(rec, f"ไม่พบ IP สาธารณะ (IPv{family})", family)
             return {"record": fqdn, "family": family, "action": "no-ip", "message": "ไม่พบ IP สาธารณะ"}
+
+        if reject_cloudflare_ips and ip_detect.is_cloudflare_ip(public_ip):
+            log.warning(
+                "%s %s: IP %s เป็นของ Cloudflare (anycast) — ข้ามการอัปเดต "
+                "(ปิดได้ด้วย reject_cloudflare_ips = false)",
+                fqdn, rtype, public_ip,
+            )
+            self._set_record_error(
+                rec, f"IP {public_ip} เป็นของ Cloudflare (anycast) — ข้าม (กันเขียน record ผิด)", family
+            )
+            return {"record": fqdn, "family": family, "action": "skip", "message": "IP เป็นของ Cloudflare (anycast) — ข้าม"}
 
         if cached == public_ip:
             log.debug("%s %s: IP ไม่เปลี่ยน (%s)", fqdn, rtype, public_ip)
@@ -345,6 +365,7 @@ def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_
             f"ตรวจ IP ทุก {int(cfg0.interval_seconds)} วิ · {len(cfg0.records)} records",
         )
         notify.flush()
+        heartbeat.send_ping(cfg0, ok=True)
     while True:
         started = time.monotonic()
         try:
@@ -355,6 +376,7 @@ def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_
             try:
                 notify.notify(notifier.EVENT_ERROR, "เกิดข้อผิดพลาดใน DDNS loop ดู log ไฟล์เพิ่มเติม")
                 notify.flush()
+                heartbeat.send_ping(config_mod.Config(config_path), ok=False)
             except Exception:
                 pass
         cfg = config_mod.Config(config_path)
@@ -377,6 +399,7 @@ def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_
                 if not dry_run:
                     notify.notify(notifier.EVENT_STOP, "")
                     notify.flush()
+                    heartbeat.send_ping(config_mod.Config(config_path), ok=False, stopped=True)
                 break
         else:
             time.sleep(wait)

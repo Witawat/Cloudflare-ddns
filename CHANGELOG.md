@@ -2,6 +2,19 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [1.4.0] — 2026-08-16
+
+### เพิ่ม (Features)
+
+- **กันเขียน IP ของ Cloudflare เอง (anycast) ลง record**: ดาวน์โหลดช่วง IP ของ Cloudflare (`cloudflare.com/ips-v4` + `ips-v6`, แคช 24 ชม.) แล้วตรวจทุก IP ที่ได้จาก provider — ถ้าอยู่ในช่วงของ CF → ข้ามการอัปเดต + จด error ในเว็บ (เปิด/ปิดด้วย `reject_cloudflare_ips`, ค่าเริ่มต้นเปิด)
+- **Heartbeat monitoring**: ส่งสัญญาณ "ยังทำงาน" ทุกรอบ DDNS ให้ Healthchecks.io (`healthchecks_url`) และ/หรือ Uptime Kuma (`uptimekuma_url`) — รอบมีปัญหา → สัญญาณ fail (`/fail` หรือ `?status=down`) · หยุดโปรแกรม → สัญญาณ exit — รู้ว่าเครื่อง/โปรแกรมตายจากนอกบ้าน
+- **รองรับ wildcard domain**: ใช้ `*` หรือ `*.example.com` เป็นชื่อ record — ทุกซับโดเมนชี้มาบ้านนี้ (สร้าง record เฉพาะทับได้ที่ Cloudflare)
+
+### ปรับปรุง
+
+- Web UI ฟอร์มตั้งค่า: เพิ่ม checkbox "กัน IP ของ Cloudflare (anycast)" + ช่อง URL Heartbeat (Healthchecks.io / Uptime Kuma)
+- `config.example.ini`: เอกสาร field ใหม่ + วิธีใช้ wildcard
+
 ## [1.3.0] — 2026-08-16
 
 ### เพิ่ม (Features)

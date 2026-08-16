@@ -12,6 +12,8 @@
 | **Windows Service** | รันจริงตอน boot, log รายวัน, หยุด/เริ่มเร็ว, แก้ config ได้ระหว่างรัน (มีผลรอบถัดไป) + **ควบคุม/ติดตั้ง/ถอนจาก Web UI** ได้ (ต้อง admin) |
 | **Web UI** | สถานะสด, wizard ตั้งค่าครั้งแรก 5 ขั้น, ฟอร์มตั้งค่า + โหมดแก้ไฟล์ตรง, ประวัติ, ดู log, สแกนพอร์ต, ปุ่มควบคุม Telegram/Tunnel — ใช้บนมือถือได้ |
 | **แจ้งเตือน Telegram** | เริ่ม/หยุด, IP เปลี่ยน, error, สร้าง record + สรุปรายวัน — มีคิว retry + กันสแปมซ้ำ |
+| **Heartbeat monitoring** | ส่งสัญญาณ "ยังทำงาน" ทุกรอบให้ Healthchecks.io / Uptime Kuma — รู้ว่าเครื่อง/โปรแกรมตายจากนอกบ้าน (รอบมีปัญหา = สัญญาณ fail) |
+| **กัน Cloudflare anycast IP** | ตรวจว่า IP ที่ตรวจได้ไม่อยู่ในช่วงของ Cloudflare เองก่อนเขียน record (กัน record ชี้ผิดทั้งบ้าน) |
 | **Cloudflare Tunnel** | เปิด cloudflared ตาม service, wizard 4 ขั้น, **ผูก hostname กับ tunnel อัตโนมัติ** (ตั้ง DNS + config ให้ ไม่ต้องแตะ dashboard) |
 | **ตรวจ NAT** | รู้ว่า IP อยู่หลัง CGNAT หรือไม่ (STUN) — เตือนถ้า DDNS ใช้ไม่ได้ |
 | **EXE ไฟล์เดียว** | build ด้วย PyInstaller — ไม่ต้องติดตั้ง Python |
@@ -127,6 +129,12 @@ api_token = ................................
 interval_seconds = 60
 use_ipv4 = true
 use_ipv6 = true
+; กัน IP ที่เป็นของ Cloudflare เอง (anycast) ถูกเขียนลง record
+reject_cloudflare_ips = true
+
+; Heartbeat monitoring (ไม่บังคับ) — ส่งสัญญาณทุกรอบให้บริการเฝ้าดู
+healthchecks_url =             ; https://hc-ping.com/xxxx (Healthchecks.io)
+uptimekuma_url =               ; https://kuma.../api/push/xxxx (Uptime Kuma)
 webui_port = 8123
 webui_password =
 log_dir =
@@ -152,7 +160,7 @@ ipv4 = true
 ipv6 = true
 ```
 
-- `[record:ชื่อ]` ใส่ได้หลายตัว — ชื่อสั้นได้ (เช่น `home`) โปรแกรมเติม `.zone` ให้อัตโนมัติ; `@` = หน้าหลัก
+- `[record:ชื่อ]` ใส่ได้หลายตัว — ชื่อสั้นได้ (เช่น `home`) โปรแกรมเติม `.zone` ให้อัตโนมัติ; `@` = หน้าหลัก; **`*` = wildcard** (เช่น `[record:*.example.com]` — ทุกซับโดเมนชี้มาบ้านนี้)
 - `ttl`: 60–7200 (ใช้ 60 = IP ใหม่กระจายเร็วสุด)
 - บันทึกทุกครั้งผ่านเว็บ/ฟอร์ม → backup อัตโนมัติ (`config.ini.bak` หมุน 5 อัน)
 

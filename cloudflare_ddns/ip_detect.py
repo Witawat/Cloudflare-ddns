@@ -4,6 +4,7 @@ import ipaddress
 import random
 import socket
 import struct
+import time
 import urllib.request
 
 USER_AGENT = "cloudflare-ddns-updater/1.0"
@@ -60,6 +61,52 @@ def get_public_ip(version=4, timeout=8):
         except Exception:
             continue
     return None
+
+
+# ---------- กัน IP ของ Cloudflare (anycast) ----------
+
+CLOUDFLARE_IP_URLS = {
+    4: "https://www.cloudflare.com/ips-v4",
+    6: "https://www.cloudflare.com/ips-v6",
+}
+# แคชช่วง IP 24 ชม. — ถ้าโหลดไม่ได้ถือว่า "น่าสงสัย" (กันเขียน IP ผิด)
+CLOUDFLARE_IP_CACHE_TTL = 24 * 3600
+_cloudflare_ranges = {}  # version -> (timestamp, [ip_network])
+
+
+def get_cloudflare_ranges(version, timeout=8):
+    """คืน list ของ ip_network ที่เป็นของ Cloudflare (แคช 24 ชม.) หรือ None ถ้าโหลดไม่ได้."""
+    cached = _cloudflare_ranges.get(version)
+    now = time.time()
+    if cached and now - cached[0] < CLOUDFLARE_IP_CACHE_TTL:
+        return cached[1]
+    try:
+        text = _http_get(CLOUDFLARE_IP_URLS[version], timeout)
+        nets = [
+            ipaddress.ip_network(line.strip())
+            for line in text.splitlines()
+            if line.strip()
+        ]
+        _cloudflare_ranges[version] = (now, nets)
+        return nets
+    except Exception:
+        return None
+
+
+def is_cloudflare_ip(ip_str, timeout=8):
+    """IP เป็นของ Cloudflare (anycast/CDN) หรือไม่.
+
+    ถ้าโหลดช่วง IP ไม่ได้ -> คืน True (ถือว่าน่าสงสัย กันเขียน IP ผิดลง record)
+    ปิดได้ด้วย reject_cloudflare_ips = false ใน config
+    """
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+    nets = get_cloudflare_ranges(ip.version, timeout=timeout)
+    if nets is None:
+        return True
+    return any(ip in net for net in nets)
 
 
 # ---------- ตรวจ NAT / CGNAT ----------
