@@ -57,12 +57,15 @@ class DDNSEngine:
         self.config_path = config_path
         self.dry_run = dry_run
         self._state = {}
+        # state อยู่ข้าง config.ini ที่ใช้ (ข้าง exe เมื่อรัน exe) — กัน state แยกชุด
+        # เมื่อรันโปรแกรมจากหลายจุด/หลาย config
+        self._state_path = config_mod.state_path_for(config_path)
 
     # ---- state (cache IP ล่าสุด ไว้เทียบเพื่อลดการเรียก API) ----
 
     def _load_state(self):
         try:
-            with open(config_mod.DEFAULT_STATE_PATH, "r", encoding="utf-8") as handle:
+            with open(self._state_path, "r", encoding="utf-8") as handle:
                 self._state = json.load(handle)
         except (OSError, ValueError):
             self._state = {}
@@ -80,12 +83,12 @@ class DDNSEngine:
                     log.warning("บันทึก state หลังลบ zone cache ไม่ได้: %s", exc)
 
     def _save_state(self):
-        os.makedirs(os.path.dirname(config_mod.DEFAULT_STATE_PATH), exist_ok=True)
-        tmp = config_mod.DEFAULT_STATE_PATH + ".tmp"
+        os.makedirs(os.path.dirname(self._state_path), exist_ok=True)
+        tmp = self._state_path + ".tmp"
         try:
             with open(tmp, "w", encoding="utf-8") as handle:
                 json.dump(self._state, handle, indent=2, ensure_ascii=False)
-            os.replace(tmp, config_mod.DEFAULT_STATE_PATH)
+            os.replace(tmp, self._state_path)
         except OSError as exc:
             log.warning("บันทึก state ไม่ได้: %s", exc)
 
@@ -415,9 +418,10 @@ def _send_daily_report(engine, cfg, notify):
         log.info("ส่งรายงานประจำวันสำเร็จ")
     else:
         log.warning("ส่งรายงานประจำวันไม่ได้ (เก็บคิว): %s", error)
-        items = notifier.load_queue()
+        queue_path = config_mod.queue_path_for(engine.config_path)
+        items = notifier.load_queue(queue_path)
         items.append(message)
-        notifier.save_queue(items)
+        notifier.save_queue(items, queue_path)
     try:
         engine._state["daily_report_last"] = today
         engine._save_state()

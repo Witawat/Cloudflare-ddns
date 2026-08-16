@@ -57,11 +57,13 @@ def cloudflared_version(cfg=None):
 def cloudflared_path(cfg=None):
     if cfg and getattr(cfg, "cloudflared_path", "").strip():
         return cfg.cloudflared_path.strip()
+    if cfg and getattr(cfg, "path", None):
+        return os.path.join(config_mod.data_dir_for(cfg.path), "cloudflared.exe")
     return os.path.join(config_mod.DEFAULT_DATA_DIR, "cloudflared.exe")
 
 
-def _pid_path():
-    return os.path.join(config_mod.DEFAULT_DATA_DIR, PID_FILE)
+def _pid_path(config_path=None):
+    return os.path.join(config_mod.data_dir_for(config_path), PID_FILE)
 
 
 def is_installed(cfg=None):
@@ -129,31 +131,32 @@ def _process_is_cloudflared(pid):
 
 
 class TunnelManager:
-    def __init__(self):
+    def __init__(self, config_path=None):
+        self.config_path = config_path
         self._proc = None
         self._pid = self._load_pid()
 
     def _load_pid(self):
         try:
-            with open(_pid_path(), "r", encoding="utf-8") as handle:
+            with open(_pid_path(self.config_path), "r", encoding="utf-8") as handle:
                 return int(handle.read().strip())
         except (OSError, ValueError):
             return None
 
     def _save_pid(self, pid):
         try:
-            os.makedirs(config_mod.DEFAULT_DATA_DIR, exist_ok=True)
-            tmp = _pid_path() + ".tmp"
+            os.makedirs(config_mod.data_dir_for(self.config_path), exist_ok=True)
+            tmp = _pid_path(self.config_path) + ".tmp"
             with open(tmp, "w", encoding="utf-8") as handle:
                 handle.write(str(pid))
-            os.replace(tmp, _pid_path())
+            os.replace(tmp, _pid_path(self.config_path))
         except OSError as exc:
             log.warning("บันทึก tunnel pid ไม่ได้: %s", exc)
 
     def _clear_pid(self):
         try:
-            if os.path.isfile(_pid_path()):
-                os.remove(_pid_path())
+            if os.path.isfile(_pid_path(self.config_path)):
+                os.remove(_pid_path(self.config_path))
         except OSError:
             pass
 
@@ -254,7 +257,9 @@ class TunnelManager:
         self._pid = None
         if stopped:
             log.info("หยุด Cloudflare Tunnel แล้ว")
-            self._notify(config_mod.Config(), notifier.EVENT_STOP, "🌐 Tunnel หยุดทำงาน")
+            self._notify(
+                config_mod.Config(self.config_path), notifier.EVENT_STOP, "🌐 Tunnel หยุดทำงาน"
+            )
             return True, "หยุด tunnel แล้ว"
         return True, "tunnel ไม่ได้รันอยู่"
 

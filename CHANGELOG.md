@@ -16,6 +16,19 @@
 - **กันข้อความว่างเข้าคิว Telegram**: เดิมถ้ามีเหตุการณ์ที่สร้างข้อความว่าง (เช่น คิวเก่า/ค่า config ซ้ำ) จะติดคิวและส่งไม่สำเร็จ HTTP 400 ซ้ำไม่จบ — ตอนนี้ข้ามข้อความว่างทันที (log debug)
 - **ตรวจ NAT 3 ชั้น (เจอ CGNAT/double NAT ได้แม่นขึ้น)**: นอกจากการเช็ค IP จาก provider + STUN รอบเดียว — เพิ่ม (1) tracert ดูฮอปแรกหลัง WAN (เห็น 100.64/10 = CGNAT ของ ISP · เห็น IP private = NAT ซ้อนหลายชั้น) (2) STUN ซ้ำ 4 รอบเช็ค mapped port เปลี่ยนไหม (symmetric mapping) — ผลใหม่มี `tracert` + `stun_rounds` และ `nat_type` ใหม่ **`double-nat`** (DDNS อัปเดต IP ได้ แต่คนนอกเข้าไม่ถึง — ต้องเปิด port ทุกชั้นหรือใช้ Tunnel) — หน้าเว็บ: CGNAT/private = ⚠ แดง · double NAT = ⚠ เหลือง (เตือน) · ปกติ = ✓ เขียว — service เตือนผ่าน Telegram เมื่อเจอ double NAT ด้วย
 
+## [1.7.21] — 2026-08-16
+
+### แก้บั๊ก (Fixes)
+
+- **ข้อมูล runtime อยู่ที่เดียวกับ exe ไม่ว่า exe อยู่ที่ไหน**: state.json/notify_queue.json/logs/tunnel.pid/cloudflared.exe คำนวณจาก **config.ini ที่ใช้จริง** (config วางข้าง exe เสมอ) — ก่อนหน้านี้ state/queue/log ผูกกับ "โฟลเดอร์ที่รันโปรแกรม" (root vs dist) ทำให้รัน exe + python/--config พร้อมกันได้ข้อมูล 2 ชุด (รอบล่าสุดไม่ตรงกัน / คิว Telegram คนละที่ / HTTP 400 ข้อความว่างซ้ำ) — ตอนนี้ `--config` อะไร → data ข้างนั้น ชุดเดียวจบ
+- **`--config` ใช้ได้ทั้งหน้า/หลัง subcommand**: เดิมวางหน้า subcommand (เช่น `--config X run`) โดน argparse ทับด้วยค่าเริ่มต้นเงียบ ๆ — ตอนนี้ถูกต้องทั้ง 2 แบบ (ยังแนะนำวางหลัง เช่น `run --config X`)
+
+### ปรับปรุง
+
+- **กด exe เปล่า ๆ = เทียบเท่า service ครบจบ**: เพิ่มเริ่ม **Cloudflare Tunnel** ด้วย (เดิมกด exe ไม่เปิด tunnel — เปิดเฉพาะ service) — ตอนนี้ exe ครั้งเดียว = Web UI + DDNS loop + Tunnel + Telegram (หยุดครบเมื่อ Ctrl+C)
+- **เปิด Web UI ชนพอร์ต → ข้อความไทยชัด** ("พอร์ต 8123 ถูกใช้งาน — ปิดตัวก่อนหรือใช้ --port") ไม่ crash เงียบ
+- ล้าง state/queue/log เก่าที่แยกชุด (root) ทิ้งแล้ว — เหลือชุดเดียวข้าง exe
+
 ## [1.7.18] — 2026-08-16
 
 ### แก้บั๊ก (Fixes)

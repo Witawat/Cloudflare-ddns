@@ -103,7 +103,7 @@ def _make_service_class():
                 if cfg.tunnel_enabled:
                     from . import tunnel as tunnel_mod
 
-                    tunnel_mgr = tunnel_mod.TunnelManager()
+                    tunnel_mgr = tunnel_mod.TunnelManager(config_mod.DEFAULT_CONFIG_PATH)
                     threading.Thread(
                         target=lambda: self._start_tunnel_async(tunnel_mgr, cfg),
                         daemon=True,

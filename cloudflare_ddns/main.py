@@ -332,19 +332,32 @@ def cmd_status(args):
         print(f"  (อ่านสถานะ tunnel ไม่ได้: {exc})")
 
 
+def _start_tunnel_async(tunnel_mgr, cfg):
+    """เริ่ม Cloudflare Tunnel ใน thread แยก (ดาวน์โหลด cloudflared ครั้งแรกอาจนาน)."""
+    try:
+        ok, message = tunnel_mgr.start(cfg)
+        log.info("Cloudflare Tunnel: %s", message)
+    except Exception as exc:
+        log.warning("เริ่ม Cloudflare Tunnel ไม่ได้: %s", exc)
+
+
 def cmd_webui(args):
     from . import webui
 
     setup_console_logging()
-    ui = webui.WebUI(args.config, port=args.port, password=args.password)
+    try:
+        ui = webui.WebUI(args.config, port=args.port, password=args.password)
+    except RuntimeError as exc:
+        print(f"✗ {exc}")
+        return 1
     host = "127.0.0.1" if ui.host in ("0.0.0.0", "::") else ui.host
     log.info("เปิด Web UI ที่ http://%s:%s (ปิดด้วย Ctrl+C)", host, args.port or "(จาก config)")
     ui.serve_forever()
 
 
 def cmd_default(args):
-    """รันโดยไม่ใส่คำสั่ง: เปิด Web UI + DDNS loop พร้อมกัน (กด exe ครั้งเดียวทำงานเต็มรูปแบบ).
-    ปิดด้วย Ctrl+C — จะหยุด webui + loop (และแจ้ง Telegram 'หยุดทำงาน')"""
+    """รันโดยไม่ใส่คำสั่ง: Web UI + DDNS loop + Cloudflare Tunnel พร้อมกัน (เทียบเท่า service).
+    กด exe ครั้งเดียวทำงานเต็มรูปแบบ — ปิดด้วย Ctrl+C (หยุดทุกอย่าง + แจ้ง Telegram 'หยุดทำงาน')"""
     from . import service as service_mod
     from . import webui
 
@@ -354,7 +367,7 @@ def cmd_default(args):
     if errors:
         print("ยังไม่ได้ตั้งค่า — กำลังเปิดหน้าตั้งค่า (wizard)...")
     else:
-        print("เปิด Web UI + DDNS loop (ปิดด้วย Ctrl+C)")
+        print("เปิด Web UI + DDNS loop + Tunnel (ปิดด้วย Ctrl+C)")
     service_mod.setup_file_logging(cfg.log_dir)
 
     web_ui = None
@@ -362,12 +375,29 @@ def cmd_default(args):
         web_ui = webui.WebUI(args.config)
         web_ui.start()
         print("Web UI เปิดที่ http://127.0.0.1:%d" % web_ui.port)
+    except RuntimeError as exc:
+        print(f"✗ {exc}")
     except Exception as exc:
         log.warning("เปิด Web UI ไม่ได้: %s", exc)
     try:
         webbrowser.open(f"http://127.0.0.1:{cfg.webui_port}")
     except Exception:
         pass
+
+    # เริ่ม Cloudflare Tunnel (async — ครั้งแรกอาจต้องดาวน์โหลด cloudflared)
+    tunnel_mgr = None
+    try:
+        if cfg.tunnel_enabled:
+            from . import tunnel as tunnel_mod
+
+            tunnel_mgr = tunnel_mod.TunnelManager(args.config)
+            threading.Thread(
+                target=_start_tunnel_async,
+                args=(tunnel_mgr, cfg),
+                daemon=True,
+            ).start()
+    except Exception as exc:
+        log.warning("เริ่ม Cloudflare Tunnel ไม่ได้: %s", exc)
 
     stop_event = threading.Event()
     loop_thread = threading.Thread(
@@ -385,12 +415,20 @@ def cmd_default(args):
         stop_event.set()
         loop_thread.join(timeout=15)
     finally:
+        if tunnel_mgr is not None:
+            import time as _time
+
+            _time.sleep(1.0)
+            try:
+                tunnel_mgr.stop()
+            except Exception as exc:
+                log.warning("หยุด Cloudflare Tunnel ไม่ได้: %s", exc)
         if web_ui is not None:
             try:
                 web_ui.stop()
             except Exception:
                 pass
-    log.info("ปิด Web UI + DDNS loop เรียบร้อย")
+    log.info("ปิด Web UI + DDNS loop + Tunnel เรียบร้อย")
 
 
 def run_service_entry():
@@ -408,6 +446,10 @@ def main(argv=None):
             pass
     parent = argparse.ArgumentParser(add_help=False)
     parent.add_argument("--config", default=config_mod.DEFAULT_CONFIG_PATH, help="ที่อยู่ config.ini")
+    # subparser รับ --config เช่นกัน (หลัง subcommand) แต่ default=None กันไปทับค่า
+    # ที่วางไว้หน้า subcommand (argparse จะเขียน default ทับเสมอถ้ามีค่า default)
+    sub_parent = argparse.ArgumentParser(add_help=False)
+    sub_parent.add_argument("--config", default=None, help=argparse.SUPPRESS)
     parser = argparse.ArgumentParser(
         prog="python -m cloudflare_ddns.main",
         description="Cloudflare DDNS Updater — Windows service สำหรับอัปเดต DNS อัตโนมัติ",
@@ -416,12 +458,15 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="command")
 
     for name in ("setup", "run", "dry-run", "install", "remove", "start", "stop", "restart", "status", "notify-test"):
-        sub.add_parser(name, parents=[parent])
-    web_parser = sub.add_parser("webui", parents=[parent])
+        sub.add_parser(name, parents=[sub_parent])
+    web_parser = sub.add_parser("webui", parents=[sub_parent])
     web_parser.add_argument("--port", type=int, default=None)
     web_parser.add_argument("--password", default=None)
 
     args = parser.parse_args(argv)
+    if args.config is None:
+        # ไม่มี --config ระบุ (ทั้งหน้า/หลัง) — ใช้ค่าเริ่มต้นข้าง exe/โปรแกรม
+        args.config = config_mod.DEFAULT_CONFIG_PATH
     commands = {
         "setup": cmd_setup,
         "run": cmd_run,

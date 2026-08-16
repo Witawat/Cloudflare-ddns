@@ -39,11 +39,13 @@ API_URL = "https://api.telegram.org/bot{token}/sendMessage"
 
 
 class TelegramNotifier:
-    def __init__(self, bot_token="", chat_id="", events=None):
+    def __init__(self, bot_token="", chat_id="", events=None, config_path=None):
         self.bot_token = (bot_token or "").strip()
         self.chat_id = str(chat_id or "").strip()
         self.events = events or {}
         self._last_dedupe_key = ""
+        # คิวอยู่ข้าง config.ini ที่ใช้ (ข้าง exe เมื่อรัน exe) — กันคิวแยกชุด
+        self.queue_path = config_mod.queue_path_for(config_path)
 
     @property
     def enabled(self):
@@ -62,6 +64,7 @@ class TelegramNotifier:
                 EVENT_CREATED: cfg.notify_created,
                 EVENT_ROUND: cfg.notify_round,
             },
+            config_path=getattr(cfg, "path", None),
         )
 
     def event_enabled(self, event):
@@ -119,13 +122,13 @@ class TelegramNotifier:
 
     def _enqueue(self, text):
         with _queue_lock:
-            items = load_queue()
+            items = load_queue(self.queue_path)
             items.append(text)
             if len(items) > MAX_QUEUE:
                 dropped = items[: len(items) - MAX_QUEUE]
                 items = items[-MAX_QUEUE:]
                 log.warning("คิวแจ้งเตือนเต็ม ตัดทิ้ง %d ข้อความเก่า", len(dropped))
-            save_queue(items)
+            save_queue(items, self.queue_path)
             log.info("เพิ่มข้อความแจ้งเตือนลงคิว (รวม %d ข้อความ)", len(items))
 
     # ---- queue ----
@@ -133,7 +136,7 @@ class TelegramNotifier:
     def flush(self, max_seconds=60):
         """พยายามส่งคิวทั้งหมด (จำกัดเวลา max_seconds กัน block นาน) คืน (sent, failed)."""
         with _queue_lock:
-            items = load_queue()
+            items = load_queue(self.queue_path)
             if not items:
                 return 0, 0
             sent = 0
@@ -150,7 +153,7 @@ class TelegramNotifier:
                 else:
                     log.warning("ส่ง Telegram ไม่สำเร็จ (เก็บไว้ส่งใหม่): %s", error)
                     remaining.append(text)
-            save_queue(remaining)
+            save_queue(remaining, self.queue_path)
             if sent:
                 log.info("ส่งแจ้งเตือน Telegram สำเร็จ %d ข้อความ (คิวเหลือ %d)", sent, len(remaining))
             return sent, len(remaining)
@@ -158,9 +161,10 @@ class TelegramNotifier:
 
 # ---- ฟังก์ชันระดับโมดูล ----
 
-def load_queue():
+def load_queue(path=None):
+    path = path or QUEUE_PATH
     try:
-        with open(QUEUE_PATH, "r", encoding="utf-8") as handle:
+        with open(path, "r", encoding="utf-8") as handle:
             items = json.load(handle)
         return items if isinstance(items, list) else []
     except ValueError as exc:
@@ -170,24 +174,25 @@ def load_queue():
         return []
 
 
-def save_queue(items):
-    os.makedirs(os.path.dirname(QUEUE_PATH), exist_ok=True)
-    tmp = QUEUE_PATH + ".tmp"
+def save_queue(items, path=None):
+    path = path or QUEUE_PATH
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
     try:
         with open(tmp, "w", encoding="utf-8") as handle:
             json.dump(items, handle, ensure_ascii=False, indent=2)
-        os.replace(tmp, QUEUE_PATH)
+        os.replace(tmp, path)
     except OSError as exc:
         log.warning("บันทึกคิวแจ้งเตือนไม่ได้: %s", exc)
 
 
-def queue_size():
-    return len(load_queue())
+def queue_size(path=None):
+    return len(load_queue(path))
 
 
-def clear_queue():
+def clear_queue(path=None):
     """ล้างคิวทั้งหมด (ปุ่มใน Web UI)"""
-    save_queue([])
+    save_queue([], path)
 
 
 def _tg_api(bot_token, method, timeout=10):

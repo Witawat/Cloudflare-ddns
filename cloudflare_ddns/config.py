@@ -45,12 +45,13 @@ LEGACY_DATA_DIR = os.path.join(
 )
 
 
-def migrate_legacy_data():
-    """ย้ายข้อมูลจากโฟลเดอร์ ProgramData เดิมมาข้าง exe (ครั้งเดียว, idempotent).
+def migrate_legacy_data(config_path=None):
+    """ย้ายข้อมูลจากโฟลเดอร์ ProgramData เดิมมาข้าง config ที่ใช้ (ครั้งเดียว, idempotent).
 
     ย้าย: state.json, notify_queue.json และโฟลเดอร์ logs/ ทั้งหมด
     """
-    if LEGACY_DATA_DIR == DEFAULT_DATA_DIR:
+    data_dir = data_dir_for(config_path)
+    if LEGACY_DATA_DIR == data_dir:
         return
     if not os.path.isdir(LEGACY_DATA_DIR):
         return
@@ -58,7 +59,7 @@ def migrate_legacy_data():
 
     for name in ("state.json", "notify_queue.json"):
         src = os.path.join(LEGACY_DATA_DIR, name)
-        dst = os.path.join(DEFAULT_DATA_DIR, name)
+        dst = os.path.join(data_dir, name)
         if os.path.isfile(src) and not os.path.isfile(dst):
             try:
                 shutil.copy2(src, dst)
@@ -66,7 +67,7 @@ def migrate_legacy_data():
             except OSError as exc:
                 log.warning("ย้าย %s ไม่ได้: %s", name, exc)
     src_logs = os.path.join(LEGACY_DATA_DIR, "logs")
-    dst_logs = os.path.join(DEFAULT_DATA_DIR, "logs")
+    dst_logs = os.path.join(data_dir, "logs")
     if os.path.isdir(src_logs) and not os.path.isdir(dst_logs):
         try:
             shutil.copytree(src_logs, dst_logs)
@@ -76,6 +77,29 @@ def migrate_legacy_data():
 
 DEFAULT_INTERVAL = 60
 MIN_INTERVAL = 15
+
+
+def data_dir_for(config_path=None):
+    """โฟลเดอร์ข้อมูล runtime (state/queue/log) — อยู่ข้าง config.ini ที่ใช้จริง.
+
+    config.ini ถูกวางข้าง exe เสมอ (ตามเอกสารการติดตั้ง) → data จึงอยู่ข้าง exe
+    โดยอัตโนมัติ ไม่ว่า exe จะอยู่ที่ไหน — รันหลาย config = ข้อมูลแยกชุด ไม่ทับกัน.
+    """
+    if not config_path:
+        return DEFAULT_DATA_DIR
+    return os.path.dirname(os.path.abspath(config_path))
+
+
+def state_path_for(config_path=None):
+    return os.path.join(data_dir_for(config_path), "state.json")
+
+
+def queue_path_for(config_path=None):
+    return os.path.join(data_dir_for(config_path), "notify_queue.json")
+
+
+def log_dir_for(config_path=None):
+    return os.path.join(data_dir_for(config_path), "logs")
 
 _hostname_cache = ""
 
@@ -200,7 +224,7 @@ class Config:
         self.webui_port = max(1, min(65535, int(self._as_float(section, "webui_port", 8123))))
         self.webui_host = section.get("webui_host", "127.0.0.1").strip() or "127.0.0.1"
         self.webui_password = section.get("webui_password", "").strip()
-        self.log_dir = section.get("log_dir", "").strip() or DEFAULT_LOG_DIR
+        self.log_dir = section.get("log_dir", "").strip() or log_dir_for(self.path)
 
         # แจ้งเตือน Telegram
         self.telegram_bot_token = section.get("telegram_bot_token", "").strip()
@@ -394,7 +418,7 @@ class Config:
         self.webui_port = max(1, min(65535, int(self._as_float(section, "webui_port", 8123))))
         self.webui_host = section.get("webui_host", "127.0.0.1").strip() or "127.0.0.1"
         self.webui_password = section.get("webui_password", "").strip()
-        self.log_dir = section.get("log_dir", "").strip() or DEFAULT_LOG_DIR
+        self.log_dir = section.get("log_dir", "").strip() or log_dir_for(self.path)
 
         self.telegram_bot_token = section.get("telegram_bot_token", "").strip()
         self.telegram_chat_id = section.get("telegram_chat_id", "").strip()

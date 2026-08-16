@@ -58,12 +58,12 @@ def _in_service():
     return os.environ.get("CFDDNS_RUNNING_AS_SERVICE") == "1"
 
 
-def _get_tunnel_mgr():
+def _get_tunnel_mgr(config_path=None):
     global _tunnel_mgr
     if _tunnel_mgr is None:
         from . import tunnel as tunnel_mod
 
-        _tunnel_mgr = tunnel_mod.TunnelManager()
+        _tunnel_mgr = tunnel_mod.TunnelManager(config_path)
     return _tunnel_mgr
 
 
@@ -2375,9 +2375,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
         """อ่าน records_time จาก state.json (เวลา IP ล่าสุดของแต่ละ record)"""
         try:
             import json as _json
-            import os
 
-            path = os.path.join(config_mod.DEFAULT_DATA_DIR, "state.json")
+            path = config_mod.state_path_for(self.server.config_path)
             with open(path, "r", encoding="utf-8") as handle:
                 state = _json.load(handle)
             return state.get("records_time", {})
@@ -2488,7 +2487,7 @@ function togglePw(btn) {
         if self.path == "/notify-queue":
             if not self._authed():
                 return self._send_json(401, {"ok": False, "message": "unauthorized"})
-            return self._send_json(200, {"ok": True, "queue": notifier.load_queue()})
+            return self._send_json(200, {"ok": True, "queue": notifier.load_queue(config_mod.queue_path_for(self.server.config_path))})
 
         if self.path.split("?", 1)[0] == "/log":
             if not self._authed():
@@ -2519,9 +2518,9 @@ function togglePw(btn) {
             status["telegram"] = {
                 "enabled": notify.enabled,
                 "chat_id": notify.chat_id,
-                "queue": notifier.queue_size(),
+                "queue": notifier.queue_size(config_mod.queue_path_for(self.server.config_path)),
             }
-            status["tunnel"] = _get_tunnel_mgr().status(self.cfg)
+            status["tunnel"] = _get_tunnel_mgr(self.server.config_path).status(self.cfg)
             status["record_errors"] = status.get("record_errors", {})
             try:
                 from . import service as service_mod
@@ -2741,6 +2740,7 @@ function togglePw(btn) {
             notify = notifier.TelegramNotifier(
                 str(data.get("bot_token", "")).strip(),
                 str(data.get("chat_id", "")).strip(),
+                config_path=self.server.config_path,
             )
             ok, error = notify.send_raw(str(data.get("text", "ทดสอบ")))
             return self._send_json(200 if ok else 400, {"ok": ok, "message": error or "ส่งสำเร็จ"})
@@ -2838,7 +2838,7 @@ function togglePw(btn) {
         if self.path == "/notify-queue/clear":
             if not self._authed():
                 return self._send_json(401, {"ok": False, "message": "unauthorized"})
-            notifier.clear_queue()
+            notifier.clear_queue(config_mod.queue_path_for(self.server.config_path))
             return self._send_json(200, {"ok": True, "message": "ล้างคิวแล้ว"})
 
         if self.path == "/tunnel/test":
@@ -2855,12 +2855,12 @@ function togglePw(btn) {
             test_cfg = copy.copy(self.cfg)
             test_cfg.tunnel_token = token
             test_cfg.tunnel_enabled = True
-            ok, message = _get_tunnel_mgr().start(test_cfg)
+            ok, message = _get_tunnel_mgr(self.server.config_path).start(test_cfg)
             if not ok:
                 return self._send_json(400, {"ok": False, "message": message})
             time.sleep(4)  # รอให้ cloudflared ตายเองถ้า token ผิด
-            still_running = _get_tunnel_mgr().status(test_cfg)["running"]
-            _get_tunnel_mgr().stop()
+            still_running = _get_tunnel_mgr(self.server.config_path).status(test_cfg)["running"]
+            _get_tunnel_mgr(self.server.config_path).stop()
             if still_running:
                 return self._send_json(200, {"ok": True, "message": "token ใช้ได้ — tunnel เชื่อมต่อ Cloudflare แล้ว (หยุดชั่วคราว รอขั้นตอนสุดท้าย)"})
             return self._send_json(
@@ -3122,11 +3122,11 @@ function togglePw(btn) {
             return self._send_json(200, {"ok": True, "message": f"ซิงค์แล้ว — บันทึก hostname {len(hosts)} รายการลง config", "hostnames": hosts})
 
         if self.path == "/tunnel/start":
-            ok, message = _get_tunnel_mgr().start(self.cfg)
+            ok, message = _get_tunnel_mgr(self.server.config_path).start(self.cfg)
             return self._send_json(200 if ok else 400, {"ok": ok, "message": message})
 
         if self.path == "/tunnel/stop":
-            ok, message = _get_tunnel_mgr().stop()
+            ok, message = _get_tunnel_mgr(self.server.config_path).stop()
             return self._send_json(200 if ok else 400, {"ok": ok, "message": message})
 
         if self.path == "/tunnel/download":
@@ -3311,7 +3311,7 @@ function togglePw(btn) {
 
 class WebUI:
     def __init__(self, config_path=config_mod.DEFAULT_CONFIG_PATH, port=None, password=None, host=None):
-        config_mod.migrate_legacy_data()
+        config_mod.migrate_legacy_data(config_path)
         self.config_path = config_path
         self.cfg = config_mod.Config(config_path)
         self.port = port or self.cfg.webui_port
@@ -3319,7 +3319,13 @@ class WebUI:
         if password is not None:
             self.cfg.webui_password = password
         handler = type("Handler", (WebUIHandler,), {})
-        self.server = ThreadingHTTPServer((self.host, self.port), handler)
+        try:
+            self.server = ThreadingHTTPServer((self.host, self.port), handler)
+        except OSError as exc:
+            raise RuntimeError(
+                f"เปิด Web UI ไม่ได้ — พอร์ต {self.port} ถูกใช้งานอยู่ ({exc}). "
+                "อาจมี webui/service รันอยู่แล้ว — ปิดตัวนั้นก่อน หรือใช้พอร์ตอื่น (webui --port XXXX)"
+            ) from exc
         self.server.cfg = self.cfg
         self.server.config_path = config_path
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)

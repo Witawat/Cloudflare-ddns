@@ -103,6 +103,7 @@ POST /open-data-folder   เปิดโฟลเดอร์ข้อมูล 
 
 ### state / queue (เขียนจากหลาย thread)
 - `state.json`, `notify_queue.json` เขียนจาก ddns loop + webui พร้อมกัน → **เขียนแบบ atomic เสมอ** (temp + `os.replace`) — ห้ามเขียนตรง ๆ
+- **ข้อมูล runtime อยู่ข้าง config.ini ที่ใช้จริง** (`state_path_for/queue_path_for/log_dir_for/data_dir_for`) — config วางข้าง exe → data ข้าง exe อัตโนมัติ — **ห้ามใช้ `DEFAULT_STATE_PATH`/`QUEUE_PATH` ฮาร์ดโค้ดในโค้ดใหม่** (เคยทำให้ state/queue แยกชุด root vs dist — รอบล่าสุดไม่ตรง/คิว Telegram ปน)
 - **dry-run ต้องไม่เขียน state** (`_save_state` เช็ค `self.dry_run`; `_invalidate_zone` ก็เช็ค)
 
 ### ความปลอดภัย / สถิติ
@@ -166,7 +167,7 @@ python -m PyInstaller --noconfirm --clean --onefile --console --name cloudflare-
 powershell -File <temp>\svc-reinstall.cmd # remove+install+start
 ```
 
-> svc-stop.cmd / svc-reinstall.cmd เป็นสคริปต์ช่วย (อยู่ใน temp ของแต่ละ session — สร้างใหม่ได้ตามคำสั่งใน install.bat/uninstall.bat)
+> สคริปต์ build ทั้งคู่มี admin auto + UTF-8 ไม่มี BOM + CRLF — uild.bat เหมาะกับเครื่อง dev (ไม่ต้อง admin ถ้าไม่มี service) · uild-install.bat ใช้กับเครื่องปลายทางที่ต้องการ service
 
 ## 9. อย่าลืม
 
