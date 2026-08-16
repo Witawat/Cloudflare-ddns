@@ -321,8 +321,7 @@ def nat_report(public_ip=None, timeout=5, trace=True, stun_rounds=4):
         result["nat_type"] = "double-nat"
         result["nat_layers"] = layers
         result["message"] = (
-            f"เป็น NAT ส่วนตัวในบ้าน (ซ้อน {layers} ชั้น) — DDNS ใช้งานได้ตามปกติ "
-            "(เปิด port ทุกชั้นถ้าต้องการให้คนนอกเข้าถึง)"
+            f"เป็น NAT ส่วนตัวในบ้าน (ซ้อน {layers} ชั้น) — DDNS ใช้งานได้ตามปกติ"
         )
     elif stun and result["stun_ip"] and result["stun_ip"] != public_ip:
         result["nat_type"] = "mismatch"
