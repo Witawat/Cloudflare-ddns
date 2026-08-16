@@ -215,7 +215,24 @@ label.field input:focus, label.field select:focus {
   .panel { padding: 14px; }
   .record-row { gap: 10px; }
   .rec-meta { width: 100%; text-align: left; }
+  /* การ์ดสถานะ IP: ปุ่มเต็มความกว้างครึ่งบรรทัด — ไม่เบียด/wrap แปลก ๆ */
+  #public-ip .btn-secondary, #public-ip .btn-primary { flex: 1 1 40%; }
+  #public-ip .tg-status { flex: 1 1 100%; }
+  /* กล่อง NAT: ห้ามยาวเกินจอ (ตัดคำ) */
+  .nat-box { word-break: break-word; }
+  /* ตารางประวัติ: ไม่บังคับความกว้างขั้นต่ำ — บีบตามจอ ไม่ต้องเลื่อนแนวนอน */
+  .tbl-w560, .tbl-w420, .tbl-w480 { min-width: 0 !important; }
+  .tbl-w560 th, .tbl-w560 td, .tbl-w420 th, .tbl-w420 td, .tbl-w480 th, .tbl-w480 td {
+    white-space: normal !important; word-break: break-word !important;
+  }
+  #history th, #history td { padding: 4px 6px !important; }
+  /* สแกนพอร์ต: ช่องพอร์ตไม่กินเกินจอ */
+  #scan-ports { min-width: 0; }
 }
+/* ตารางสรุป (ประวัติ/สแกน/tunnel/คิว): กว้างขั้นต่ำเฉพาะจอใหญ่ (เลื่อนแนวนอนในกรอบบนจอเล็ก) */
+.tbl-w560 { min-width: 560px; }
+.tbl-w420 { min-width: 420px; }
+.tbl-w480 { min-width: 480px; }
 /* แท็บเล็ต/จอเล็ก: record editor เปลี่ยนเป็น 2 คอลัมน์ (ชื่อ+zone / proxy+ttl / 4-6+ลบ) */
 @media (max-width: 860px) {
   .rec-edit { grid-template-columns: 1fr 1fr; }
