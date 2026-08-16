@@ -62,12 +62,19 @@ def _get_tunnel_mgr():
 
 
 def _decode_tunnel_token(token):
-    """แยก account_id + tunnel_id จาก tunnel token (JWT payload). คืน (dict, error)"""
+    """แยก account_id + tunnel_id จาก tunnel token. คืน (dict, error)
+
+    รองรับ 2 รูปแบบ:
+    - JWT 3 ส่วน (header.payload.signature) -> ใช้ payload (ส่วนที่ 1)
+    - รูปแบบใหม่ 1 ส่วน (payload ล้วน)      -> ใช้ทั้ง token
+    """
     import base64
     import json as _json
 
     try:
-        payload_part = token.strip().split(".")[1]
+        token = token.strip()
+        parts = token.split(".")
+        payload_part = parts[1] if len(parts) >= 2 else parts[0]
         payload_part += "=" * (-len(payload_part) % 4)
         claims = _json.loads(base64.urlsafe_b64decode(payload_part))
         account_id = claims.get("a") or claims.get("accountID")
@@ -78,9 +85,19 @@ def _decode_tunnel_token(token):
         return None, "tunnel token ไม่มี account/tunnel id (token ผิดรูปแบบ?)"
     return {"account_id": account_id, "tunnel_id": tunnel_id}, ""
 
+def _tunnel_api_error(exc):
+    """แปล error จากการเรียก API tunnel ให้อ่านง่าย — 403 = token ไม่มีสิทธิ์ Tunnel"""
+    text = str(exc)
+    if "403" in text or "10000" in text:
+        return (
+            "API token ไม่มีสิทธิ์จัดการ Tunnel (403) — ไปที่ dash.cloudflare.com → My Profile → API Tokens → "
+            "Edit token ที่ใช้ → เพิ่มสิทธิ์ Account → Cloudflare Tunnel → Edit แล้วลองใหม่"
+        )
+    return text
+
+
 # ชื่อบริการสำหรับพอร์ตที่พบบ่อย
-PORT_SERVICES = {
-    20: "ftp-data", 21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns",
+PORT_SERVICES = {    20: "ftp-data", 21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns",
     80: "http", 110: "pop3", 143: "imap", 443: "https", 445: "smb", 465: "smtps",
     587: "smtp-sub", 993: "imaps", 995: "pop3s", 1433: "mssql", 1883: "mqtt",
     3306: "mysql", 3389: "rdp", 5432: "postgres", 5900: "vnc", 6379: "redis",
@@ -191,12 +208,14 @@ main { max-width: 860px; margin: 0 auto; padding: 24px 28px 80px; }
 /* forms */
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
 label.field { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 12px; }
-label.field input, label.field select {
+label.field input, label.field select, label.field textarea {
   display: block; width: 100%; margin-top: 4px;
   font-size: 0.9rem; color: var(--ink); font-family: inherit;
   padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
   background: var(--bg);
+  box-sizing: border-box;
 }
+label.field textarea { resize: vertical; min-height: 58px; line-height: 1.4; }
 label.field input:focus, label.field select:focus {
   outline: 2px solid color-mix(in oklch, var(--accent) 40%, transparent); border-color: var(--accent);
 }
@@ -416,6 +435,7 @@ __LOGIN__
         <label class="field">ชนิด<select id="th-protocol" class="wz-zone-select"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="udp">UDP</option></select></label>
       </div>
       <label class="field">บริการ/พอร์ต<input id="th-service" type="text" class="mono" value="http://localhost:8080" placeholder="http://localhost:8080 หรือ tcp://localhost:22"></label>
+      <p style="margin:0 0 10px;font-size:0.8rem;color:var(--muted);line-height:1.5">💡 เลือกชนิดให้ตรงกับบริการ: <b>HTTP</b> = เว็บธรรมดา (เช่น <span class="mono">http://localhost:8080</span>) · <b>HTTPS</b> = พอร์ต SSL เช่น 443/8443 (ต้องเป็น <span class="mono">https://localhost:443</span> — ถ้าผูกเป็น http จะเจอ "Bad Request") · <b>TCP/UDP</b> = SSH/game/VPN (เช่น <span class="mono">tcp://localhost:22</span>)</p>
       <button id="th-bind" class="btn-primary" type="button">ผูกกับ tunnel</button>
       <button id="th-cancel" class="btn-secondary" type="button">ยกเลิก</button>
       <div id="th-msg"></div>
@@ -577,10 +597,10 @@ __LOGIN__
     <div class="toggles">
       <label><input id="tunnel_enabled" type="checkbox"> เปิด tunnel อัตโนมัติตอน service เริ่ม</label>
     </div>
+    <label class="field">Tunnel Token (ยาว — วางได้เต็มช่อง ไม่ซ่อน)
+      <textarea id="tunnel_token" rows="3" class="mono" spellcheck="false" autocomplete="off" placeholder="eyJhIjoi..."></textarea>
+    </label>
     <div class="grid2">
-      <label class="field">Tunnel Token (จาก Zero Trust → Networks → Tunnels)
-        <input id="tunnel_token" type="password" autocomplete="off" placeholder="eyJhIjoi...">
-      </label>
       <label class="field">ที่อยู่ cloudflared.exe (เว้นว่าง = ดาวน์โหลดข้าง exe อัตโนมัติ)
         <input id="cloudflared_path" type="text" class="mono" autocomplete="off" placeholder="(อัตโนมัติ)">
       </label>
@@ -657,6 +677,24 @@ function toast(text, kind) {
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+
+/* ---------- fetch กลาง: timeout + แปล error ให้อ่านรู้เรื่อง (กัน "Failed to fetch" งง ๆ) ---------- */
+
+const FETCH_TIMEOUT_MS = 90000; // 90 วิ (งานยาว เช่น ผูก hostname / ดาวน์โหลด cloudflared)
+const _origFetch = window.fetch;
+window.fetch = (url, opts) => {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  return _origFetch(url, { ...(opts || {}), signal: ctrl.signal })
+    .then(r => { clearTimeout(timer); return r; })
+    .catch(err => {
+      clearTimeout(timer);
+      if (err && err.name === "AbortError") {
+        throw new Error("timeout — server ไม่ตอบกลับภายใน " + (FETCH_TIMEOUT_MS / 1000) + " วิ (ลองใหม่ หรือดู log)");
+      }
+      throw new Error("เชื่อมต่อ server ไม่ได้ (network error) — ลองใหม่ หรือดู log");
+    });
+};
 
 /* ---------- log error ฝั่งหน้าเว็บ ไปไฟล์ log (ฝั่ง server) ---------- */
 
@@ -1223,9 +1261,11 @@ async function tunnelHosts() {
         '<tr><td class="mono" style="padding:5px 10px">' + escapeHtml(h.hostname) + escapeHtml(h.path || "") + '</td>' +
         '<td style="padding:5px 10px">' + escapeHtml(h.protocol || "http") + "</td>" +
         '<td class="mono" style="padding:5px 10px;color:var(--muted)">' + escapeHtml(h.service) + "</td>" +
-        '<td style="padding:2px 6px"><button class="btn-del" type="button" data-host="' + escapeHtml(h.hostname) + '" data-path="' + escapeHtml(h.path || "") + '" title="เลิกผูก">×</button></td></tr>'
+        '<td style="padding:2px 6px;white-space:nowrap">' +
+        '<button class="btn-secondary" style="padding:3px 8px;font-size:0.75rem" type="button" data-edit-host="' + escapeHtml(h.hostname) + '" data-edit-path="' + escapeHtml(h.path || "") + '" data-edit-protocol="' + escapeHtml(h.protocol || "http") + '" data-edit-service="' + escapeHtml(h.service || "") + '" title="แก้ไข map นี้ (ผูกซ้ำ = แทนที่)">แก้ไข</button> ' +
+        '<button class="btn-del" type="button" data-host="' + escapeHtml(h.hostname) + '" data-path="' + escapeHtml(h.path || "") + '" title="เลิกผูก">×</button></td></tr>'
       ).join("") + "</table></div>" +
-      '<p style="margin-top:6px;font-size:0.8rem;color:var(--muted)">หลาย port ต่อชื่อเดียว: ผูก path ต่างกัน (เช่น /api → 3000, / → 8080) · TCP/UDP เลือกชนิดได้</p>';
+      '<p style="margin-top:6px;font-size:0.8rem;color:var(--muted)">หลาย port ต่อชื่อเดียว: ผูก path ต่างกัน (เช่น /api → 3000, / → 8080) · TCP/UDP เลือกชนิดได้ · "แก้ไข" = ผูกซ้ำด้วยค่าที่ตั้งใหม่ (แทนที่ของเดิม)</p>';
     box.querySelectorAll("button[data-host]").forEach(b => b.addEventListener("click", async () => {
       if (!confirm("เลิกผูก " + b.dataset.host + b.dataset.path + "?")) return;
       try {
@@ -1241,20 +1281,17 @@ async function tunnelHosts() {
         toast("error: " + e, "err");
       }
     }));
+    box.querySelectorAll("button[data-edit-host]").forEach(b => b.addEventListener("click", () => editTunnelHost(b)));
   } catch (e) {
     logClientError('tunnelHosts', e);
     box.innerHTML = '<p style="color:var(--danger)">error: ' + escapeHtml(e) + "</p>";
   }
 }
 
-async function tunnelAddHost() {
-  const form = $("tunnel-add-form");
-  form.hidden = !form.hidden;
-  if (form.hidden) return;
-  const msg = $("th-msg");
-  msg.innerHTML = "";
-  // โหลดรายชื่อโดเมน (dropdown)
+// โหลด dropdown โดเมน (ครั้งแรกเท่านั้น) — ใช้ร่วมกับฟอร์มเพิ่ม/แก้ไข hostname
+async function ensureTunnelDomainLoaded() {
   const domainSel = $("th-domain");
+  if (domainSel.options.length) return;
   domainSel.innerHTML = '<option value="">— กำลังโหลดโดเมน… —</option>';
   try {
     const r = await fetch("/tunnel/zones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
@@ -1266,11 +1303,40 @@ async function tunnelAddHost() {
       domainSel.innerHTML = '<option value="">— ใส่โดเมนไม่ได้ (API token ไม่มีสิทธิ์) —</option>';
     }
   } catch (e) {
-    logClientError('tunnelAddHost', e);
+    logClientError('ensureTunnelDomainLoaded', e);
     domainSel.innerHTML = '<option value="">— โหลดโดเมนไม่ได้ —</option>';
   }
-  // เปลี่ยนโดเมน -> โหลดชื่อแนะนำใหม่
   domainSel.onchange = loadSubSuggestions;
+}
+
+// แก้ไข map hostname: โหลดค่าปัจจุบันลงฟอร์ม "+ เพิ่ม hostname" แล้วผูกซ้ำ (server แทนที่ให้)
+async function editTunnelHost(btn) {
+  const form = $("tunnel-add-form");
+  form.hidden = false;
+  // โหลด dropdown โดเมนก่อน (ถ้ายังไม่เคยโหลด — กันตั้งค่าโดเมนไม่ทันแล้วหาย)
+  await ensureTunnelDomainLoaded();
+  const hostname = btn.dataset.editHost;
+  const path = btn.dataset.editPath || "";
+  const protocol = btn.dataset.editProtocol || "http";
+  const service = btn.dataset.editService || "";
+  const dot = hostname.indexOf(".");
+  $("th-sub").value = dot > 0 ? hostname.slice(0, dot) : "@";
+  $("th-domain").value = hostname.slice(dot + 1);
+  $("th-path").value = path;
+  $("th-protocol").value = protocol;
+  $("th-service").value = service;
+  const msg = $("th-msg");
+  msg.innerHTML = '<p style="color:var(--ok)">แก้ไข ' + escapeHtml(hostname) + (path || "") + ' — เปลี่ยนค่าด้านบนแล้วกด "ผูกกับ tunnel" (แทนที่ของเดิม)</p>';
+  $("tunnel-add-form").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function tunnelAddHost() {
+  const form = $("tunnel-add-form");
+  form.hidden = !form.hidden;
+  if (form.hidden) return;
+  const msg = $("th-msg");
+  msg.innerHTML = "";
+  await ensureTunnelDomainLoaded();
 }
 
 async function fillSubList(subId, domainId, listId) {
@@ -1451,7 +1517,7 @@ function renderTunnelWizard() {
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">' +
       '<button class="btn-secondary" type="button" id="twz-open-zt">เปิด Zero Trust ↗</button>' +
       '<button class="btn-secondary" type="button" id="twz-help">ดูวิธีหา token</button></div>' +
-      '<label class="field">Tunnel Token<input id="twz-token" type="password" autocomplete="off" placeholder="eyJhIjoi..."></label>' +
+      '<label class="field">Tunnel Token (แสดงข้อความเต็ม ไม่ซ่อน)<textarea id="twz-token" rows="3" class="mono" spellcheck="false" autocomplete="off" placeholder="eyJhIjoi... (ยาว)"></textarea></label>' +
       '<div id="twz-msg"></div>' +
       '<div class="wz-help" id="twz-token-steps" hidden><b>วิธีหา token (ทีละขั้น):</b><ol>' +
       "<li>กดปุ่ม “เปิด Zero Trust” แล้วล็อกอิน</li>" +
@@ -1503,7 +1569,7 @@ function renderTunnelWizard() {
       '<p class="wz-step-title">ขั้นตอนที่ 2: ผูกเว็บ (hostname) กับ tunnel</p>' +
       '<p class="wz-step-sub">ระบุชื่อเว็บและบริการในเครื่อง — โปรแกรมตั้งค่าให้อัตโนมัติ (สร้าง DNS + ตั้ง tunnel config) ไม่ต้องไปทำที่ dashboard</p>' +
       '<div class="grid2">' +
-      '<label class="field">ชื่อ (subdomain)<input id="twz-sub" type="text" placeholder="app" class="mono" list="twz-sub-list"><datalist id="twz-sub-list"></datalist></label>' +
+      '<label class="field">ชื่อ (subdomain)<input id="twz-sub" type="text" placeholder="app (ใหม่ก็ได้ เช่น nas)" class="mono" list="twz-sub-list"><datalist id="twz-sub-list"></datalist><span style="font-size:0.78rem;color:var(--muted)">ชื่อใหม่ที่ไม่เคยมีก็ได้ — สร้าง DNS ให้อัตโนมัติ</span></label>' +
       '<label class="field">โดเมน<select id="twz-domain" class="wz-zone-select"></select></label></div>' +
       '<label class="field">Path (ไม่บังคับ — ใช้หลาย port ต่อชื่อเดียว เช่น /api)<input id="twz-path" type="text" class="mono" placeholder="/api (เว้น = ทุก path)"></label>' +
       '<div class="grid2">' +
@@ -1511,13 +1577,14 @@ function renderTunnelWizard() {
       '<option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP (เช่น SSH)</option><option value="udp">UDP (เช่น game/VPN)</option>' +
       "</select></label>" +
       '<label class="field">บริการ/พอร์ต<input id="twz-service" type="text" class="mono" value="http://localhost:8080"></label></div>' +
+      '<p style="margin:2px 0 10px;font-size:0.8rem;color:var(--muted);line-height:1.5">💡 เลือกชนิดให้ตรงกับบริการ: <b>HTTP</b> = เว็บธรรมดา (เช่น <span class="mono">http://localhost:8080</span>) · <b>HTTPS</b> = พอร์ต SSL เช่น 443/8443 (ต้องเป็น <span class="mono">https://localhost:443</span> — ถ้าผูกเป็น http จะเจอ "Bad Request") · <b>TCP/UDP</b> = SSH/game/VPN (เช่น <span class="mono">tcp://localhost:22</span>)</p>' +
       '<div style="margin:8px 0">' +
       '<button class="btn-secondary" type="button" id="twz-load-records">เลือกจาก record ที่มีอยู่</button> ' +
       '<select id="twz-record-pick" class="wz-zone-select" style="margin-top:6px" hidden></select></div>' +
       '<h3 style="margin-top:14px">ผูกกับ tunnel แล้ว</h3><div id="twz-bound"><p style="color:var(--muted)">กำลังโหลด…</p></div>' +
       '<div id="twz-bind-msg"></div>' +
       '<div style="margin-top:10px"><button class="btn-primary" type="button" id="twz-bind">ผูกกับ tunnel</button></div>' +
-      '<div class="wz-help">ตัวอย่าง: ชื่อ <b>app</b> + โดเมน <b>makerwitawat.com</b> + บริการ <b>http://localhost:8080</b> → เข้าได้ที่ <b>https://app.makerwitawat.com</b> (ผูกแล้วแก้ภายหลังได้ในฟอร์ม/แดชบอร์ด)</div>' +
+      '<div class="wz-help">ตัวอย่าง: ชื่อ <b>app</b> + โดเมน <b>makerwitawat.com</b> + บริการ <b>http://localhost:8080</b> → เข้าได้ที่ <b>https://app.makerwitawat.com</b> — <b>ชื่อ subdomain ใหม่ที่ไม่เคยมีก็กรอกได้เลย</b> โปรแกรมสร้าง DNS record ให้อัตโนมัติ (ผูกแล้วแก้ภายหลังได้ในฟอร์ม/แดชบอร์ด)</div>' +
       actions(true, "ต่อไป →");
     $("twz-back").addEventListener("click", () => { twzStep = 2; renderTunnelWizard(); });
     $("twz-next").addEventListener("click", () => { twzStep = 4; renderTunnelWizard(); });
@@ -2300,6 +2367,17 @@ async function doLogin(ev) {
     # ---- GET ----
 
     def do_GET(self):
+        """wrapper กัน crash: error ภายใน -> ตอบ JSON 500 + log (เหมือน do_POST)"""
+        try:
+            return self._do_get_inner()
+        except Exception:
+            log.exception("do_GET เกิดข้อผิดพลาด (%s) — ตอบ 500", self.path)
+            try:
+                return self._send_json(500, {"ok": False, "message": "เกิดข้อผิดพลาดภายใน — ดู log (แถบ Log ล่าสุด) เพื่อรายละเอียด"})
+            except Exception:
+                return None
+
+    def _do_get_inner(self):
         if self.path == "/ip-check":
             from . import ip_detect
 
@@ -2461,6 +2539,18 @@ async function doLogin(ev) {
         return self.rfile.read(length).decode("utf-8", "replace")
 
     def do_POST(self):
+        """wrapper กัน crash: error ภายใน -> ตอบ JSON 500 + log ละเอียด
+        (เดิม exception หลุด -> connection หลุด -> client เห็น 'Failed to fetch' ทั้งที่ข้อมูลเขียนไปแล้ว)"""
+        try:
+            return self._do_post_inner()
+        except Exception:
+            log.exception("do_POST เกิดข้อผิดพลาด (%s) — ตอบ 500", self.path)
+            try:
+                return self._send_json(500, {"ok": False, "message": "เกิดข้อผิดพลาดภายใน — ดู log (แถบ Log ล่าสุด) เพื่อรายละเอียด (ข้อมูลบางส่วนอาจถูกบันทึกไปแล้ว — ตรวจอีกครั้ง)"})
+            except Exception:
+                return None
+
+    def _do_post_inner(self):
         body = self._read_body()
 
         if self.path == "/login":
@@ -2753,11 +2843,14 @@ async function doLogin(ev) {
                 # อ่าน ingress เดิมมาก่อน (กันทับของเก่า)
                 try:
                     current = api._request("GET", f"/accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations")
-                    ingress = current.get("config", {}).get("ingress", []) if current else []
+                    ingress = ((current or {}).get("config") or {}).get("ingress", [])
                 except _cf_api.CloudflareError:
                     ingress = []
                 # ลบ rule เดิม (hostname+path เดียวกัน) แล้วเพิ่มใหม่
                 ingress = [r for r in ingress if not (r.get("hostname") == hostname and (r.get("path") or "") == path)]
+                # ลบ catch-all http_status:404 เดิม (rule ที่ไม่มี hostname) — จะเพิ่มใหม่ท้ายสุดเสมอ
+                # (ถ้าไม่ลบ จะมี 404 ซ้ำ -> Cloudflare validation fail 1056: rule '' บัง rule หลัง)
+                ingress = [r for r in ingress if r.get("hostname") or r.get("service", "") != "http_status:404"]
                 rule = {"hostname": hostname, "service": service}
                 if path:
                     rule["path"] = path
@@ -2771,7 +2864,7 @@ async function doLogin(ev) {
             except _cf_api.CloudflareError as exc:
                 return self._send_json(
                     400,
-                    {"ok": False, "message": f"ตั้งค่า tunnel config ไม่ได้: {exc} (API token ต้องมีสิทธิ์ Account > Cloudflare Tunnel > Edit)"},
+                    {"ok": False, "message": f"ตั้งค่า tunnel config ไม่ได้: {_tunnel_api_error(exc)}"},
                 )
 
             # 3. สร้าง/แก้ CNAME record ชี้ไป tunnel
@@ -2813,9 +2906,9 @@ async function doLogin(ev) {
             api = _cf_api.CloudflareAPI(api_token)
             try:
                 result = api._request("GET", f"/accounts/{ids['account_id']}/cfd_tunnel/{ids['tunnel_id']}/configurations")
-                ingress = (result or {}).get("config", {}).get("ingress", [])
+                ingress = ((result or {}).get("config") or {}).get("ingress", [])
             except _cf_api.CloudflareError as exc:
-                return self._send_json(400, {"ok": False, "message": f"อ่าน tunnel config ไม่ได้: {exc}"})
+                return self._send_json(400, {"ok": False, "message": f"อ่าน tunnel config ไม่ได้: {_tunnel_api_error(exc)}"})
             hostnames = []
             for r in ingress:
                 if not r.get("hostname"):
@@ -2855,7 +2948,7 @@ async function doLogin(ev) {
             api = _cf_api.CloudflareAPI(api_token)
             try:
                 result = api._request("GET", f"/accounts/{ids['account_id']}/cfd_tunnel/{ids['tunnel_id']}/configurations")
-                ingress = (result or {}).get("config", {}).get("ingress", [])
+                ingress = ((result or {}).get("config") or {}).get("ingress", [])
                 remaining = [
                     r for r in ingress
                     if not (r.get("hostname") == hostname and (r.get("path") or "") == path)
@@ -2868,7 +2961,7 @@ async function doLogin(ev) {
                     {"config": {"ingress": remaining}},
                 )
             except _cf_api.CloudflareError as exc:
-                return self._send_json(400, {"ok": False, "message": f"ลบออกจาก tunnel config ไม่ได้: {exc}"})
+                return self._send_json(400, {"ok": False, "message": f"ลบออกจาก tunnel config ไม่ได้: {_tunnel_api_error(exc)}"})
             # ลบ CNAME เฉพาะเมื่อไม่มี rule อื่นของ hostname นี้เหลืออยู่
             still_used = any(r.get("hostname") == hostname for r in remaining)
             if not still_used:
@@ -2903,9 +2996,9 @@ async function doLogin(ev) {
             api = _cf_api.CloudflareAPI(self.cfg.api_token)
             try:
                 result = api._request("GET", f"/accounts/{ids['account_id']}/cfd_tunnel/{ids['tunnel_id']}/configurations")
-                ingress = (result or {}).get("config", {}).get("ingress", [])
+                ingress = ((result or {}).get("config") or {}).get("ingress", [])
             except _cf_api.CloudflareError as exc:
-                return self._send_json(400, {"ok": False, "message": f"อ่าน tunnel config ไม่ได้: {exc}"})
+                return self._send_json(400, {"ok": False, "message": f"อ่าน tunnel config ไม่ได้: {_tunnel_api_error(exc)}"})
             hosts = []
             for r in ingress:
                 if not r.get("hostname"):

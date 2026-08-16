@@ -1,10 +1,12 @@
 # คู่มือหา API Key / Token (อัปเดตล่าสุด)
 
-> **เวอร์ชันปัจจุบัน: 1.3.0** — ดูเวอร์ชันได้ใน Web UI (แถบบน) หรือ `dist\cloudflare-ddns.exe status`
+> **เวอร์ชันปัจจุบัน: 1.7.12** — ดูเวอร์ชันได้ใน Web UI (แถบบน) หรือ `dist\cloudflare-ddns.exe status`
 >
 > **ไม่ต้องติดตั้ง Python** — ใช้ `dist\cloudflare-ddns.exe` ที่ build แล้วได้เลย (ทุกคำสั่งเหมือนโหมด Python) — ต้องการ Python เฉพาะเมื่อจะ build จากโค้ดเท่านั้น
 >
 > รองรับ: Windows 10/11 x64 (เต็ม) · Server 2019 ใช้ได้ · Windows 7 ไม่รองรับ
+>
+> 📖 คู่มืออื่น: [การใช้งาน](USAGE.md) · **[Cloudflare Tunnel](TUNNEL.md)** · [แก้ปัญหา](TROUBLESHOOTING.md) · [ประวัติเวอร์ชัน](../CHANGELOG.md)
 
 ## 1. Cloudflare API Token
 
@@ -98,6 +100,8 @@ cloudflare-ddns.exe notify-test
 
 ## 3. Cloudflare Tunnel (ทางเลือก — ใช้เมื่อเปิดพอร์ตไม่ได้ / ไม่อยากเปิดพอร์ต)
 
+> คู่มือละเอียด: **[docs/TUNNEL.md](TUNNEL.md)** — สร้าง token / ผูก hostname / เลือกชนิด protocol / แก้ไข-ลบ / แก้ปัญหา
+
 Tunnel ให้บริการผ่าน Cloudflare โดยไม่ต้องใช้ IP/เปิดพอร์ต — เหมาะกับ ISP ที่แจก IP แบบ CGNAT หรือให้บริการเว็บโดยไม่อยาก port forward
 
 ### ขั้นตอน (ปัจจุบัน 2026)
@@ -106,13 +110,14 @@ Tunnel ให้บริการผ่าน Cloudflare โดยไม่ต�
 2. ไปที่ **Networks → Tunnels** → กด **Create a tunnel**
 3. ตั้งชื่อ tunnel (เช่น `home`) → เลือกวิธีติดตั้ง **Cloudflare-managed (แนะนำ)** → ต่อไป
 4. หน้า "Install and run a connector": เลือก Windows → คัดลอกคำสั่งที่ได้ ซึ่งมี token อยู่ใน `--token <eyJ...>` (ยาวมาก ขึ้นต้นด้วย `eyJ`)
+   - token ปัจจุบันเป็นแบบ **1 ส่วน** (โปรแกรมรองรับทั้งแบบเก่า/ใหม่)
    - ไม่ต้องรันคำสั่งนั้นจริง — แค่เอา token ไปวางในโปรแกรม
 5. เปิด **Web UI → การ์ด Cloudflare Tunnel → "ตั้งค่า Tunnel (wizard)"** → ทำตาม 4 ขั้น:
    - วาง token → **ตรวจสอบ token** (โปรแกรมดาวน์โหลด cloudflared + ทดสอบเชื่อมต่อให้)
-   - **ผูก hostname**: ใส่ชื่อ (เช่น `app`) + เลือกโดเมน + บริการ (เช่น `http://localhost:8080`) → กด **"ผูกกับ tunnel"** — โปรแกรมตั้ง DNS (CNAME) + tunnel config ให้อัตโนมัติ (ไม่ต้องแตะ dashboard) หรือเลือกจาก "record ที่มีอยู่"
+   - **ผูก hostname**: ใส่ชื่อ (เช่น `app`) + เลือกโดเมน + **ชนิด** (HTTP = เว็บธรรมดา / **HTTPS = พอร์ต SSL เช่น 443** / TCP/UDP = SSH/game/VPN) + บริการ (เช่น `http://localhost:8080` หรือ `https://localhost:443`) → กด **"ผูกกับ tunnel"** — โปรแกรมตั้ง DNS (CNAME) + tunnel config ให้อัตโนมัติ (ไม่ต้องแตะ dashboard) หรือเลือกจาก "record ที่มีอยู่"
    - บันทึก → tunnel เริ่มทำงาน
 6. เสร็จ — เข้า `https://app.โดเมน.com` ได้เลย ไม่ต้องแตะเราเตอร์/DDNS
-   - ดู/ลบ hostname ที่ผูกแล้วได้ที่ปุ่ม "ดู hostname ที่ผูกแล้ว"
+   - ดู/แก้ไข/ลบ hostname ที่ผูกแล้วได้ที่ปุ่ม "ดู hostname ที่ผูกแล้ว" (มีปุ่ม **แก้ไข** — เปลี่ยนบริการ/ชนิดแล้วผูกซ้ำ = แทนที่ของเดิม)
 
 ### Tunnel vs DDNS
 

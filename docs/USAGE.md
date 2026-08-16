@@ -131,9 +131,9 @@ python -m cloudflare_ddns.main setup
 
 ### 4.8 ตั้งค่า
 - สลับโหมด: **แบบฟอร์ม** | **แก้ไขไฟล์โดยตรง**
-- ฟอร์ม: API token / interval / IPv4-6 / รหัสผ่านหน้าเว็บ + พอร์ต / ที่เก็บ log / Telegram (token, chat id, 5 เหตุการณ์, สรุปรายวัน+เวลา) / Tunnel (เปิดอัตโนมัติ, token, ที่อยู่ cloudflared) / DNS records (เพิ่ม-ลบ-แก้ทีละแถว: ชื่อ, zone, proxy, TTL, 4/6)
+- ฟอร์ม: API token / interval / IPv4-6 / **กัน IP ของ Cloudflare (anycast)** / **Heartbeat (Healthchecks.io + Uptime Kuma URL)** / รหัสผ่านหน้าเว็บ + พอร์ต + **host ที่เปิด (webui_host)** / ที่เก็บ log / Telegram (token, chat id, 6 เหตุการณ์รวม "สรุปทุกรอบ", สรุปรายวัน+เวลา) / Tunnel (เปิดอัตโนมัติ, token แบบช่องยาวเห็นเต็ม, ที่อยู่ cloudflared) / DNS records (เพิ่ม-ลบ-แก้ทีละแถว: ชื่อ, zone, proxy, TTL, 4/6)
 - โหมดไฟล์: แก้ config.ini ทั้งไฟล์ (ตรวจ syntax/ค่าก่อนบันทึก)
-- **บันทึกแล้ว** → backup อัตโนมัติ (`config.ini.bak` หมุน 5) + มีผลในรอบถัดไป (ไม่ต้อง restart) — เปลี่ยนพอร์ต/รหัสผ่าน → แจ้งเตือน + ต้อง login ใหม่
+- **บันทึกแล้ว** → backup อัตโนมัติ (`config.ini.bak` หมุน 5) + มีผลในรอบถัดไป (ไม่ต้อง restart) — เปลี่ยนพอร์ต/รหัสผ่าน → แจ้งเตือน + เข้าสู่ระบบใหม่ให้อัตโนมัติ
 
 ### 4.9 ส่วนท้าย
 - footer: เวอร์ชัน + License + ลิงก์ GitHub
@@ -143,15 +143,18 @@ python -m cloudflare_ddns.main setup
 ### เหตุการณ์ (เปิด-ปิดได้ในฟอร์ม)
 | เหตุการณ์ | ตัวอย่างข้อความ |
 |---|---|
-| เริ่ม/หยุดทำงาน | 🟢 DDNS เริ่มทำงาน / 🔴 DDNS หยุดทำงาน |
-| IP เปลี่ยน | 🔄 IP เปลี่ยน / home.โดเมน.com (A) / 1.2.3.4 → 5.6.7.8 |
-| สร้าง record | 🆕 สร้าง record ใหม่ / home.โดเมน.com (A) = 1.2.3.4 |
-| error | ⚠️ มีปัญหา / ... (ข้อความย่อ ไม่มี JSON ยาว) |
+| เริ่ม/หยุดทำงาน | 🟢 DDNS เริ่มทำงาน [16/08 09:12] · LAPTOP-X — บอกเครื่อง/IP/รายการ DDNS+tunnel / 🔴 หยุด — สาเหตุ + รันนานเท่าไหร่ |
+| IP เปลี่ยน | 🔄 IP เปลี่ยน [เวลา] · เครื่อง — รวมหลายรายการเป็นข้อความเดียว |
+| สร้าง record | 🆕 สร้าง record ใหม่ [เวลา] · เครื่อง |
+| error | ⚠️ มีปัญหา [เวลา] · เครื่อง — ข้อความย่อ ไม่มี JSON ยาว |
 | สรุปรายวัน | 📊 สรุปประจำวัน (ทุก record + จำนวนอัปเดตวันนี้) ตามเวลาที่ตั้ง |
+| สรุปรอบ (ไม่บังคับ) | ✅ ตรวจรอบเสร็จ [เวลา] · เครื่อง — "ตรวจ X รายการ · เปลี่ยน Y · มีปัญหา Z" (`notify_round = true`) |
+
+> **ทุกข้อความระบุชื่อเครื่อง** (`· LAPTOP-X`) — ใช้ bot กลางร่วมหลายเครื่องรู้ทันทีว่ามาจากไหน (v1.7.3+)
 
 ### คิว (ส่งไม่สำเร็จ)
-- ส่งไม่ได้ (เน็ตหลุด/token ผิด) → เก็บ `notify_queue.json` → พยายามส่งใหม่ทุก 60 วิ (สูงสุด 50 ข้อความ)
-- error ซ้ำข้อความเดิมไม่ส่งซ้ำ (กันสแปม)
+- ส่งไม่ได้ (เน็ตหลุด/token ผิด) → เก็บ `notify_queue.json` → พยายามส่งใหม่ทุก 60 วิ (จำกัดส่ง 60 วิ/รอบ กันค้าง)
+- **error ซ้ำข้อความเดิมไม่ส่งซ้ำภายใน 10 นาที** (กันสแปม — รวมถึงตอนหา IP ไม่ได้ซ้ำ ๆ)
 - จัดการในเว็บ: ดูคิว / ลองส่งใหม่ / ล้างคิว
 
 ### ตั้งค่า
@@ -160,21 +163,27 @@ python -m cloudflare_ddns.main setup
 
 ## 6. Cloudflare Tunnel
 
+> คู่มือละเอียด (สร้าง token / เลือกชนิด protocol / แก้ไข-ลบ / แก้ปัญหา): **[docs/TUNNEL.md](TUNNEL.md)**
+
 ### เริ่มต้น (wizard ในเว็บ 4 ขั้น)
 1. **คำนำ** — Tunnel คืออะไร เหมาะกับใคร
 2. **วาง token** — "เปิด Zero Trust" + "วิธีหา token" (ขั้นตอนในหน้า) → "ตรวจสอบ token" (โปรแกรมดาวน์โหลด cloudflared + ทดสอบเชื่อมต่อจริง)
-3. **ผูก hostname** — ชื่อ (เช่น `app`) + โดเมน (dropdown) + บริการ (เช่น `http://localhost:8080`) → "ผูกกับ tunnel" → ตั้ง DNS + tunnel config ให้อัตโนมัติ; หรือ "เลือกจาก record ที่มีอยู่"; ดูรายการผูกแล้ว + ลบได้
+3. **ผูก hostname** — ชื่อ (เช่น `app`) + โดเมน (dropdown) + **ชนิด** (HTTP/HTTPS/TCP/UDP) + บริการ (เช่น `http://localhost:8080` หรือ `https://localhost:443`) → "ผูกกับ tunnel" → ตั้ง DNS + tunnel config ให้อัตโนมัติ; หรือ "เลือกจาก record ที่มีอยู่"; ชื่อใหม่ที่ไม่เคยมีก็ได้ — โปรแกรมสร้าง DNS ให้อัตโนมัติ
 4. **สรุป** — บันทึก (เปิดอัตโนมัติ) + เริ่ม tunnel
 
 ### จัดการภายหลัง
-- การ์ด tunnel: เริ่ม/หยุด/ดาวน์โหลด cloudflared + ดู hostname ที่ผูกแล้ว (ลบ = ลบ ingress + CNAME)
-- ฟอร์มตั้งค่า: `tunnel_enabled` / token / path
+- การ์ด tunnel: เริ่ม/หยุด/ดาวน์โหลด cloudflared + ดู hostname ที่ผูกแล้ว (ตาราง + **ปุ่มแก้ไข** = เปลี่ยนบริการ/ชนิดแล้วผูกซ้ำแทนที่ของเดิม · ปุ่ม × = ลบ ingress + CNAME)
+- ปุ่ม **"+ เพิ่ม hostname"** — ผูกด่วนโดยไม่ต้องเปิด wizard
+- ปุ่ม **"ซิงค์จาก Cloudflare"** — ดึง hostname ทั้งหมดมาบันทึกลง config
+- ฟอร์มตั้งค่า: `tunnel_enabled` / token (ช่องยาว เห็นข้อความเต็ม) / path
 - ตอน boot: service เริ่ม tunnel อัตโนมัติถ้าเปิดไว้
 
 ### ข้อควรรู้
 - ชื่อเดียวใช้ได้อย่างใดอย่างหนึ่ง (A/AAAA DDNS หรือ CNAME tunnel) — โปรแกรมตรวจชื่อชนให้
-- API token ต้องมีสิทธิ์ **Account > Cloudflare Tunnel > Edit** ถึงผูก hostname ได้
+- API token ต้องมีสิทธิ์ **Account > Cloudflare Tunnel > Edit** ถึงผูก hostname ได้ (เว็บบอกวิธีเพิ่มให้เมื่อ error 403)
+- **ชนิดต้องตรงกับบริการ**: พอร์ต SSL (443/8443) = HTTPS + `https://localhost:443` — ผูกเป็น http จะเจอ "Bad Request" (มีคำแนะนำในหน้าเว็บด้วย)
 - บริการที่ผูกต้องรันอยู่ (localhost:port) ถึงเข้าเว็บได้
+- แจ้งเตือน Telegram: tunnel เริ่ม (พร้อมรายชื่อ hostname)/หยุด/ดาวน์โหลด cloudflared — ส่งอัตโนมัติ
 
 ## 7. config.ini ฉบับเต็ม
 
@@ -182,20 +191,22 @@ python -m cloudflare_ddns.main setup
 
 ```
 [cloudflare]
-api_token            จำเป็น - สิทธิ์ Zone > DNS > Edit
+api_token            จำเป็น - สิทธิ์ Zone > DNS > Edit (+ Account > Tunnel > Edit ถ้าใช้ tunnel)
 interval_seconds     60 (ขั้นต่ำ 15)
 use_ipv4/use_ipv6    เปิด-ปิดการอัปเดตแต่ละชนิด
 reject_cloudflare_ips   กัน IP ของ Cloudflare (anycast) ถูกเขียนลง record (ค่าเริ่มต้น true)
 healthchecks_url     Heartbeat: ping URL ของ Healthchecks.io (ว่าง = ปิด)
 uptimekuma_url       Heartbeat: push URL ของ Uptime Kuma (ว่าง = ปิด)
 webui_port           8123
+webui_host           127.0.0.1 (0.0.0.0 = เข้าจากเครื่องอื่นใน LAN ได้ — ต้องตั้งรหัสผ่าน + เปิด firewall)
 webui_password       ว่าง = ไม่ต้อง login
 log_dir              ว่าง = logs\ ข้าง exe
 telegram_bot_token   ว่าง = ไม่แจ้ง
 telegram_chat_id
 notify_start/stop/ip_change/error/created   true/false
+notify_round         ส่งสรุปผลทุกรอบ DDNS ทาง Telegram (false = ปิด)
 daily_report / daily_report_time            สรุปรายวัน (HH:MM)
-tunnel_enabled / tunnel_token / cloudflared_path
+tunnel_enabled / tunnel_token / cloudflared_path / tunnel_hosts (JSON — "ซิงค์จาก Cloudflare" เขียนให้)
 
 [record:ชื่อ]
 zone = โดเมน (เว้น = เดาให้)
@@ -225,12 +236,13 @@ ipv4 / ipv6 = true/false
 
 ## 10. ความปลอดภัย
 
-- **Web UI เปิดเฉพาะเครื่องตัวเอง** (`127.0.0.1`) — เครื่องอื่นเข้าถึงไม่ได้โดยตรง (ต้องทำ SSH tunnel/port-forward เองถึงจะเปิดจากนอกได้)
+- **Web UI เปิดเฉพาะเครื่องตัวเอง** (`127.0.0.1`) เป็นค่าเริ่มต้น — ตั้ง `webui_host = 0.0.0.0` + ตั้ง `webui_password` + เปิดพอร์ต firewall ได้ถ้าต้องการเข้าจากเครื่องอื่นใน LAN (ดู TROUBLESHOOTING)
 - **รหัสผ่านหน้าเว็บ** (`webui_password`): ตั้งในฟอร์ม — ใครได้รหัสสามารถแก้ config/ควบคุม service ได้ อย่าแชร์
 - **กันสุ่มรหัสผ่าน**: ผิด 5 ครั้งติดต่อกัน → ล็อกชั่วคราว 5 นาที (ตอบ HTTP 429) + log เตือน — นับในหน่วยความจำ (restart service = ปลดล็อกทันที)
-- **สิทธิ์ admin**: ปุ่มควบคุม service (ติดตั้ง/เริ่ม/หยุด/ถอน) ต้องเปิด webui ด้วย admin — ถ้ารันใน service เอง ปุ่มที่ทำไม่ได้จะปิดอัตโนมัติ
+- **สิทธิ์ admin**: ปุ่มควบคุม service (ติดตั้ง/เริ่ม/หยุด/ถอน) ต้องเปิด webui ด้วย admin — ถ้ารันใน service เอง ปุ่มที่ทำไม่ได้จะปิดอัตโนมัติ (Restart ใช้ได้เสมอ — ทำผ่าน sc.exe แยก process)
 - **สถิติ Cloudflare API** (การ์ดสถานะ IP): เรียกทั้งหมด / error / โดน rate limit — ใช้ดูว่าใกล้โควตา (~1200 req/hr) หรือไม่
 - **Token ต่าง ๆ** (Cloudflare API / Tunnel / Telegram bot) เก็บใน `config.ini` ข้าง exe — ห้ามแชร์ไฟล์นี้; รีโวคได้ทุกเมื่อที่หน้า API Tokens / BotFather / Zero Trust
+- **User-Agent ระบุเครื่อง**: ทุกคำขอ (heartbeat/CF API/provider) ส่ง `cloudflare-ddns-updater/<เวอร์ชัน> (<ชื่อเครื่อง>)` — ฝั่งบริการดู log แล้วรู้ว่าเครื่องไหนส่ง (v1.7.6+)
 
 ---
 

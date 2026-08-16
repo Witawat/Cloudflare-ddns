@@ -65,6 +65,18 @@
 ### เปลี่ยนพอร์ตแล้วเข้าเว็บไม่ได้
 - webui ฟังพอร์ตเดิมจนกว่า service จะ restart — restart service หลังเปลี่ยน
 
+### เข้าเว็บจากเครื่องอื่นในบ้านไม่ได้ (http://IPเครื่อง:8123)
+- ตั้ง `webui_host = 0.0.0.0` (ฟอร์มตั้งค่า → "หน้าเว็บเปิดที่ (host)") + ตั้ง `webui_password` ก่อน
+- เปิดพอร์ต firewall (cmd admin): `netsh advfirewall firewall add rule name="CloudflareDDNS WebUI" dir=in action=allow protocol=TCP localport=8123`
+- restart service หลังเปลี่ยน
+
+### กด "เปิดโฟลเดอร์ข้อมูล" แล้วไม่มีหน้าต่างโผล่
+- เว็บรันใน service (SYSTEM) เปิด explorer ให้ไม่ได้ — โปรแกรม**คัดลอก path ให้อัตโนมัติ** → กด Win+R → วาง → Enter (ตั้งแต่ v1.7.0)
+
+### ปุ่ม "โหลดใหม่" ของ log ไม่โหลด
+- session หมดอายุ → กดปุ่มแล้วขึ้น "session หมดอายุ — กดรีเฟรชหน้าเว็บ" — F5 แล้ว login ใหม่ (ตั้งแต่ v1.7.2 โหลดใหม่ทำงานได้จริง)
+- error อื่นที่เด้งบนเว็บ: ดูแถบ Log ล่าสุด หาบรรทัด `Web UI (JS) ...` — โปรแกรม log error ฝั่งเว็บให้อัตโนมัติ (v1.6.5+)
+
 ### หน้าจอแสดงผลเละ/ไม่สวย
 - รีเฟรชแรง ๆ (Ctrl+F5) — ถ้ายังเป็น ตรวจว่าใช้ exe ล่าสุด (build ใหม่)
 
@@ -93,26 +105,51 @@
 
 ## Cloudflare Tunnel
 
+> คู่มือตั้งค่า/ใช้งาน tunnel ละเอียด: **[docs/TUNNEL.md](TUNNEL.md)**
+
 ### token ตรวจไม่ผ่าน (cloudflared ตายทันที)
 - ตรวจว่า token ถูกต้อง (eyJ... จาก Zero Trust → Networks → Tunnels)
 - อินเทอร์เน็ต/ไฟร์วอลล์ต้องออกไป `region1.v2.argotunnel.com` ได้ (HTTPS 7844)
 - ลอง "ดาวน์โหลด cloudflared" ใหม่ (ไฟล์อาจเสีย)
 
+### error "tunnel token ผิดรูปแบบ"
+- token **รูปแบบใหม่** ของ Cloudflare เป็นแบบ 1 ส่วน (payload ล้วน) — โปรแกรมรองรับตั้งแต่ v1.7.7 → **อัปเดต exe เป็นเวอร์ชันล่าสุด** ก่อน
+- ถ้า exe ใหม่แล้ว: token คัดลอกไม่ครบ/มีช่องว่าง — วางใหม่จากหน้า Zero Trust
+
 ### ผูก hostname แล้วเข้าเว็บไม่ได้
 1. บริการในเครื่อง (localhost:port) ต้องรันอยู่ — ทดสอบในเครื่องก่อน
 2. tunnel ต้องรันอยู่ (การ์ด → สถานะ)
-3. ตรวจ "ดู hostname ที่ผูกแล้ว" — hostname + บริการถูกต้องไหม
+3. ตรวจ "ดู hostname ที่ผูกแล้ว" — hostname + ชนิด + บริการถูกต้องไหม
 4. DNS อาจยัง propagate (รอ 1-2 นาที)
+
+### Bad Request "You're speaking plain HTTP to an SSL-enabled server port"
+- ผูกพอร์ต SSL (443/8443) ด้วยชนิด **HTTP** ผิด — ต้องเลือกชนิด **HTTPS** + `https://localhost:443`
+- แก้ด้วยปุ่ม **"แก้ไข"** ใน "ดู hostname ที่ผูกแล้ว" → เปลี่ยนชนิด + บริการ → "ผูกกับ tunnel" (แทนที่)
+
+### ผูก hostname ซ้ำ (แก้ไข) แล้ว error 1056 "Bad Configuration"
+- เกิดกับ exe เก่ากว่า v1.7.11 (rule 404 ซ้ำ) — **อัปเดต exe + restart**
 
 ### error "ชื่อนี้มี record A อยู่แล้ว"
 - ชื่อเดียวใช้ได้อย่างใดอย่างหนึ่ง (DDNS A/AAAA หรือ tunnel CNAME) — ใช้คนละชื่อ หรือลบ record เดิมก่อน
 
-### error สิทธิ์ตอนผูก hostname
+### error สิทธิ์ตอนผูก hostname (403)
 - API token ต้องมีสิทธิ์ **Account > Cloudflare Tunnel > Edit** — ไป My Profile → API Tokens → Edit token → เพิ่ม: Account → Cloudflare Tunnel → Edit (เลือก account ของคุณ)
 
 ### tunnel ไม่เริ่มตอน boot
 - ตรวจ `tunnel_enabled = true` + token ไม่ว่าง (ฟอร์มตั้งค่า)
 - ดู log: "Cloudflare Tunnel: ..." บอกสาเหตุ
+
+---
+
+## Heartbeat (Healthchecks.io / Uptime Kuma)
+
+### log "heartbeat ส่งไม่ได้: ... (HTTP 429)"
+- 429 = **ฝั่ง Healthchecks.io จำกัด ping ชั่วคราว** (rate limit) — ไม่ใช่บั๊ก — รอสักครู่/ตรวจ dashboard
+- ถ้าถี่ผิดปกติ (หลายครั้งต่อนาที): มีโปรแกรมรันซ้ำหลาย instance — ตรวจ `tasklist | findstr cloudflare` ควรมีแค่ 2 process (1 instance) — ปิด exe ที่เปิดค้างให้หมด
+- log ละเอียด (บอกสาเหตุจริง) + กันส่งถี่ (30 วิ) ตั้งแต่ v1.7.4/1.7.5
+
+### log "heartbeat ส่งไม่ได้: ... (URLError: timed out)"
+- เน็ต/เส้นทางไป hc-ping.com ติดขัด หรือ firewall บล็อก — ตรวจ `ping hc-ping.com` / ลองเปิด URL ในเบราว์เซอร์
 
 ---
 

@@ -2,6 +2,66 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [1.7.15] — 2026-08-16
+
+### แก้บั๊ก (Fixes)
+
+- **ครอบ do_GET ด้วย try/except** (เหมือน do_POST ที่ทำใน v1.7.14): error ภายในฝั่ง GET (สถานะ/config/log ฯลฯ) ไม่ตัด connection เงียบ ๆ อีก — ตอบ JSON 500 + log ละเอียด
+- **fetch ฝั่งหน้าเว็บมี timeout + ข้อความไทยชัด**: ทุกคำขอมี timeout 90 วิ (กันค้างไม่มีที่สิ้นสุด) · error เปลี่ยนจาก "Failed to fetch" งง ๆ เป็น "เชื่อมต่อ server ไม่ได้ (network error) — ลองใหม่ หรือดู log" / "timeout — server ไม่ตอบกลับภายใน 90 วิ" — ทุกจุดในหน้า (ฟอร์ม/wizard/ปุ่ม) ได้ข้อความเดียวกัน (wrap ครั้งเดียวที่ window.fetch)
+
+## [1.7.14] — 2026-08-16
+
+### แก้บั๊ก (Fixes)
+
+- **"Failed to fetch" ตอนผูก hostname (ทั้งที่ข้อมูลบันทึกไปแล้ว)**: ถ้า server เกิด error กลางคำสั่ง (เช่น error ที่ไม่ใช่ CloudflareError) — เดิม exception หลุด → connection ถูกตัด → เบราว์เซอร์เห็น "Failed to fetch" ไม่รู้ผล — ตอนนี้**ทุกคำสั่ง POST ถูกครอบด้วย try/except** → error ภายในตอบเป็น JSON 500 พร้อม log ละเอียด (แถบ Log ล่าสุดเห็นบรรทัด `do_POST เกิดข้อผิดพลาด`) + ข้อความเตือนว่าข้อมูลบางส่วนอาจถูกบันทึกไปแล้ว — ตรวจซ้ำได้
+
+## [1.7.13] — 2026-08-16
+
+### แก้บั๊ก (Fixes)
+
+- **ปุ่ม "แก้ไข" hostname แสดงโดเมนไม่ขึ้นถ้ายังไม่เคยเปิดฟอร์ม "+ เพิ่ม hostname"**: dropdown โดเมนโหลดทีหลังค่าที่ตั้งไว้ → โดเมนหาย — ตอนนี้โหลด dropdown ก่อนแล้วค่อยเลือกโดเมนให้อัตโนมัติ (แยกฟังก์ชันโหลด dropdown ใช้ร่วมฟอร์มเพิ่ม/แก้ไข)
+- **console error ตอนกดแก้ไข**: `$("th-add-form")` — id จริงคือ `tunnel-add-form` → error scrollIntoView — แก้แล้ว
+
+## [1.7.12] — 2026-08-16
+
+### ปรับปรุง
+
+- **คำแนะนำเลือกชนิด protocol ใน WebUI** (ทั้ง wizard tunnel และฟอร์ม "+ เพิ่ม hostname"): HTTP = เว็บธรรมดา · HTTPS = พอร์ต SSL (443/8443 — ต้องใช้ `https://localhost:443` ไม่งั้นเจอ "Bad Request") · TCP/UDP = SSH/game/VPN
+
+## [1.7.11] — 2026-08-16
+
+### แก้บั๊ก (Fixes)
+
+- **tunnel ใหม่ที่ยังไม่เคยตั้งค่า ingress ใช้ได้**: Cloudflare คืน `"config": null` สำหรับ tunnel ใหม่ → โค้ดอ่าน ingress พังทุกจุด (ดู hostname/ผูก/ลบ/ซิงค์) — ตอนนี้จัดการ `config: null` ได้ (พบจริงระหว่างทดสอบกับ tunnel ใหม่)
+- **ผูก hostname ซ้ำ (แก้ไข) แล้ว validation fail 1056**: ทุกครั้งที่ผูก โค้ด append rule `http_status:404` ซ้ำกับตัวที่มีอยู่ → Cloudflare ปฏิเสธ "Rule #1 matching hostname '' ... rules after never triggered" — ตอนนี้ลบ 404 เดิมก่อนเพิ่มใหม่ (ผูกซ้ำ = แก้ไข map ได้จริง)
+
+## [1.7.10] — 2026-08-16
+
+### ปรับปรุง
+
+- **ข้อความ error ตอน token ไม่มีสิทธิ์ Tunnel ชัดเจน**: ถ้าเรียก API tunnel แล้วโดน 403 จะแนะนำวิธีแก้ทันที — "API token ไม่มีสิทธิ์จัดการ Tunnel — ไปที่ dash.cloudflare.com → My Profile → API Tokens → Edit → เพิ่มสิทธิ์ Account → Cloudflare Tunnel → Edit" (ทุกจุด: ดู hostname/ผูก/ลบ/ซิงค์)
+- **แก้ label "ชื่อ (subdomain)" ล้นช่อง** ใน wizard tunnel — ย่อข้อความ + หมายเหตุแยกบรรทัดใต้ช่อง
+
+## [1.7.9] — 2026-08-16
+
+### ปรับปรุง
+
+- **ช่อง Tunnel Token เต็มช่องสวยเหมือน input**: เพิ่ม textarea ใน CSS ของฟอร์ม (width 100% + ขอบโค้ง + resize ได้) + ย้ายช่อง token ออกจากคอลัมน์คู่ (เต็มความกว้างทั้งบรรทัด)
+- **ปุ่ม "แก้ไข" ในรายการ hostname ที่ผูกกับ tunnel**: กดแก้ไข → โหลดค่าเดิมลงฟอร์ม → เปลี่ยน service/port/path/protocol → กด "ผูกกับ tunnel" = แทนที่ของเดิม (ไม่ต้องลบแล้วเพิ่มใหม่)
+
+## [1.7.8] — 2026-08-16
+
+### ปรับปรุง
+
+- **ช่อง Tunnel Token เป็น textarea (ทั้ง wizard และฟอร์มตั้งค่า)**: token ยาว ๆ วางได้เต็มช่อง เห็นข้อความทั้งหมด ไม่ถูกซ่อนด้วย dots
+- **ใช้ชื่อ subdomain ใหม่ที่ไม่เคยมีได้ชัดเจนขึ้น**: wizard ระบุ "ใช้ชื่อใหม่ที่ไม่เคยมีก็ได้" — โปรแกรมสร้าง DNS record ให้อัตโนมัติ
+
+## [1.7.7] — 2026-08-16
+
+### แก้บั๊ก (Fixes)
+
+- **tunnel token รูปแบบใหม่ของ Cloudflare ใช้ได้**: Zero Trust ปัจจุบันให้ token แบบ 1 ส่วน (payload ล้วน ไม่ใช่ JWT 3 ส่วน) — โค้ดตรวจรูปแบบเดิมคาดว่าเป็น 3 ส่วน (`split(".")[1]`) เลยปฏิเสธ token ที่ถูกต้อง ("tunnel token ผิดรูปแบบ") — ตอนนี้รองรับทั้ง 2 รูปแบบ
+
 ## [1.7.6] — 2026-08-16
 
 ### ปรับปรุง

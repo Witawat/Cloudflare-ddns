@@ -2,7 +2,7 @@
 
 ตรวจหา IP สาธารณะของเครื่อง (IPv4 + IPv6) แล้วอัปเดต DNS record บน Cloudflare **โดยอัตโนมัติเมื่อ IP เปลี่ยน** รันเป็น **Windows Service จริง** เริ่มเองตอน boot — พร้อม **Web UI** สำหรับดูสถานะ/ตั้งค่า/สแกนพอร์ต และรองรับ **Cloudflare Tunnel** (ไม่ต้องเปิดพอร์ต)
 
-> 📖 เอกสารอื่น: [คู่มือใช้งานละเอียด](docs/USAGE.md) · [เริ่มต้นใช้งาน/หา Token](docs/GETTING-STARTED.md) · [แก้ปัญหาทั่วไป](docs/TROUBLESHOOTING.md) · [ประวัติเวอร์ชัน](CHANGELOG.md)
+> 📖 เอกสารอื่น: [คู่มือใช้งานละเอียด](docs/USAGE.md) · [เริ่มต้นใช้งาน/หา Token](docs/GETTING-STARTED.md) · **[คู่มือ Cloudflare Tunnel](docs/TUNNEL.md)** · [แก้ปัญหาทั่วไป](docs/TROUBLESHOOTING.md) · [ประวัติเวอร์ชัน](CHANGELOG.md)
 
 ## ความสามารถหลัก
 
@@ -11,10 +11,10 @@
 | **DDNS อัตโนมัติ** | ตรวจ IP IPv4/IPv6 (หลาย provider สำรอง) → อัปเดต A/AAAA เฉพาะเมื่อ IP เปลี่ยน + สร้าง record ให้อัตโนมัติถ้ายังไม่มี |
 | **Windows Service** | รันจริงตอน boot, log รายวัน, หยุด/เริ่มเร็ว, แก้ config ได้ระหว่างรัน (มีผลรอบถัดไป) + **ควบคุม/ติดตั้ง/ถอนจาก Web UI** ได้ (ต้อง admin) |
 | **Web UI** | สถานะสด, wizard ตั้งค่าครั้งแรก 5 ขั้น, ฟอร์มตั้งค่า + โหมดแก้ไฟล์ตรง, ประวัติ, ดู log, สแกนพอร์ต, ปุ่มควบคุม Telegram/Tunnel — ใช้บนมือถือได้ |
-| **แจ้งเตือน Telegram** | เริ่ม/หยุด, IP เปลี่ยน, error, สร้าง record + สรุปรายวัน — มีคิว retry + กันสแปมซ้ำ |
+| **แจ้งเตือน Telegram** | ทุกข้อความระบุชื่อเครื่อง + เวลา · IP เปลี่ยนรวมเป็นข้อความเดียว · tunnel เริ่ม/หยุด/ดาวน์โหลด · กันสแปม error 10 นาที · สรุปทุกรอบ (ไม่บังคับ) + สรุปรายวัน — คิว retry + จัดการในเว็บ |
 | **Heartbeat monitoring** | ส่งสัญญาณ "ยังทำงาน" ทุกรอบให้ Healthchecks.io / Uptime Kuma — รู้ว่าเครื่อง/โปรแกรมตายจากนอกบ้าน (รอบมีปัญหา = สัญญาณ fail) |
 | **กัน Cloudflare anycast IP** | ตรวจว่า IP ที่ตรวจได้ไม่อยู่ในช่วงของ Cloudflare เองก่อนเขียน record (กัน record ชี้ผิดทั้งบ้าน) |
-| **Cloudflare Tunnel** | เปิด cloudflared ตาม service, wizard 4 ขั้น, **ผูก hostname กับ tunnel อัตโนมัติ** (ตั้ง DNS + config ให้ ไม่ต้องแตะ dashboard) |
+| **Cloudflare Tunnel** | เปิด cloudflared ตาม service, wizard 4 ขั้น, ผูก hostname อัตโนมัติ (ตั้ง DNS + config ให้) — ดู/**แก้ไข**/ลบ hostname ได้ในเว็บ + คู่มือละเอียด ([docs/TUNNEL.md](docs/TUNNEL.md)) |
 | **ตรวจ NAT** | รู้ว่า IP อยู่หลัง CGNAT หรือไม่ (STUN) — เตือนถ้า DDNS ใช้ไม่ได้ |
 | **EXE ไฟล์เดียว** | build ด้วย PyInstaller — ไม่ต้องติดตั้ง Python |
 
@@ -77,7 +77,7 @@ tunnel_token = eyJhIjoi...        ; จาก Zero Trust > Networks > Tunnels
 cloudflared_path =                ; เว้นว่าง = ดาวน์โหลด cloudflared.exe ข้าง exe อัตโนมัติ
 ```
 
-**วิธีเริ่ม (แนะนำใช้ wizard ในเว็บ):** การ์ด Cloudflare Tunnel → "ตั้งค่า Tunnel (wizard)" → วาง token (ตรวจสอบให้จริง) → ใส่ชื่อ + โดเมน + บริการ → "ผูกกับ tunnel" — โปรแกรมตั้ง DNS (CNAME → tunnel) + tunnel config ให้เอง → เข้า `https://ชื่อ.โดเมน.com` ได้ทันที — ดู/ลบ hostname ที่ผูกแล้วได้ด้วยปุ่ม "ดู hostname ที่ผูกแล้ว"
+**วิธีเริ่ม (แนะนำใช้ wizard ในเว็บ):** การ์ด Cloudflare Tunnel → "ตั้งค่า Tunnel (wizard)" → วาง token (ตรวจสอบให้จริง) → ใส่ชื่อ + โดเมน + **ชนิด** + บริการ → "ผูกกับ tunnel" — โปรแกรมตั้ง DNS (CNAME → tunnel) + tunnel config ให้เอง → เข้า `https://ชื่อ.โดเมน.com` ได้ทันที — ดู/**แก้ไข**/ลบ hostname ได้ด้วยปุ่ม "ดู hostname ที่ผูกแล้ว" — **คู่มือละเอียด: [docs/TUNNEL.md](docs/TUNNEL.md)**
 
 ### รองรับทุกแบบ (หลายพอร์ต/หลาย protocol)
 
@@ -87,9 +87,9 @@ cloudflared_path =                ; เว้นว่าง = ดาวน์�
 | **หลายพอร์ตต่อชื่อเดียว (path)** | ระบุ Path ในฟอร์มผูก | `app.โดเมน` → 8080 · `app.โดเมน/api` → 3000 |
 | **TCP** (SSH/game/RDP) | ชนิด TCP + `tcp://localhost:พอร์ต` | `ssh.โดเมน` → `tcp://localhost:22` |
 | **UDP** (game/VPN) | ชนิด UDP + `udp://localhost:พอร์ต` | `vpn.โดเมน` → `udp://localhost:51820` |
-| **HTTPS ภายใน** | ชนิด HTTPS + `https://localhost:พอร์ต` | `app.โดเมน` → `https://localhost:8443` |
+| **HTTPS ภายใน** | ชนิด HTTPS + `https://localhost:พอร์ต` — **พอร์ต SSL (443/8443) ต้องใช้ชนิดนี้** ไม่งั้นเจอ "Bad Request" | `app.โดเมน` → `https://localhost:8443` |
 
-จัดการทั้งหมดใน **การ์ด Cloudflare Tunnel**: ตาราง "ดู hostname ที่ผูกแล้ว" (hostname+path / ชนิด / บริการ + ลบ) · ปุ่ม "+ เพิ่ม hostname" (ผูกด่วน) · ปุ่ม "ซิงค์จาก Cloudflare" (ดึงจาก API → บันทึกลง config)
+จัดการทั้งหมดใน **การ์ด Cloudflare Tunnel**: ตาราง "ดู hostname ที่ผูกแล้ว" (hostname+path / ชนิด / บริการ + **ปุ่มแก้ไข** = เปลี่ยนบริการ/ชนิดแล้วผูกซ้ำแทนที่ + ปุ่มลบ) · ปุ่ม "+ เพิ่ม hostname" (ผูกด่วน) · ปุ่ม "ซิงค์จาก Cloudflare" (ดึงจาก API → บันทึกลง config)
 
 ### ข้อควรรู้ (Tunnel)
 
@@ -102,7 +102,7 @@ cloudflared_path =                ; เว้นว่าง = ดาวน์�
 
 ## แจ้งเตือน Telegram
 
-แจ้งเหตุการณ์: เริ่ม/หยุด, IP เปลี่ยน, error, สร้าง record + **สรุปรายวัน** (ตั้งเวลาได้) — ส่งไม่สำเร็จเก็บคิวแล้วส่งใหม่ทุกรอบ (จัดการคิวได้ในเว็บ: ดู/ลองส่งใหม่/ล้าง) — ตั้งค่าใน wizard หรือฟอร์มเว็บ (หา chat_id ให้อัตโนมัติผ่าน @BotFather + getUpdates)
+แจ้งเหตุการณ์: เริ่ม/หยุด (พร้อมเครื่อง/IP/รายการ), IP เปลี่ยน (รวมเป็นข้อความเดียว), error, สร้าง record, tunnel เริ่ม/หยุด/ดาวน์โหลด + **สรุปรายวัน** + **สรุปรอบ (ไม่บังคับ)** — **ทุกข้อความระบุชื่อเครื่อง + เวลา** (ใช้ bot กลางหลายเครื่องได้) — error ซ้ำไม่สแปม (กัน 10 นาที) — ส่งไม่สำเร็จเก็บคิวแล้วส่งใหม่ (จัดการคิวได้ในเว็บ: ดู/ลองส่งใหม่/ล้าง) — ตั้งค่าใน wizard หรือฟอร์มเว็บ (หา chat_id ให้อัตโนมัติผ่าน @BotFather + getUpdates)
 
 ## Web UI (http://127.0.0.1:8123)
 
@@ -111,11 +111,11 @@ cloudflared_path =                ; เว้นว่าง = ดาวน์�
 - **Windows Service**: สถานะ service + เริ่ม/หยุด/Restart/ติดตั้ง/ถอนการติดตั้ง (ต้อง admin — หยุด/ติดตั้ง/ถอนทำไม่ได้ถ้าเว็บรันใน service)
 - **สถานะ IP**: ปุ่ม "ตรวจ DDNS ตอนนี้" — รันรอบ DDNS ทันที (ไม่รอรอบถัดไป)
 - **Telegram**: สถานะ + คิว + ส่งข้อความทดสอบ + ดูคิว/ลองส่งใหม่/ล้างคิว
-- **Cloudflare Tunnel**: สถานะ (รวมเวอร์ชัน cloudflared) + wizard ตั้งค่า + ดู hostname ที่ผูกแล้ว + เริ่ม/หยุด/ดาวน์โหลด cloudflared
+- **Cloudflare Tunnel**: สถานะ (รวมเวอร์ชัน cloudflared) + wizard ตั้งค่า + ดู hostname ที่ผูกแล้ว (**แก้ไข**/ลบ) + เริ่ม/หยุด/ดาวน์โหลด cloudflared + เพิ่ม hostname ด่วน + ซิงค์จาก Cloudflare
 - **สแกนพอร์ต**: สแกน host ใน config (resolve IP ปัจจุบัน) แสดงพอร์ตเปิด/ปิด + ชื่อบริการ
 - **ประวัติการอัปเดต**: 50 รายการล่าสุด (เวลา/record/การกระทำ/IP)
 - **Log ล่าสุด**: 200 บรรทัด + ปุ่มโหลดใหม่ + ปุ่มเปิดโฟลเดอร์ข้อมูล (config/state/logs — รันใน service จะคัดลอก path ให้แทน เพราะเปิดหน้าต่างจาก session ของ service ไม่ได้)
-- **ตั้งค่า**: ฟอร์ม (token/interval/password/พอร์ต/log/Tunnel/Telegram/records) + โหมด "แก้ไขไฟล์โดยตรง" (textarea + ตรวจ syntax) + auto-backup config (เก็บ 5 อัน)
+- **ตั้งค่า**: ฟอร์ม (token/interval/password/พอร์ต/**host ที่เปิด**/log/Heartbeat/กัน CF IP/Tunnel/Telegram/records) + โหมด "แก้ไขไฟล์โดยตรง" (textarea + ตรวจ syntax) + auto-backup config (เก็บ 5 อัน) — เปิดจากเครื่องอื่นใน LAN ได้ (`webui_host = 0.0.0.0` + รหัสผ่าน + firewall)
 - **wizard ครั้งแรก** ขึ้นเองอัตโนมัติเมื่อ config ไม่ครบ + wizard Tunnel แยก
 - ตั้ง `webui_password` ได้ในฟอร์ม (ต้อง login หลังตั้ง) · **กันสุ่มรหัสผ่าน** (ผิด 5 ครั้งติด → ล็อก 5 นาที) · responsive มือถือ
 
@@ -136,6 +136,8 @@ reject_cloudflare_ips = true
 healthchecks_url =             ; https://hc-ping.com/xxxx (Healthchecks.io)
 uptimekuma_url =               ; https://kuma.../api/push/xxxx (Uptime Kuma)
 webui_port = 8123
+; 127.0.0.1 = เฉพาะเครื่องนี้ · 0.0.0.0 = เข้าจากเครื่องอื่นใน LAN ได้ (ตั้งรหัสผ่าน + เปิด firewall)
+webui_host = 127.0.0.1
 webui_password =
 log_dir =
 
@@ -145,6 +147,8 @@ notify_start = true
 notify_ip_change = true
 notify_error = true
 notify_created = true
+; สรุปผลทุกรอบ DDNS ทาง Telegram (false = ปิด)
+notify_round = false
 daily_report = true
 daily_report_time = 08:00
 
