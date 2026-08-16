@@ -78,6 +78,8 @@ def _make_service_class():
                 servicemanager.PYS_SERVICE_STARTED,
                 (self._svc_name_, ""),
             )
+            # บอก webui ว่า process นี้รันใน service (ใช้ตัดสินใจอนุญาต/ปฏิเสธปุ่มควบคุม service)
+            os.environ["CFDDNS_RUNNING_AS_SERVICE"] = "1"
             cfg = config_mod.Config(config_mod.DEFAULT_CONFIG_PATH)
             setup_file_logging(cfg.log_dir)
             log.info("service เริ่มทำงาน (interval=%ss)", cfg.interval_seconds)

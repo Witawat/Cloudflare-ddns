@@ -9,12 +9,23 @@
 | ฟีเจอร์ | รายละเอียด |
 |---|---|
 | **DDNS อัตโนมัติ** | ตรวจ IP IPv4/IPv6 (หลาย provider สำรอง) → อัปเดต A/AAAA เฉพาะเมื่อ IP เปลี่ยน + สร้าง record ให้อัตโนมัติถ้ายังไม่มี |
-| **Windows Service** | รันจริงตอน boot, log รายวัน, หยุด/เริ่มเร็ว, แก้ config ได้ระหว่างรัน (มีผลรอบถัดไป) |
+| **Windows Service** | รันจริงตอน boot, log รายวัน, หยุด/เริ่มเร็ว, แก้ config ได้ระหว่างรัน (มีผลรอบถัดไป) + **ควบคุม/ติดตั้ง/ถอนจาก Web UI** ได้ (ต้อง admin) |
 | **Web UI** | สถานะสด, wizard ตั้งค่าครั้งแรก 5 ขั้น, ฟอร์มตั้งค่า + โหมดแก้ไฟล์ตรง, ประวัติ, ดู log, สแกนพอร์ต, ปุ่มควบคุม Telegram/Tunnel — ใช้บนมือถือได้ |
 | **แจ้งเตือน Telegram** | เริ่ม/หยุด, IP เปลี่ยน, error, สร้าง record + สรุปรายวัน — มีคิว retry + กันสแปมซ้ำ |
 | **Cloudflare Tunnel** | เปิด cloudflared ตาม service, wizard 4 ขั้น, **ผูก hostname กับ tunnel อัตโนมัติ** (ตั้ง DNS + config ให้ ไม่ต้องแตะ dashboard) |
 | **ตรวจ NAT** | รู้ว่า IP อยู่หลัง CGNAT หรือไม่ (STUN) — เตือนถ้า DDNS ใช้ไม่ได้ |
 | **EXE ไฟล์เดียว** | build ด้วย PyInstaller — ไม่ต้องติดตั้ง Python |
+
+## ความต้องการระบบ
+
+| รายการ | ข้อกำหนด |
+|---|---|
+| **ระบบปฏิบัติการ** | **Windows 10 / 11 (x64) — รองรับเต็ม** · Windows 8.1 ใช้งานได้ · Windows 7 ไม่รองรับ (Python 3.9+ ตัดการสนับสนุน) · ARM Windows ใช้ได้ผ่าน x64 emulation |
+| **เบราว์เซอร์** (Web UI) | Chrome / Edge 111+ หรือ Firefox รุ่นใหม่ (หน้าเว็บใช้ CSS สมัยใหม่ `oklch`/`color-mix` — เบราว์เซอร์เก่าจะสีเพี้ยน) |
+| **สิทธิ์** | ติดตั้ง service / ควบคุมปุ่ม service ต้อง admin |
+| **อินเทอร์เน็ต** | ต้องออก HTTPS ไปยัง provider ตรวจ IP และ api.cloudflare.com ได้ |
+
+> โปรเจกต์นี้ **ออกแบบมาสำหรับ Windows เท่านั้น** (Windows Service + pywin32 + cloudflared Windows build) — ยังไม่มี build/สนับสนุน Linux หรือ macOS
 
 ## เริ่มต้นเร็ว (3 ขั้นตอน)
 
@@ -93,16 +104,18 @@ cloudflared_path =                ; เว้นว่าง = ดาวน์�
 
 ## Web UI (http://127.0.0.1:8123)
 
-- **สถานะ IP**: IP ล่าสุดต่อ record + เวลาอัปเดต + กดคัดลอกชื่อ/IP ได้ + ตรวจ NAT (STUN) + ตรวจ IP สด
-- **แถบสถานะ**หัวหน้า: พร้อมใช้งาน / ตั้งค่าไม่ครบ / มีปัญหา
+- **สถานะ IP**: IP ล่าสุดต่อ record + เวลาอัปเดต + กดคัดลอกชื่อ/IP ได้ + ตรวจ NAT (STUN) + ตรวจ IP สด + **สถิติการเรียก Cloudflare API** (จำนวน/error/rate limit)
+- **แถบสถานะ**หัวหน้า: พร้อมใช้งาน / ตั้งค่าไม่ครบ / มีปัญหา + **เวอร์ชันโปรแกรม** + แจ้งเตือนเมื่อมีเวอร์ชันใหม่ (GitHub)
+- **Windows Service**: สถานะ service + เริ่ม/หยุด/Restart/ติดตั้ง/ถอนการติดตั้ง (ต้อง admin — หยุด/ติดตั้ง/ถอนทำไม่ได้ถ้าเว็บรันใน service)
+- **สถานะ IP**: ปุ่ม "ตรวจ DDNS ตอนนี้" — รันรอบ DDNS ทันที (ไม่รอรอบถัดไป)
 - **Telegram**: สถานะ + คิว + ส่งข้อความทดสอบ + ดูคิว/ลองส่งใหม่/ล้างคิว
-- **Cloudflare Tunnel**: สถานะ + wizard ตั้งค่า + ดู hostname ที่ผูกแล้ว + เริ่ม/หยุด/ดาวน์โหลด cloudflared
+- **Cloudflare Tunnel**: สถานะ (รวมเวอร์ชัน cloudflared) + wizard ตั้งค่า + ดู hostname ที่ผูกแล้ว + เริ่ม/หยุด/ดาวน์โหลด cloudflared
 - **สแกนพอร์ต**: สแกน host ใน config (resolve IP ปัจจุบัน) แสดงพอร์ตเปิด/ปิด + ชื่อบริการ
 - **ประวัติการอัปเดต**: 50 รายการล่าสุด (เวลา/record/การกระทำ/IP)
-- **Log ล่าสุด**: 200 บรรทัด + ปุ่มโหลดใหม่
+- **Log ล่าสุด**: 200 บรรทัด + ปุ่มโหลดใหม่ + ปุ่มเปิดโฟลเดอร์ข้อมูล (config/state/logs)
 - **ตั้งค่า**: ฟอร์ม (token/interval/password/พอร์ต/log/Tunnel/Telegram/records) + โหมด "แก้ไขไฟล์โดยตรง" (textarea + ตรวจ syntax) + auto-backup config (เก็บ 5 อัน)
 - **wizard ครั้งแรก** ขึ้นเองอัตโนมัติเมื่อ config ไม่ครบ + wizard Tunnel แยก
-- ตั้ง `webui_password` ได้ในฟอร์ม (ต้อง login หลังตั้ง) · responsive มือถือ
+- ตั้ง `webui_password` ได้ในฟอร์ม (ต้อง login หลังตั้ง) · **กันสุ่มรหัสผ่าน** (ผิด 5 ครั้งติด → ล็อก 5 นาที) · responsive มือถือ
 
 ## config.ini
 
@@ -173,6 +186,7 @@ ipv6 = true
 | IPv6 ไม่อัปเดต | ISP อาจยังไม่ให้ IPv6 — ตั้ง `use_ipv6 = false` |
 | error 409 getUpdates | โปรแกรมลบ webhook ให้อัตโนมัติแล้วลองใหม่ |
 | ข้อความ Telegram ค้าง | ตรวจ token/chat id + ปุ่ม "ลองส่งใหม่"/"ล้างคิว" ในเว็บ |
+| login ติดล็อก "ลองใหม่ในอีก 5 นาที" | ผิดรหัส 5 ครั้งติด (กันสุ่มรหัส) — รอครบเวลา หรือ restart service = ปลดล็อกทันที |
 | ผูก tunnel แล้วเข้าไม่ได้ | บริการ (localhost:port) ต้องรันอยู่ + tunnel กำลังรัน (การ์ด) |
 
 **เต็มฉบับ: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)**

@@ -167,7 +167,7 @@ class Config:
         )
         self.use_ipv4 = self._as_bool(section, "use_ipv4", True)
         self.use_ipv6 = self._as_bool(section, "use_ipv6", True)
-        self.webui_port = int(self._as_float(section, "webui_port", 8123))
+        self.webui_port = max(1, min(65535, int(self._as_float(section, "webui_port", 8123))))
         self.webui_password = section.get("webui_password", "").strip()
         self.log_dir = section.get("log_dir", "").strip() or DEFAULT_LOG_DIR
 
@@ -262,6 +262,8 @@ class Config:
 
             if not _re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", self.daily_report_time):
                 errors.append(f"daily_report_time ต้องเป็น HH:MM (0-23:0-59) เช่น 08:00 (ตอนนี้: {self.daily_report_time})")
+        if not (1 <= self.webui_port <= 65535):
+            errors.append(f"webui_port ต้องอยู่ระหว่าง 1-65535 (ตอนนี้: {self.webui_port})")
         if self.tunnel_hosts:
             import json as _json
 
@@ -344,7 +346,7 @@ class Config:
         )
         self.use_ipv4 = self._as_bool(section, "use_ipv4", True)
         self.use_ipv6 = self._as_bool(section, "use_ipv6", True)
-        self.webui_port = int(self._as_float(section, "webui_port", 8123))
+        self.webui_port = max(1, min(65535, int(self._as_float(section, "webui_port", 8123))))
         self.webui_password = section.get("webui_password", "").strip()
         self.log_dir = section.get("log_dir", "").strip() or DEFAULT_LOG_DIR
 

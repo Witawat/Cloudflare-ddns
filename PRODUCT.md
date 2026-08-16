@@ -10,7 +10,7 @@ product
 
 ## Product Purpose
 
-หน้าเดียวที่บอกสถานะของ Cloudflare DDNS ทั้งหมด: IP สาธารณะล่าสุดของแต่ละ record, เวลารอบล่าสุด, สถานะการแจ้งเตือน Telegram, และประวัติการอัปเดต พร้อมฟอร์มตั้งค่า (token, interval, Telegram, records) ที่บันทึกได้เองโดยปลอดภัย (ตรวจสอบ config ก่อนเขียน) โดยไม่ต้องแตะไฟล์ config.ini ตรง ๆ
+หน้าเดียวที่บอกสถานะของ Cloudflare DDNS ทั้งหมด: IP สาธารณะล่าสุดของแต่ละ record, เวลารอบล่าสุด, สถานะการแจ้งเตือน Telegram, สถิติการเรียก Cloudflare API, และประวัติการอัปเดต พร้อมฟอร์มตั้งค่า (token, interval, Telegram, records, Tunnel) ที่บันทึกได้เองโดยปลอดภัย (ตรวจสอบ config ก่อนเขียน) โดยไม่ต้องแตะไฟล์ config.ini ตรง ๆ — รวมถึงควบคุม Windows Service (ติดตั้ง/เริ่ม/หยุด/Restart/ถอน, เท่าที่สิทธิ์อนุญาต) และเช็คเวอร์ชันใหม่ได้ในหน้าเดียว
 
 ## Brand Personality
 

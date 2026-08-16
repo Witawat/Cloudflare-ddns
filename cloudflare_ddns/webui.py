@@ -18,6 +18,38 @@ from . import notifier
 log = logging.getLogger("cloudflare-ddns")
 
 _tunnel_mgr = None
+_ddns_busy = {"running": False}
+_update_cache = {"time": 0.0, "data": {}}
+
+# กันสุ่มรหัสผ่านหน้า login (เก็บในหน่วยความจำ — เริ่มใหม่เมื่อ service/โปรแกรม restart)
+_LOGIN_MAX_FAILS = 5
+_LOGIN_LOCK_SECONDS = 300
+_login_guard = {"fails": 0, "locked_until": 0.0}
+
+
+def _version_newer(latest, current):
+    """เปรียบเทียบ version แบบตัวเลข (1.2.3 vs 1.2.10) — คืน True ถ้า latest > current"""
+    def _parts(v):
+        return [int(x) for x in str(v).strip("v").split(".") if x.isdigit()][:3]
+
+    return _parts(latest) > _parts(current)
+
+
+def _is_admin():
+    """ตรวจว่า process นี้มีสิทธิ์ admin หรือไม่ (LocalSystem/runas = True)"""
+    try:
+        import ctypes
+
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def _in_service():
+    """webui นี้รันใน Windows Service หรือไม่ (service.py เซ็ต env ตอน SvcDoRun)"""
+    import os
+
+    return os.environ.get("CFDDNS_RUNNING_AS_SERVICE") == "1"
 
 
 def _get_tunnel_mgr():
@@ -302,6 +334,13 @@ label.field input:focus, label.field select:focus {
   padding: 8px 12px; font-size: 0.85rem; margin-top: 10px;
 }
 .wz-zone-select { width: 100%; padding: 9px 10px; font-size: 0.9rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--ink); }
+/* wizard: แถว record มีแค่ 4 ช่อง (ชื่อ/proxy/ttl/ลบ) — ใช้ grid แยกจากฟอร์มหลัก (6 คอลัมน์) */
+#wz-records .rec-edit { grid-template-columns: minmax(160px, 1fr) 120px 100px auto; }
+#wz-records .rec-edit .mini label { padding: 4px 6px; }
+@media (max-width: 860px) {
+  #wz-records .rec-edit { grid-template-columns: 1fr 1fr; }
+  #wz-records .rec-edit .btn-del { justify-self: end; }
+}
 </style>
 </head>
 <body>
@@ -316,6 +355,8 @@ __LOGIN__
   </div>
   <div class="top-right">
     <span id="pill" class="pill">กำลังโหลด…</span>
+    <span id="verpill" class="pill" style="font-size:0.75rem;padding:3px 10px">v…</span>
+    <a id="update-pill" class="pill" href="#" target="_blank" rel="noopener" style="display:none;font-size:0.75rem;padding:3px 10px;text-decoration:none;color:var(--warn);background:var(--warn-soft);border-color:color-mix(in oklch, var(--warn) 30%, transparent)">มีเวอร์ชันใหม่</a>
     <button id="refresh" class="btn-secondary">รีเฟรช</button>
   </div>
 </header>
@@ -329,7 +370,9 @@ __LOGIN__
     <div id="public-ip" class="tg-row" style="margin-bottom:12px;padding:10px 12px;background:var(--surface-2);border-radius:8px">
       <span class="tg-status"><b>IP สาธารณะปัจจุบัน</b> <span class="mono" id="pub-ipv4" style="color:var(--ink-2)">ตรวจ…</span><span class="muted" style="color:var(--muted)"> · IPv6: </span><span class="mono" id="pub-ipv6" style="color:var(--muted)">ตรวจ…</span><br><span id="nat-status" style="font-size:0.85rem;color:var(--muted)"></span></span>
       <button id="recheckIp" class="btn-secondary">ตรวจใหม่</button>
+      <button id="ddnsRun" class="btn-primary">ตรวจ DDNS ตอนนี้</button>
     </div>
+    <p id="api-stats" style="font-size:0.85rem;color:var(--muted);margin-top:8px"></p>
     <div id="records" class="records"><p style="color:var(--muted)">กำลังโหลด…</p></div>
   </section>
 
@@ -393,6 +436,29 @@ __LOGIN__
 
   <section class="panel">
     <div class="panel-head">
+      <h2>Windows Service</h2>
+      <p id="svc-ctx">…</p>
+    </div>
+    <div class="tg-row">
+      <span id="svc-status" class="tg-status">กำลังโหลด…</span>
+      <button id="svcStart" class="btn-secondary">เริ่ม service</button>
+      <button id="svcStop" class="btn-secondary">หยุด service</button>
+      <button id="svcRestart" class="btn-secondary">Restart service</button>
+      <button id="svcInstall" class="btn-secondary">ติดตั้ง service</button>
+      <button id="svcUninstall" class="btn-secondary">ถอนการติดตั้ง</button>
+    </div>
+    <details class="wz-help" style="margin-top:12px">
+      <summary style="cursor:pointer;font-weight:600">ข้อควรรู้</summary>
+      <ul style="margin:8px 0 0;padding-left:20px">
+        <li>ต้องมีสิทธิ์ admin — ถ้าหน้าเว็บนี้รันเป็น service อยู่แล้ว (เปิดเองหลัง boot) การติดตั้ง/ถอน/หยุดทำไม่ได้จากเว็บ (จะตัดการเชื่อมต่อตัวเอง) — ใช้ install.bat / uninstall.bat แทน ส่วน Restart ใช้ได้เสมอ (เว็บหลุด ~10-15 วิ แล้วกลับมา)</li>
+        <li>รันแบบ standalone (คำสั่ง webui / เปิด exe เปล่า ๆ) ต้องเปิดด้วยสิทธิ์ admin ถึงจะติดตั้ง/ควบคุม service ได้</li>
+        <li>ถอนการติดตั้งไม่ลบ config/state/ข้อมูล — แค่เอา service ออกจาก Windows</li>
+      </ul>
+    </details>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
       <h2>สแกนพอร์ต</h2>
       <p>ตรวจบริการที่เปิดอยู่บน host ที่ตั้งไว้ (resolve IP ปัจจุบันให้อัตโนมัติ)</p>
     </div>
@@ -415,7 +481,10 @@ __LOGIN__
   <section class="panel">
     <div class="panel-head">
       <h2>Log ล่าสุด</h2>
-      <button id="logReload" class="btn-secondary">โหลดใหม่</button>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button id="openFolder" class="btn-secondary">เปิดโฟลเดอร์ข้อมูล</button>
+        <button id="logReload" class="btn-secondary">โหลดใหม่</button>
+      </div>
     </div>
     <pre id="logview" style="margin:0;padding:10px 12px;background:var(--surface-2);border-radius:8px;font-family:'Cascadia Code',Consolas,monospace;font-size:0.8rem;color:var(--ink-2);max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-all">กำลังโหลด…</pre>
   </section>
@@ -587,6 +656,7 @@ async function loadStatus() {
     }
     const last = s.last_run ? new Date(s.last_run).toLocaleString("th-TH") : "ยังไม่เคยรัน";
     $("lastrun").textContent = last;
+    $("verpill").textContent = "v" + (s.version || "?");
 
     const box = $("records");
     const entries = Object.entries(s.records || {});
@@ -599,13 +669,15 @@ async function loadStatus() {
       box.innerHTML = entries.map(([key, ip]) => {
         const err = s.record_errors && s.record_errors[key];
         const kind = err ? "err" : (ip ? "ok" : "idle");
+        const [name, type] = key.split("|");
         const t = (s.records_time || {})[key];
         const timeText = t ? new Date(t).toLocaleString("th-TH") : "—";
+        const meta = escapeHtml(type || "") + (type ? " · " : "") + (err ? escapeHtml(err) : "อัปเดตล่าสุด " + timeText);
         return '<div class="record-row ' + kind + '">' +
           '<span class="rec-dot"></span>' +
-          '<span class="rec-name mono clickable" title="กดเพื่อคัดลอกชื่อ" onclick="copyIp(this)">' + escapeHtml(key) + "</span>" +
+          '<span class="rec-name mono clickable" title="กดเพื่อคัดลอกชื่อ" onclick="copyIp(this)">' + escapeHtml(name) + "</span>" +
           '<span class="rec-ip mono clickable" title="กดเพื่อคัดลอก IP" onclick="copyIp(this)">' + (ip || "ยังไม่ตั้งค่า") + "</span>" +
-          '<span class="rec-meta">' + (err ? escapeHtml(err) : "อัปเดตล่าสุด " + timeText) + "</span></div>";
+          '<span class="rec-meta">' + meta + "</span></div>";
       }).join("");
     }
 
@@ -618,6 +690,9 @@ async function loadStatus() {
     } else {
       tgBox.innerHTML = '<span>ยังไม่ได้ตั้งค่า</span> · <span style="color:var(--muted)">ใส่ token ในฟอร์มด้านล่าง หรือรัน setup</span>';
     }
+
+    const api = s.api_stats || {};
+    $("api-stats").textContent = "Cloudflare API: เรียก " + (api.calls || 0) + " ครั้ง · error " + (api.errors || 0) + " · โดน rate limit " + (api.rate_limited || 0) + " (นับตั้งแต่เริ่ม)";
 
     const hist = s.history || [];
     const histBox = $("history");
@@ -645,6 +720,108 @@ async function copyIp(el) {
     toast("คัดลอก " + el.textContent + " แล้ว", "ok");
   } catch (e) {
     toast("คัดลอกไม่ได้: " + e, "err");
+  }
+}
+
+/* ---------- Windows Service ---------- */
+
+async function loadServiceStatus() {
+  try {
+    const r = await fetch("/status.json");
+    const s = await r.json();
+    const svc = s.service || {};
+    const rt = s.runtime || {};
+    const ctx = $("svc-ctx");
+    if (rt.in_service) ctx.textContent = "รันใน service (มีสิทธิ์ระบบ) — ติดตั้ง/ถอน/หยุดต้องใช้ .bat ภายนอก";
+    else if (rt.admin) ctx.textContent = "รันแบบ standalone · มีสิทธิ์ admin — ควบคุม service ได้";
+    else ctx.textContent = "รันแบบ standalone · ไม่มีสิทธิ์ admin — ปุ่มควบคุม service ใช้ไม่ได้ (เปิด exe/cmd เป็น admin)";
+    const canControl = rt.admin;
+    ["svcInstall", "svcUninstall", "svcStart", "svcStop", "svcRestart"].forEach(id => {
+      const b = $(id);
+      b.disabled = !canControl;
+      b.title = canControl ? "" : "ต้องเปิด webui ด้วยสิทธิ์ admin";
+    });
+    if (canControl) {
+      if (rt.in_service) {
+        // รันใน service: หยุด/ติดตั้ง/ถอน = ตัดการเชื่อมต่อตัวเอง (server ปฏิเสธอยู่แล้ว) — ปิดปุ่มให้ชัด
+        $("svcStop").disabled = true;
+        $("svcInstall").disabled = true;
+        $("svcUninstall").disabled = true;
+      } else {
+        const running = svc.state === "running";
+        $("svcStop").disabled = !running;
+        $("svcStart").disabled = running;
+      }
+    }
+    const box = $("svc-status");
+    if (!svc.installed) {
+      box.innerHTML = '<span style="color:var(--muted)">ยังไม่ได้ติดตั้ง service — กด "ติดตั้ง service" (ต้อง admin)</span>';
+      return;
+    }
+    const stateNames = { running: "กำลังทำงาน", stopped: "หยุดอยู่", starting: "กำลังเริ่ม", stopping: "กำลังหยุด", resuming: "กำลังเริ่มต่อ", pausing: "กำลังพัก", paused: "พักอยู่" };
+    const label = stateNames[svc.state] || svc.state;
+    box.innerHTML = svc.running
+      ? '<span class="ok">ติดตั้งแล้ว — ' + label + '</span>'
+      : '<span class="err">ติดตั้งแล้ว — ' + label + "</span>";
+  } catch (e) {
+    $("svc-status").textContent = "อ่านสถานะไม่ได้: " + e;
+  }
+}
+
+async function svcAction(path, confirmText) {
+  if (!confirm(confirmText)) return;
+  try {
+    const r = await fetch(path, { method: "POST" });
+    const j = await r.json();
+    toast(j.ok ? j.message : "ไม่สำเร็จ: " + j.message, j.ok ? "ok" : "err");
+    if (j.ok) {
+      loadServiceStatus();
+      if (path === "/service/restart") {
+        setTimeout(() => location.reload(), 16000);
+      }
+    }
+  } catch (e) {
+    toast("error: " + e, "err");
+  }
+}
+
+async function ddnsRunNow() {
+  const btn = $("ddnsRun");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/ddns-run", { method: "POST" });
+    const j = await r.json();
+    toast(j.ok ? j.message : "ไม่สำเร็จ: " + j.message, j.ok ? "ok" : "err");
+    if (j.ok) {
+      setTimeout(() => { loadStatus(); loadServiceStatus(); btn.disabled = false; }, 5000);
+      setTimeout(loadStatus, 15000);
+      return;
+    }
+  } catch (e) {
+    toast("error: " + e, "err");
+  }
+  btn.disabled = false;
+}
+
+async function checkUpdate() {
+  try {
+    const r = await fetch("/update-check");
+    const j = await r.json();
+    if (!j.ok || !j.has_update) return;
+    const pill = $("update-pill");
+    pill.textContent = "มี v" + j.latest + " ใหม่";
+    pill.href = j.url || "https://github.com/Witawat/Cloudflare-ddns/releases";
+    pill.style.display = "";
+  } catch (e) { /* ออฟไลน์/ไม่เจอ release — ไม่ต้องแสดงอะไร */ }
+}
+
+async function openDataFolder() {
+  try {
+    const r = await fetch("/open-data-folder", { method: "POST" });
+    const j = await r.json();
+    toast(j.ok ? j.message : "ไม่สำเร็จ: " + j.message, j.ok ? "ok" : "err");
+  } catch (e) {
+    toast("error: " + e, "err");
   }
 }
 
@@ -787,7 +964,7 @@ async function saveConfig() {
       loadConfig();
       loadStatus();
       if (portChanged) {
-        toast("เปลี่ยนพอร์ตหน้าเว็บแล้ว — restart service (restart.bat) เพื่อให้มีผล", "ok");
+        toast("เปลี่ยนพอร์ตหน้าเว็บแล้ว — ต้อง restart service (dist\\cloudflare-ddns.exe restart) เพื่อให้มีผล", "ok");
       }
       if (pwChanged) {
         toast(payload.cloudflare.webui_password ? "ตั้งรหัสผ่านหน้าเว็บแล้ว — กำลังรีเฟรช ต้องเข้าสู่ระบบใหม่" : "ลบรหัสผ่านหน้าเว็บแล้ว", "ok");
@@ -922,6 +1099,7 @@ async function loadTunnelStatus() {
     if (!t.installed) parts.push('<span class="err">cloudflared ยังไม่ติดตั้ง</span>');
     if (t.running) parts.push('<span class="ok">รันอยู่ (pid ' + t.pid + ")</span>");
     else if (t.enabled) parts.push('<span>ยังไม่รัน</span>');
+    if (t.installed && t.version) parts.push('<span style="color:var(--muted)">cloudflared ' + escapeHtml(t.version) + "</span>");
     box.innerHTML = parts.join(" · ");
   } catch (e) {
     $("tunnel-status").textContent = "อ่านสถานะไม่ได้: " + e;
@@ -1345,7 +1523,8 @@ function renderTunnelWizard() {
       try {
         const r = await fetch("/config.json");
         const cfg = await r.json();
-        cfg.tunnel = { enabled: true, token: twzData.token, cloudflared_path: "" };
+        const oldTun = cfg.tunnel || {};
+        cfg.tunnel = { enabled: true, token: twzData.token, cloudflared_path: oldTun.cloudflared_path || "", hosts: oldTun.hosts || [] };
         const s = await fetch("/save-config", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1692,29 +1871,39 @@ function renderWizard() {
     $("wz-next").addEventListener("click", async () => {
       const btn = $("wz-next");
       btn.disabled = true;
-      // ใช้รหัสผ่านหน้าเว็บเดิม (ไม่ล้างถ้ามีอยู่แล้ว)
-      let existingPassword = "";
+      // เก็บค่าที่ตั้งไว้เดิม (webui_port/log_dir/tunnel/daily_report ฯลฯ) — กัน wizard ทับของเก่า
+      let existing = { cloudflare: {}, telegram: {}, tunnel: { hosts: [] } };
       try {
-        const cr = await fetch("/config.json");
-        const cj = await cr.json();
-        existingPassword = (cj.cloudflare && cj.cloudflare.webui_password) || "";
-      } catch (e) { /* config ยังไม่มี -> ว่าง */ }
+        existing = await (await fetch("/config.json")).json();
+      } catch (e) { /* config ยังไม่มี -> ใช้ค่าเริ่มต้น */ }
+      const tgl = existing.telegram || {};
+      const tun = existing.tunnel || {};
       const payload = {
         cloudflare: {
           api_token: wzData.token,
-          interval_seconds: 60,
-          use_ipv4: true,
-          use_ipv6: true,
-          webui_password: existingPassword,
+          interval_seconds: existing.cloudflare.interval_seconds || 60,
+          use_ipv4: existing.cloudflare.use_ipv4 !== false,
+          use_ipv6: existing.cloudflare.use_ipv6 !== false,
+          webui_port: existing.cloudflare.webui_port || 8123,
+          webui_password: existing.cloudflare.webui_password || "",
+          log_dir: existing.cloudflare.log_dir || "",
         },
         telegram: {
-          bot_token: (wzData.tg && wzData.tg.token) || "",
-          chat_id: (wzData.tg && wzData.tg.chat_id) || "",
-          notify_start: true,
-          notify_stop: true,
-          notify_ip_change: true,
-          notify_error: true,
-          notify_created: true,
+          bot_token: (wzData.tg && wzData.tg.token) || tgl.bot_token || "",
+          chat_id: (wzData.tg && wzData.tg.chat_id) || tgl.chat_id || "",
+          notify_start: tgl.notify_start !== false,
+          notify_stop: tgl.notify_stop !== false,
+          notify_ip_change: tgl.notify_ip_change !== false,
+          notify_error: tgl.notify_error !== false,
+          notify_created: tgl.notify_created !== false,
+          daily_report: tgl.daily_report !== false,
+          daily_report_time: tgl.daily_report_time || "08:00",
+        },
+        tunnel: {
+          enabled: !!tun.enabled,
+          token: tun.token || "",
+          cloudflared_path: tun.cloudflared_path || "",
+          hosts: tun.hosts || [],
         },
         records: wzData.records,
       };
@@ -1799,14 +1988,27 @@ $("tunnelSync").addEventListener("click", tunnelSync);
 $("th-bind").addEventListener("click", thBind);
 $("th-cancel").addEventListener("click", () => { $("tunnel-add-form").hidden = true; });
 $("twz-close").addEventListener("click", () => { $("tunnel-wizard").hidden = true; });
+$("svcInstall").addEventListener("click", () => svcAction("/service/install", "ติดตั้ง Windows Service 'CloudflareDDNS'? (เริ่มอัตโนมัติตอน boot)"));
+$("svcRestart").addEventListener("click", () => svcAction("/service/restart", "Restart Windows Service? — หน้าเว็บนี้จะหลุดชั่วครู่แล้วกลับมาเอง"));
+$("svcStart").addEventListener("click", () => svcAction("/service/start", "เริ่ม Windows Service 'CloudflareDDNS'?"));
+$("svcStop").addEventListener("click", () => svcAction("/service/stop", "หยุด Windows Service 'CloudflareDDNS'? (หน้าเว็บนี้จะไม่กลับมาเอง)"));
+$("svcUninstall").addEventListener("click", () => {
+  if (!confirm("ถอนการติดตั้ง Windows Service 'CloudflareDDNS'?")) return;
+  svcAction("/service/uninstall", "ยืนยันอีกครั้ง — ถอน service จริง ๆ? (config/state/ข้อมูลไม่ถูกลบ)");
+});
+$("ddnsRun").addEventListener("click", ddnsRunNow);
+$("openFolder").addEventListener("click", openDataFolder);
 
 loadStatus();
 loadConfig();
 loadIp();
 loadLog();
 loadTunnelStatus();
+loadServiceStatus();
+checkUpdate();
 checkSetup();
 setInterval(loadStatus, 10000);
+setInterval(loadServiceStatus, 10000);
 </script>
 </body>
 </html>
@@ -1871,7 +2073,7 @@ def _dict_to_ini(data):
     kv("interval_seconds", int(cf.get("interval_seconds", 60)))
     kv("use_ipv4", str(bool(cf.get("use_ipv4"))).lower())
     kv("use_ipv6", str(bool(cf.get("use_ipv6"))).lower())
-    kv("webui_port", int(cf.get("webui_port", 8123)))
+    kv("webui_port", max(1, min(65535, int(cf.get("webui_port", 8123)))))
     kv("webui_password", str(cf.get("webui_password", "")).strip())
     kv("log_dir", str(cf.get("log_dir", "")).strip())
     kv("telegram_bot_token", str(tg.get("bot_token", "")).strip())
@@ -1956,7 +2158,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
 <div class="panel" style="width:320px;margin:0">
   <h2 style="margin-bottom:14px">เข้าสู่ระบบ</h2>
   <form onsubmit="doLogin(event)">
-    <input id="pw" type="password" placeholder="รหัสผ่าน webui_password" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg)">
+    <input id="pw" type="password" placeholder="รหัสผ่าน webui_password" autocomplete="current-password" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg)">
+    <p id="login-err" style="margin:8px 0 0;font-size:0.85rem;color:var(--danger)" hidden>รหัสผ่านไม่ถูกต้อง</p>
     <p style="margin-top:12px"><button class="btn-primary" type="submit" style="width:100%">เข้าสู่ระบบ</button></p>
   </form>
 </div></div>
@@ -1964,7 +2167,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
 async function doLogin(ev) {
   ev.preventDefault();
   const r = await fetch("/login", { method: "POST", body: new URLSearchParams({ pw: document.getElementById("pw").value }) });
-  if (r.ok) location.reload(); else alert("รหัสผ่านไม่ถูกต้อง");
+  if (r.ok) { location.reload(); return; }
+  document.getElementById("login-err").hidden = false;
 }
 </script>"""
 
@@ -2015,6 +2219,8 @@ async function doLogin(ev) {
             cfg_errors = self.cfg.validate()
             status["config_ok"] = not cfg_errors
             status["config_errors"] = cfg_errors
+            status["errors_active"] = bool(status.get("record_errors"))
+            status["record_errors"] = status.get("record_errors", {})
             notify = notifier.TelegramNotifier.from_config(self.cfg)
             status["telegram"] = {
                 "enabled": notify.enabled,
@@ -2022,7 +2228,29 @@ async function doLogin(ev) {
                 "queue": notifier.queue_size(),
             }
             status["tunnel"] = _get_tunnel_mgr().status(self.cfg)
-            status["record_errors"] = {}
+            status["record_errors"] = status.get("record_errors", {})
+            try:
+                from . import service as service_mod
+
+                _svc = service_mod.service_status()
+                status["service"] = {
+                    "installed": _svc.get("installed", False),
+                    "state": _svc.get("state", ""),
+                    "running": _svc.get("state") == "running",
+                }
+            except Exception:
+                status["service"] = {"installed": False, "state": "", "running": False}
+            status["version"] = __version__
+            status["runtime"] = {
+                "in_service": _in_service(),
+                "admin": _is_admin(),
+            }
+            try:
+                from . import cloudflare_api as _cf_api
+
+                status["api_stats"] = _cf_api.api_stats()
+            except Exception:
+                status["api_stats"] = {"calls": 0, "errors": 0, "rate_limited": 0}
             return self._send_json(200, status)
 
         if self.path == "/config.json":
@@ -2039,6 +2267,44 @@ async function doLogin(ev) {
             errors = self.cfg.validate()
             return self._send_json(200, {"needs_setup": bool(errors), "errors": errors})
 
+        if self.path == "/update-check":
+            """เช็คเวอร์ชันใหม่จาก GitHub Releases (cache 6 ชม.)"""
+            import time
+
+            now = time.time()
+            if _update_cache["time"] and now - _update_cache["time"] < 6 * 3600:
+                return self._send_json(200, _update_cache["data"])
+            import urllib.error
+            import urllib.request
+
+            data = {
+                "ok": False,
+                "latest": "",
+                "has_update": False,
+                "url": "https://github.com/Witawat/Cloudflare-ddns/releases",
+                "message": "",
+            }
+            try:
+                request = urllib.request.Request(
+                    "https://api.github.com/repos/Witawat/Cloudflare-ddns/releases/latest",
+                    headers={"User-Agent": "cloudflare-ddns-updater/1.0", "Accept": "application/vnd.github+json"},
+                )
+                with urllib.request.urlopen(request, timeout=8) as response:
+                    release = json.loads(response.read().decode("utf-8", "replace"))
+                latest = str(release.get("tag_name", "")).strip().lstrip("v")
+                if latest:
+                    data.update(ok=True, latest=latest, has_update=_version_newer(latest, __version__))
+                    if release.get("html_url"):
+                        data["url"] = release["html_url"]
+                else:
+                    data["message"] = "ไม่พบ release ล่าสุด (tag ว่าง)"
+            except urllib.error.HTTPError as exc:
+                data["message"] = f"GitHub ตอบ {exc.code} (ไม่มี release/rate limit)"
+            except Exception as exc:
+                data["message"] = f"เช็คไม่ได้: {exc}"
+            _update_cache.update(time=now, data=data)
+            return self._send_json(200, data)
+
         if not self._authed():
             return self._send(200, PAGE.replace("__LOGIN__", self._login_block()).replace("__VERSION__", __version__))
         return self._send(200, PAGE.replace("__LOGIN__", "").replace("__VERSION__", __version__))
@@ -2053,13 +2319,31 @@ async function doLogin(ev) {
         body = self._read_body()
 
         if self.path == "/login":
+            import time as _t
+
+            now = _t.time()
+            if now < _login_guard["locked_until"]:
+                remain = int(_login_guard["locked_until"] - now)
+                log.warning("login โดนล็อกชั่วคราว (รหัสผิดบ่อย) — เหลือ %d วิ", remain)
+                return self._send_json(
+                    429,
+                    {"ok": False, "message": f"พยายามเข้าสู่ระบบบ่อยเกินไป — ล็อกชั่วคราว รออีก {remain} วิ"},
+                )
             form = dict(__import__("urllib.parse", fromlist=["parse_qsl"]).parse_qsl(body))
             if form.get("pw") == self.cfg.webui_password:
+                _login_guard["fails"] = 0
+                _login_guard["locked_until"] = 0.0
                 self.send_response(302)
                 self.send_header("Location", "/")
                 self.send_header("Set-Cookie", f"cfddns_session={self.cfg.webui_password}; HttpOnly; Path=/")
                 self.end_headers()
                 return
+            _login_guard["fails"] += 1
+            _t.sleep(0.4)  # หน่วงเล็กน้อย กันยิงเร็วต่อเนื่อง
+            if _login_guard["fails"] >= _LOGIN_MAX_FAILS:
+                _login_guard["locked_until"] = now + _LOGIN_LOCK_SECONDS
+                _login_guard["fails"] = 0
+                log.warning("login ผิด %d ครั้งติดต่อกัน — ล็อกชั่วคราว %d นาที", _LOGIN_MAX_FAILS, _LOGIN_LOCK_SECONDS // 60)
             return self._send_json(401, {"ok": False, "message": "รหัสผ่านไม่ถูกต้อง"})
 
         if not self._authed():
@@ -2497,6 +2781,119 @@ async function doLogin(ev) {
 
             ok, message = tunnel_mod.ensure_installed(self.cfg)
             return self._send_json(200 if ok else 400, {"ok": ok, "message": message})
+
+        if self.path in ("/service/install", "/service/restart", "/service/uninstall", "/service/start", "/service/stop"):
+            from . import service as service_mod
+
+            if not _is_admin():
+                return self._send_json(
+                    400,
+                    {
+                        "ok": False,
+                        "message": "ไม่มีสิทธิ์ admin — เปิด webui จาก cmd/exe ที่รันเป็น admin (หรือติดตั้งเป็น service แล้วควบคุมจากเว็บนี้)",
+                    },
+                )
+            if self.path == "/service/install":
+                if service_mod.service_status().get("installed"):
+                    return self._send_json(400, {"ok": False, "message": "service ติดตั้งอยู่แล้ว — ใช้ปุ่ม Restart หรือถอนก่อนถ้าอยากติดตั้งใหม่"})
+                try:
+                    message = service_mod.install_service()
+                except Exception as exc:
+                    return self._send_json(400, {"ok": False, "message": f"ติดตั้งไม่ได้: {exc}"})
+                return self._send_json(200, {"ok": True, "message": message + " — กด Restart service เพื่อเริ่ม"})
+            if self.path == "/service/uninstall":
+                svc = service_mod.service_status()
+                if not svc.get("installed"):
+                    return self._send_json(400, {"ok": False, "message": "ยังไม่ได้ติดตั้ง service"})
+                if svc.get("state") in ("running", "starting", "stopping"):
+                    return self._send_json(
+                        400,
+                        {
+                            "ok": False,
+                            "message": (
+                                "service กำลังทำงาน — ถอนตอนนี้จะตัดการเชื่อมต่อหน้าเว็บนี้ทันที "
+                                "(เพราะเว็บนี้รันใน service) — ใช้ uninstall.bat หรือรัน "
+                                "dist\\cloudflare-ddns.exe stop แล้วตามด้วย remove แทน"
+                            ),
+                        },
+                    )
+                try:
+                    message = service_mod.remove_service()
+                except Exception as exc:
+                    return self._send_json(400, {"ok": False, "message": f"ถอนไม่ได้: {exc}"})
+                return self._send_json(200, {"ok": True, "message": message})
+            if self.path == "/service/start":
+                svc = service_mod.service_status()
+                if not svc.get("installed"):
+                    return self._send_json(400, {"ok": False, "message": "ยังไม่ได้ติดตั้ง service — กด 'ติดตั้ง service' ก่อน"})
+                if svc.get("state") in ("running", "starting"):
+                    return self._send_json(400, {"ok": False, "message": "service กำลังทำงานอยู่แล้ว"})
+                try:
+                    message = service_mod.start_service()
+                except Exception as exc:
+                    return self._send_json(400, {"ok": False, "message": f"เริ่มไม่ได้: {exc}"})
+                return self._send_json(200, {"ok": True, "message": message})
+            if self.path == "/service/stop":
+                svc = service_mod.service_status()
+                if not svc.get("installed"):
+                    return self._send_json(400, {"ok": False, "message": "ยังไม่ได้ติดตั้ง service"})
+                if _in_service():
+                    return self._send_json(
+                        400,
+                        {
+                            "ok": False,
+                            "message": (
+                                "เว็บนี้รันใน service — หยุดตอนนี้หน้าเว็บจะหายไปและไม่กลับมาเอง "
+                                "(service หยุด = ไม่มีตัวเริ่มใหม่) — ให้ใช้คำสั่ง dist\\cloudflare-ddns.exe stop แทน"
+                            ),
+                        },
+                    )
+                try:
+                    message = service_mod.stop_service()
+                except Exception as exc:
+                    return self._send_json(400, {"ok": False, "message": f"หยุดไม่ได้: {exc}"})
+                return self._send_json(200, {"ok": True, "message": message})
+            # restart: รอให้ response กลับไปก่อน แล้วค่อย restart (กัน request ค้างเพราะตัวเองถูกหยุด)
+            def _do_restart():
+                import time as _t
+
+                _t.sleep(2)
+                try:
+                    service_mod.restart_service()
+                except Exception:
+                    pass
+
+            if not service_mod.service_status().get("installed"):
+                return self._send_json(400, {"ok": False, "message": "ยังไม่ได้ติดตั้ง service — กด 'ติดตั้ง service' ก่อน"})
+            threading.Thread(target=_do_restart, daemon=True).start()
+            return self._send_json(200, {"ok": True, "message": "กำลัง restart service — หน้าเว็บจะหลุดชั่วครู่ แล้วกลับมาเอง"})
+
+        if self.path == "/ddns-run":
+            """รันรอบ DDNS เลย (ไม่รอรอบถัดไป) — รันใน thread กัน handler ค้าง"""
+            if _ddns_busy["running"]:
+                return self._send_json(400, {"ok": False, "message": "กำลังตรวจรอบก่อนหน้าอยู่ ยังไม่เสร็จ — รอสักครู่แล้วลองใหม่"})
+            _ddns_busy["running"] = True
+
+            def _do_run():
+                try:
+                    engine = ddns.DDNSEngine(self.server.config_path)
+                    engine.run_once()
+                except Exception:
+                    log.exception("webui: ตรวจ DDNS รอบนี้เลย error")
+                finally:
+                    _ddns_busy["running"] = False
+
+            threading.Thread(target=_do_run, daemon=True).start()
+            return self._send_json(200, {"ok": True, "message": "กำลังตรวจ DDNS — สถานะจะอัปเดตให้อัตโนมัติ"})
+
+        if self.path == "/open-data-folder":
+            import os
+
+            try:
+                os.startfile(config_mod.DEFAULT_DATA_DIR)
+            except Exception as exc:
+                return self._send_json(400, {"ok": False, "message": f"เปิดโฟลเดอร์ไม่ได้: {exc}"})
+            return self._send_json(200, {"ok": True, "message": f"เปิดโฟลเดอร์ข้อมูลแล้ว ({config_mod.DEFAULT_DATA_DIR})"})
 
         if self.path == "/save-config":
             try:

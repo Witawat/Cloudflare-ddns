@@ -69,6 +69,7 @@ class DDNSEngine:
             "last_run": self._state.get("last_run", ""),
             "records": self._state.get("records", {}),
             "history": self._state.get("history", [])[-50:],
+            "record_errors": self._state.get("record_errors", {}),
             "dry_run": self.dry_run,
         }
 
@@ -120,6 +121,7 @@ class DDNSEngine:
             except cloudflare_api.CloudflareError as exc:
                 log.warning("%s: หา zone ไม่ได้: %s", rec.name, exc)
                 self._invalidate_zone(rec.zone.lower())
+                self._set_record_error(rec, f"หา zone ไม่ได้ ({exc})")
                 summary.append({"record": rec.name, "family": 0, "action": "error", "message": str(exc)})
                 notify.notify(notifier.EVENT_ERROR, f"{rec.name}: หา zone ไม่ได้ ({exc})")
                 continue
@@ -139,11 +141,44 @@ class DDNSEngine:
                         rate_limited = True
                     summary.append(entry)
 
+        # ลบ error ค้างของ record/family ที่ไม่มีการตั้งค่าแล้ว (กันโชว์ของเก่าค้างในเว็บ)
+        errs = self._state.setdefault("record_errors", {})
+        valid_keys = set()
+        for rec in cfg.records:
+            for fam, rtype in RECORD_TYPES.items():
+                rec_enabled = rec.ipv4 if fam == 4 else rec.ipv6
+                global_enabled = cfg.use_ipv4 if fam == 4 else cfg.use_ipv6
+                if rec_enabled and global_enabled:
+                    valid_keys.add(f"{rec.name.lower()}|{rtype}")
+        for stale in [k for k in errs if k not in valid_keys]:
+            del errs[stale]
+
         self._state["last_run"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         if not self.dry_run:
             self._save_state()
         notify.flush()
         return summary
+
+    def _set_record_error(self, rec, message, family=None):
+        """จด error ล่าสุดของ record ไว้ใน state (แสดงผลใน Web UI) — ลบเมื่อสำเร็จ"""
+        errs = self._state.setdefault("record_errors", {})
+        if family:
+            rtype = RECORD_TYPES.get(family, "")
+            errs[f"{rec.name.lower()}|{rtype}"] = message
+        else:
+            for fam, rtype in RECORD_TYPES.items():
+                errs[f"{rec.name.lower()}|{rtype}"] = message
+        if not self.dry_run:
+            self._save_state()
+
+    def _clear_record_error(self, rec, family=None):
+        errs = self._state.setdefault("record_errors", {})
+        if family:
+            rtype = RECORD_TYPES.get(family, "")
+            errs.pop(f"{rec.name.lower()}|{rtype}", None)
+        else:
+            for fam, rtype in RECORD_TYPES.items():
+                errs.pop(f"{rec.name.lower()}|{rtype}", None)
 
     def _sync_family(self, api, zone_id, rec, fqdn, family, notify, zone_key=""):
         rtype = RECORD_TYPES[family]
@@ -157,6 +192,7 @@ class DDNSEngine:
                 notifier.EVENT_ERROR,
                 f"{fqdn}: หา IP สาธารณะ (IPv{family}) ไม่ได้",
             )
+            self._set_record_error(rec, f"ไม่พบ IP สาธารณะ (IPv{family})", family)
             return {"record": fqdn, "family": family, "action": "no-ip", "message": "ไม่พบ IP สาธารณะ"}
 
         if cached == public_ip:
@@ -173,6 +209,7 @@ class DDNSEngine:
             log.warning("%s %s: อ่าน record ไม่ได้: %s", fqdn, rtype, exc)
             if zone_key and _is_zone_not_found(str(exc)):
                 self._invalidate_zone(zone_key)
+            self._set_record_error(rec, str(exc), family)
             notify.notify(
                 notifier.EVENT_ERROR,
                 f"{fqdn} ({rtype}): อ่าน record ไม่ได้ ({exc})",
@@ -183,6 +220,7 @@ class DDNSEngine:
             now = datetime.now(timezone.utc).isoformat(timespec="seconds")
             self._state["records"][key] = public_ip
             self._state.setdefault("records_time", {})[key] = now
+            self._clear_record_error(rec, family)
             log.info("%s %s: record ตรงอยู่แล้ว (%s) อัปเดต cache", fqdn, rtype, public_ip)
             return None
 
@@ -202,6 +240,7 @@ class DDNSEngine:
                 message = public_ip
             self._state["records"][key] = public_ip
             self._state.setdefault("records_time", {})[key] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            self._clear_record_error(rec, family)
             self._state.setdefault("history", []).append(
                 {
                     "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),

@@ -122,9 +122,9 @@ def _stun_binding(stun_host="stun.l.google.com", port=19302, timeout=5):
                     return socket.inet_ntoa(struct.pack("!I", xip)), xport
                 if family == 0x02 and len(value) >= 20:  # IPv6
                     xport = struct.unpack("!H", value[2:4])[0] ^ 0x2112
-                    xip_bytes = bytes(
-                        a ^ b for a, b in zip(value[4:20], txid[:8] + txid[:4])
-                    )
+                    # RFC 8489: XOR-MAPPED-ADDRESS IPv6 = magic cookie (4B) + transaction id (12B)
+                    mask = struct.pack("!I", 0x2112A442) + txid
+                    xip_bytes = bytes(a ^ b for a, b in zip(value[4:20], mask))
                     return socket.inet_ntop(socket.AF_INET6, xip_bytes), xport
             offset += 4 + attr_len
     except Exception:

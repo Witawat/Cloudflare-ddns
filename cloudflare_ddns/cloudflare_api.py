@@ -1,12 +1,23 @@
 """ติดต่อ Cloudflare API v4 (ใช้ urllib มาตรฐาน ไม่ต้องติดตั้ง requests)."""
 
 import json
+import logging
 import urllib.error
 import urllib.parse
 import urllib.request
 
+log = logging.getLogger("cloudflare-ddns")
+
 API_BASE = "https://api.cloudflare.com/client/v4"
 USER_AGENT = "cloudflare-ddns-updater/1.0"
+
+# สถิติสะสมการเรียก API (นับในหน่วยความจำ — เริ่มใหม่เมื่อโปรแกรม/service เริ่ม)
+_stats = {"calls": 0, "errors": 0, "rate_limited": 0}
+
+
+def api_stats():
+    """สถิติสะสม: เรียกทั้งหมด / error / โดน rate limit (429)"""
+    return dict(_stats)
 
 
 class CloudflareError(Exception):
@@ -32,29 +43,43 @@ class CloudflareAPI:
         request = urllib.request.Request(
             API_BASE + path, data=data, headers=self._headers, method=method
         )
+        _stats["calls"] += 1
+        log.debug("CF API: %s %s", method, path)
         try:
             with urllib.request.urlopen(request, timeout=20) as response:
                 raw = response.read().decode("utf-8", "replace")
+            status = response.status
         except urllib.error.HTTPError as exc:
+            _stats["errors"] += 1
             if exc.code == 429:
+                _stats["rate_limited"] += 1
+                log.warning("CF API: %s %s -> HTTP 429 (rate limit)", method, path)
                 raise CloudflareRateLimit("rate limit (HTTP 429) — เกินโควตาเรียก API") from exc
             detail = ""
             try:
                 detail = exc.read().decode("utf-8", "replace")[:500]
             except Exception:
                 pass
+            log.warning("CF API: %s %s -> HTTP %d", method, path, exc.code)
             raise CloudflareError(f"HTTP {exc.code}: {detail}") from exc
         except urllib.error.URLError as exc:
+            _stats["errors"] += 1
+            log.warning("CF API: %s %s -> เชื่อมต่อไม่ได้: %s", method, path, exc.reason)
             raise CloudflareError(f"เชื่อมต่อ Cloudflare ไม่ได้: {exc.reason}") from exc
 
+        log.debug("CF API: %s %s -> %d", method, path, status)
         try:
             payload = json.loads(raw)
         except ValueError as exc:
+            _stats["errors"] += 1
+            log.warning("CF API: %s %s -> ตอบกลับไม่ใช่ JSON", method, path)
             raise CloudflareError(f"ตอบกลับมาไม่ใช่ JSON: {raw[:200]}") from exc
 
         if not payload.get("success"):
+            _stats["errors"] += 1
             messages = [m.get("message", "") for m in payload.get("errors", [])]
             code = payload.get("errors", [{}])[0].get("code", "")
+            log.warning("CF API: %s %s -> success=false (code %s)", method, path, code)
             raise CloudflareError(f"API error (code {code}): {'; '.join(messages)}")
         return payload.get("result")
 
@@ -100,7 +125,9 @@ class CloudflareAPI:
 
     def get_record(self, zone_id, name, rtype):
         """คืน record dict หรือ None ถ้ายังไม่มี"""
-        query = urllib.parse.urlencode({"name": name.rstrip("."), "type": rtype})
+        query = urllib.parse.urlencode(
+            {"name": name.rstrip("."), "type": rtype, "per_page": 100}
+        )
         result = self._request("GET", f"/zones/{zone_id}/dns_records?{query}")
         return result[0] if result else None
 

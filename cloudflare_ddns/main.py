@@ -1,4 +1,4 @@
-"""Entry point หลัก: setup / run / dry-run / install / start / stop / restart / remove / status / webui.
+"""Entry point หลัก: setup / run / dry-run / install / start / stop / restart / remove / status / webui / notify-test.
 
 ตัวอย่าง:
     python -m cloudflare_ddns.main setup      # ตั้งค่าครั้งแรก (ถามทีละขั้น)
@@ -112,7 +112,7 @@ def cmd_setup(args):
         if name == "@":
             name = zone
         proxied = _ask_yes("เปิด proxied (orange cloud)?", default=False)
-        ttl = _ask("TTL (วินาที, 120 = อัตโนมัติ? ใช้ 120 หรือ 300)", default="120")
+        ttl = _ask("TTL (วินาที 60-7200 หรือ 1 = auto)", default="120")
         try:
             ttl = max(int(ttl), 60)
         except ValueError:
@@ -287,7 +287,15 @@ def cmd_status(args):
     service_status = service_mod.service_status()
     print("=== Windows Service ===")
     if service_status.get("installed"):
-        state_names = {"running": "กำลังทำงาน", "stopped": "หยุดอยู่", "starting": "กำลังเริ่ม"}
+        state_names = {
+            "running": "กำลังทำงาน",
+            "stopped": "หยุดอยู่",
+            "starting": "กำลังเริ่ม",
+            "stopping": "กำลังหยุด",
+            "resuming": "กำลังเริ่มต่อ",
+            "pausing": "กำลังพัก",
+            "paused": "พักอยู่",
+        }
         print(f"  ติดตั้งแล้ว — สถานะ: {state_names.get(service_status.get('state'), service_status.get('state'))}")
     else:
         print(f"  ยังไม่ติดตั้ง ({service_status.get('message', '')})")

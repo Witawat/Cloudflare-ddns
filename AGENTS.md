@@ -59,14 +59,15 @@ D:\MyCode\Cloudflare\
 
 ```
 GET  /            หน้า HTML
-GET  /status.json        สถานะ: records/records_time/history/telegram/tunnel/config_ok
+GET  /status.json        สถานะ: records/records_time/history/record_errors/errors_active/telegram/tunnel(config_ok/config_errors/service/version/runtime/api_stats)
 GET  /config.json        config เป็น JSON (ฟอร์มโหลด)
 GET  /config-file        config.ini ดิบ (โหมดแก้ไฟล์)
 GET  /setup-state        needs_setup (wizard หลัก auto-open)
 GET  /ip-check           IP สด + NAT report
 GET  /log                200 บรรทัดสุดท้าย
 GET  /notify-queue       คิว Telegram
-POST /login              cookie session (webui_password)
+GET  /update-check       เช็คเวอร์ชันใหม่จาก GitHub Releases (cache 6 ชม.)
+POST /login              cookie session (webui_password) — กันสุ่มรหัส: ผิด 5 ครั้งติด → ล็อก 5 นาที (429)
 POST /save-config        บันทึกฟอร์ม (โครงสร้างเดียวกับ /config.json)
 POST /save-file          บันทึกโหมดแก้ไฟล์ (validate ก่อนเขียน)
 POST /verify-token       ตรวจ API token + list zones
@@ -76,9 +77,12 @@ POST /notify-test / notify-test-raw
 POST /port-scan          สแกนพอร์ต (จำกัดเฉพาะ host ใน config เท่านั้น!)
 POST /notify-queue/flush|clear
 POST /tunnel/test|start|stop|download|bind|hostnames|unbind|sync|zones
+POST /service/install|start|stop|restart|uninstall   ควบคุม Windows Service (ต้อง admin; stop/install/uninstall ปฏิเสธเมื่อรันใน service เอง)
+POST /ddns-run           รันรอบ DDNS ทันที (thread + กันซ้ำ busy)
+POST /open-data-folder   เปิดโฟลเดอร์ข้อมูล (os.startfile)
 ```
 
-**โครงสร้าง response:** `{"ok": true/false, "message": "ไทย", ...}` — error ใช้ HTTP 400/401/403
+**โครงสร้าง response:** `{"ok": true/false, "message": "ไทย", ...}` — error ใช้ HTTP 400/401/403/429
 
 ## 5. กับดักที่พบบ่อย (เจอจริงทุกข้อ — อ่านก่อนแก้!)
 
@@ -100,6 +104,12 @@ POST /tunnel/test|start|stop|download|bind|hostnames|unbind|sync|zones
 ### state / queue (เขียนจากหลาย thread)
 - `state.json`, `notify_queue.json` เขียนจาก ddns loop + webui พร้อมกัน → **เขียนแบบ atomic เสมอ** (temp + `os.replace`) — ห้ามเขียนตรง ๆ
 - **dry-run ต้องไม่เขียน state** (`_save_state` เช็ค `self.dry_run`; `_invalidate_zone` ก็เช็ค)
+
+### ความปลอดภัย / สถิติ
+- **login กันสุ่มรหัส**: ผิด 5 ครั้งติด → ล็อก 5 นาที (`_login_guard` ในหน่วยความจำ) — **เทสต์ login ระวัง!** กดผิด 5 ครั้งจะล็อกตัวเอง — ปลดได้โดย restart service หรือเซ็ต `_login_guard["locked_until"] = 0`
+- `api_stats` (จำนวนเรียก Cloudflare API / error / 429) นับในหน่วยความจำของ `cloudflare_api.py` — **เริ่มใหม่ทุกครั้งที่ service restart** (ไม่ใช่สะสมข้าม restart) — อย่าทำเป็น "ยอดรวมตลอดกาล"
+- `record_errors` ใน state: จด error ล่าสุดต่อ record (key `fqdn|TYPE`) — ลบเมื่อสำเร็จ/ปิด family/ลบ record (cleanup ท้าย `run_once`) — dry-run ห้ามแตะ
+- `/update-check` เรียก GitHub API — cache 6 ชม. (`_update_cache`) — อย่าเรียกถี่ (rate limit 60/ชม. ไม่มี token)
 
 ### Service
 - `service.py` ใช้ `SvcDoRun` (ไม่ใช่ SvcRun) + pywin32 306 ใช้ `PrepareToHostSingle` (ไม่มี `PrepareServiceHost` แล้ว)

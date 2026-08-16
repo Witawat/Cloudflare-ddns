@@ -7,6 +7,7 @@
 import logging
 import os
 import subprocess
+import time
 import urllib.request
 
 from . import config as config_mod
@@ -19,6 +20,31 @@ DOWNLOAD_URL = (
 )
 
 PID_FILE = "tunnel.pid"
+
+_version_cache = {"time": 0.0, "version": ""}
+
+
+def cloudflared_version(cfg=None):
+    """เวอร์ชัน cloudflared (cache 5 นาที) — คืน '' ถ้ายังไม่ติดตั้ง/อ่านไม่ได้"""
+    now = time.time()
+    if _version_cache["version"] and now - _version_cache["time"] < 300:
+        return _version_cache["version"]
+    path = cloudflared_path(cfg)
+    if not os.path.isfile(path):
+        return ""
+    try:
+        result = subprocess.run(
+            [path, "--version"], capture_output=True, timeout=10, text=True
+        )
+        text = (result.stdout or result.stderr or "").strip()
+        for part in text.split():
+            token = part.strip(",;")
+            if token[:1].isdigit():
+                _version_cache.update(time=now, version=token)
+                return token
+    except Exception:
+        pass
+    return ""
 
 
 def cloudflared_path(cfg=None):
@@ -71,6 +97,9 @@ def _pid_alive(pid):
     try:
         os.kill(pid, 0)
         return True
+    except PermissionError:
+        # process มีอยู่แต่เป็นของ process อื่น (admin) — นับว่ายังรันอยู่
+        return True
     except OSError:
         return False
     except Exception:
@@ -118,6 +147,7 @@ class TunnelManager:
             "running": running,
             "pid": pid if running else None,
             "path": cloudflared_path(cfg),
+            "version": cloudflared_version(cfg),
         }
 
     def start(self, cfg):
