@@ -1,0 +1,569 @@
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cloudflare DDNS</title>
+<style>
+:root {
+  --bg: oklch(1 0 0);
+  --surface: oklch(0.972 0.006 50);
+  --surface-2: oklch(0.945 0.010 50);
+  --border: oklch(0.90 0.012 50);
+  --ink: oklch(0.24 0.03 250);
+  --ink-2: oklch(0.45 0.035 250);
+  --muted: oklch(0.56 0.03 250);
+  --accent: oklch(0.62 0.17 45);
+  --accent-ink: oklch(1 0 0);
+  --accent-soft: oklch(0.945 0.05 50);
+  --ok: oklch(0.5 0.11 155);
+  --ok-soft: oklch(0.955 0.04 155);
+  --warn: oklch(0.55 0.13 65);
+  --warn-soft: oklch(0.96 0.05 70);
+  --danger: oklch(0.5 0.19 28);
+  --danger-soft: oklch(0.955 0.05 28);
+  --z-sticky: 10;
+  --z-toast: 40;
+}
+* { box-sizing: border-box; }
+html { font-size: clamp(14px, 0.75rem + 0.55vw, 17px); }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: "Segoe UI", system-ui, sans-serif; font-size: 1rem; line-height: 1.5;
+}
+.mono { font-family: "Cascadia Code", Consolas, monospace; }
+h1 { font-size: 1.4rem; margin: 0; letter-spacing: -0.02em; }
+h2 { font-size: 1.05rem; margin: 0; }
+h3 { font-size: 0.9rem; margin: 26px 0 10px; color: var(--ink-2); font-weight: 600; }
+p { margin: 0; }
+
+/* header */
+.topbar {
+  position: sticky; top: 0; z-index: var(--z-sticky);
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  flex-wrap: wrap;
+  background: color-mix(in oklch, var(--bg) 85%, transparent);
+  backdrop-filter: blur(8px);
+  padding: 14px 28px; border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand-dot {
+  width: 34px; height: 34px; border-radius: 9px; flex: none;
+  background: radial-gradient(circle at 35% 30%, oklch(0.74 0.15 55), oklch(0.62 0.17 45));
+  box-shadow: 0 1px 3px oklch(0.62 0.17 45 / 0.35);
+}
+.brand .sub { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
+.top-right { display: flex; align-items: center; gap: 10px; }
+.pill {
+  font-size: 0.85rem; font-weight: 600; padding: 5px 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink-2);
+  white-space: nowrap;
+}
+.pill.ok { color: var(--ok); background: var(--ok-soft); border-color: color-mix(in oklch, var(--ok) 30%, transparent); }
+.pill.warn { color: var(--warn); background: var(--warn-soft); border-color: color-mix(in oklch, var(--warn) 30%, transparent); }
+.pill.err { color: var(--danger); background: var(--danger-soft); border-color: color-mix(in oklch, var(--danger) 30%, transparent); }
+
+main { max-width: 860px; margin: 0 auto; padding: 24px 28px 80px; }
+
+/* panels */
+.panel {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 18px 20px; margin-bottom: 16px;
+}
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.panel-head p { font-size: 0.85rem; color: var(--muted); }
+
+/* records list */
+.record-row {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 10px 12px; border-radius: 8px;
+}
+.record-row + .record-row { margin-top: 6px; }
+.record-row.ok { background: var(--ok-soft); }
+.record-row.err { background: var(--danger-soft); }
+.record-row.idle { background: var(--surface-2); }
+.rec-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.ok .rec-dot { background: var(--ok); }
+.err .rec-dot { background: var(--danger); }
+.idle .rec-dot { background: var(--muted); }
+.rec-name { font-weight: 600; min-width: 200px; }
+.rec-ip { color: var(--ink-2); font-size: 0.9rem; flex: 1; min-width: 150px; word-break: break-all; }
+.rec-meta { font-size: 0.85rem; color: var(--muted); text-align: right; }
+.rec-ip.clickable { cursor: pointer; }
+.rec-ip.clickable:hover { color: var(--accent); }
+
+/* telegram row */
+.tg-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.tg-status { font-size: 0.9rem; color: var(--ink-2); flex: 1; min-width: 200px; }
+.tg-status .ok { color: var(--ok); }
+.tg-status .err { color: var(--danger); }
+
+/* forms */
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+label.field { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 12px; }
+label.field input, label.field select, label.field textarea {
+  display: block; width: 100%; margin-top: 4px;
+  font-size: 0.9rem; color: var(--ink); font-family: inherit;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg);
+  box-sizing: border-box;
+}
+label.field textarea { resize: vertical; min-height: 58px; line-height: 1.4; }
+/* ปุ่มตา (แสดง/ซ่อน) ในช่อง password */
+.eye-wrap { display: block; position: relative; width: 100%; }
+.eye-wrap input { padding-right: 34px; }
+.eye-toggle {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; font-size: 1.05rem;
+  padding: 4px; line-height: 1; color: var(--muted);
+}
+.eye-toggle:hover { color: var(--ink); }
+label.field input:focus, label.field select:focus {
+  outline: 2px solid color-mix(in oklch, var(--accent) 40%, transparent); border-color: var(--accent);
+}
+.toggles { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 4px 0 6px; }
+.toggles label { display: inline-flex; align-items: center; gap: 7px; font-size: 0.9rem; color: var(--ink-2); cursor: pointer; }
+.toggles input { accent-color: var(--accent); width: 15px; height: 15px; }
+#daily_report_time {
+  width: 96px; height: auto; box-sizing: border-box; margin-left: 6px;
+  padding: 7px 10px; font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.9rem; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--ink);
+}
+#daily_report_time:focus { outline: 2px solid color-mix(in oklch, var(--accent) 40%, transparent); border-color: var(--accent); }
+
+/* records editor */
+.rec-edit {
+  display: grid; grid-template-columns: minmax(160px, 1.4fr) minmax(130px, 1fr) 120px 100px 122px auto;
+  gap: 8px; align-items: center; margin-bottom: 8px;
+}
+.rec-edit input[type="text"], .rec-edit input[type="number"] {
+  width: 100%; font-size: 0.9rem; padding: 7px 9px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--ink);
+}
+.rec-edit .mini {
+  display: flex; gap: 8px; justify-content: flex-start; align-items: center;
+  font-size: 0.85rem; color: var(--muted); white-space: nowrap;
+}
+.rec-edit .mini label {
+  display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  padding: 5px 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg);
+}
+.rec-edit .mini label:hover { border-color: var(--accent); }
+.rec-edit .mini input { accent-color: var(--accent); margin: 0; }
+.btn-del {
+  background: transparent; border: 1px solid transparent; color: var(--danger);
+  font-size: 16px; cursor: pointer; padding: 4px 6px; border-radius: 6px;
+}
+.btn-del:hover { background: var(--danger-soft); }
+
+/* buttons */
+.btn-primary, .btn-secondary {
+  font-size: 0.9rem; font-weight: 600; padding: 8px 16px; border-radius: 8px; cursor: pointer;
+  transition: filter 120ms ease-out, transform 120ms ease-out;
+}
+.btn-primary { background: var(--accent); color: var(--accent-ink); border: 0; }
+.btn-secondary { background: var(--surface); color: var(--ink-2); border: 1px solid var(--border); }
+.btn-primary:hover, .btn-secondary:hover { filter: brightness(0.96); }
+.btn-primary:active, .btn-secondary:active { transform: translateY(1px); }
+.btn-primary:disabled, .btn-secondary:disabled { opacity: 0.55; cursor: wait; }
+
+/* toast */
+#toast {
+  position: fixed; right: 20px; bottom: 20px; z-index: var(--z-toast);
+  max-width: 380px; padding: 11px 16px; border-radius: 10px; font-size: 0.9rem;
+  background: var(--ink); color: oklch(0.95 0 0);
+  opacity: 0; pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 180ms ease-out, transform 180ms ease-out;
+}
+#toast.show { opacity: 1; transform: translateY(0); }
+#toast.ok { background: var(--ok); }
+#toast.err { background: var(--danger); }
+
+@media (max-width: 640px) {
+  .topbar { padding: 12px 16px; flex-direction: column; align-items: stretch; gap: 10px; }
+  .top-right { width: 100%; justify-content: space-between; }
+  .brand .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 62vw; }
+  .brand-dot { width: 30px; height: 30px; border-radius: 8px; }
+  main { padding: 16px 16px 80px; }
+  .panel { padding: 14px; }
+  .record-row { gap: 10px; }
+  .rec-meta { width: 100%; text-align: left; }
+}
+/* แท็บเล็ต/จอเล็ก: record editor เปลี่ยนเป็น 2 คอลัมน์ (ชื่อ+zone / proxy+ttl / 4-6+ลบ) */
+@media (max-width: 860px) {
+  .rec-edit { grid-template-columns: 1fr 1fr; }
+  .rec-edit .mini label { padding: 4px 6px; }
+  .rec-edit .btn-del { justify-self: end; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* ---------- mode switch (ฟอร์ม / ไฟล์) ---------- */
+.mode-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; padding: 3px; background: var(--surface-2); gap: 3px; }
+.mode-switch button {
+  border: 0; background: transparent; color: var(--ink-2); font-size: 0.85rem; font-weight: 600;
+  padding: 6px 14px; border-radius: 7px; cursor: pointer;
+}
+.mode-switch button.active { background: var(--bg); color: var(--ink); box-shadow: 0 1px 2px oklch(0 0 0 / 0.08); }
+#file-view textarea {
+  width: 100%; min-height: 360px; box-sizing: border-box;
+  font-family: "Cascadia Code", Consolas, monospace; font-size: 0.82rem; line-height: 1.5;
+  padding: 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--ink); resize: vertical;
+}
+.file-note { font-size: 0.85rem; color: var(--muted); margin: 0 0 10px; }
+
+/* ---------- wizard ครั้งแรก ---------- */
+#wizard, #tunnel-wizard {
+  position: fixed; inset: 0; z-index: 60; overflow-y: auto;
+  background: oklch(0.24 0.03 250 / 0.45); backdrop-filter: blur(3px);
+  display: flex; align-items: flex-start; justify-content: center; padding: 5vh 16px 40px;
+}
+#wizard[hidden], #tunnel-wizard[hidden] { display: none; }
+.wz-card {
+  width: 100%; max-width: 560px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 16px;
+  padding: 26px 28px; box-shadow: 0 18px 50px oklch(0 0 0 / 0.18);
+}
+.wz-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.wz-head p { font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
+.wz-skip { border: 0; background: transparent; color: var(--muted); font-size: 0.85rem; cursor: pointer; padding: 6px; border-radius: 6px; }
+.wz-skip:hover { color: var(--ink-2); }
+.wz-steps { display: flex; gap: 6px; margin: 16px 0 20px; }
+.wz-steps .dot { flex: 1; height: 5px; border-radius: 3px; background: var(--surface-2); }
+.wz-steps .dot.on { background: var(--accent); }
+.wz-step-title { font-size: 1.1rem; font-weight: 700; margin: 0 0 6px; }
+.wz-step-sub { font-size: 0.9rem; color: var(--ink-2); margin: 0 0 18px; }
+.wz-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 22px; }
+.wz-help {
+  margin-top: 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); padding: 12px 14px; font-size: 0.85rem; color: var(--ink-2);
+}
+.wz-help ol { margin: 8px 0 0; padding-left: 20px; }
+.wz-help li { margin-bottom: 4px; }
+.wz-ok-box {
+  border: 1px solid color-mix(in oklch, var(--ok) 35%, transparent);
+  background: var(--ok-soft); color: var(--ok); border-radius: 8px;
+  padding: 8px 12px; font-size: 0.85rem; margin-top: 10px;
+}
+.wz-err-box {
+  border: 1px solid color-mix(in oklch, var(--danger) 35%, transparent);
+  background: var(--danger-soft); color: var(--danger); border-radius: 8px;
+  padding: 8px 12px; font-size: 0.85rem; margin-top: 10px;
+}
+.wz-zone-select { width: 100%; padding: 9px 10px; font-size: 0.9rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--ink); }
+/* wizard: แถว record มีแค่ 4 ช่อง (ชื่อ/proxy/ttl/ลบ) — ใช้ grid แยกจากฟอร์มหลัก (6 คอลัมน์) */
+#wz-records .rec-edit { grid-template-columns: minmax(160px, 1fr) 120px 100px auto; }
+#wz-records .rec-edit .mini label { padding: 4px 6px; }
+@media (max-width: 860px) {
+  #wz-records .rec-edit { grid-template-columns: 1fr 1fr; }
+  #wz-records .rec-edit .btn-del { justify-self: end; }
+}
+</style>
+</head>
+<body>
+__LOGIN__
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-dot" aria-hidden="true"></div>
+    <div>
+      <h1>Cloudflare DDNS</h1>
+      <p class="sub">อัปเดต IP อัตโนมัติ · รอบล่าสุด <span id="lastrun" class="mono">-</span></p>
+      <p id="cfg-err" class="sub" style="color:var(--danger);margin-top:2px" hidden></p>
+    </div>
+  </div>
+  <div class="top-right">
+    <span id="pill" class="pill">กำลังโหลด…</span>
+    <span id="verpill" class="pill" style="font-size:0.75rem;padding:3px 10px">v…</span>
+    <a id="update-pill" class="pill" href="#" target="_blank" rel="noopener" style="display:none;font-size:0.75rem;padding:3px 10px;text-decoration:none;color:var(--warn);background:var(--warn-soft);border-color:color-mix(in oklch, var(--warn) 30%, transparent)">มีเวอร์ชันใหม่</a>
+    <button id="refresh" class="btn-secondary">รีเฟรช</button>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="panel-head">
+      <h2>สถานะ IP</h2>
+      <p>กดที่ชื่อหรือ IP เพื่อคัดลอก</p>
+    </div>
+    <div id="public-ip" class="tg-row" style="margin-bottom:12px;padding:10px 12px;background:var(--surface-2);border-radius:8px">
+      <span class="tg-status"><b>IP สาธารณะปัจจุบัน</b> <span class="mono" id="pub-ipv4" style="color:var(--ink-2)">ตรวจ…</span><span class="muted" style="color:var(--muted)"> · IPv6: </span><span class="mono" id="pub-ipv6" style="color:var(--muted)">ตรวจ…</span><br><span id="nat-status" style="font-size:0.85rem;color:var(--muted)"></span></span>
+      <button id="recheckIp" class="btn-secondary">ตรวจใหม่</button>
+      <button id="ddnsRun" class="btn-primary">ตรวจ DDNS ตอนนี้</button>
+    </div>
+    <p id="api-stats" style="font-size:0.85rem;color:var(--muted);margin-top:8px"></p>
+    <div id="records" class="records"><p style="color:var(--muted)">กำลังโหลด…</p></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>แจ้งเตือน Telegram</h2></div>
+    <div class="tg-row">
+      <span id="tgstatus" class="tg-status">กำลังโหลด…</span>
+      <button id="tgTest" class="btn-secondary">ส่งข้อความทดสอบ</button>
+      <button id="tgQueueBtn" class="btn-secondary">ดูคิว</button>
+      <button id="tgFlushBtn" class="btn-secondary">ลองส่งใหม่</button>
+      <button id="tgClearBtn" class="btn-secondary">ล้างคิว</button>
+    </div>
+    <div id="tg-queue" hidden style="margin-top:10px"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Cloudflare Tunnel</h2><p>ให้บริการผ่าน Tunnel แทนการเปิดพอร์ต (เหมาะกับ CGNAT / ไม่เปิดพอร์ต)</p></div>
+    <div class="tg-row">
+      <span id="tunnel-status" class="tg-status">กำลังโหลด…</span>
+      <button id="tunnelWizard" class="btn-primary">ตั้งค่า Tunnel (wizard)</button>
+      <button id="tunnelHostsBtn" class="btn-secondary">ดู hostname ที่ผูกแล้ว</button>
+      <button id="tunnelAddHost" class="btn-secondary">+ เพิ่ม hostname</button>
+      <button id="tunnelSync" class="btn-secondary">ซิงค์จาก Cloudflare</button>
+      <button id="tunnelStart" class="btn-secondary">เริ่ม tunnel</button>
+      <button id="tunnelStop" class="btn-secondary">หยุด tunnel</button>
+      <button id="tunnelDownload" class="btn-secondary">ดาวน์โหลด cloudflared</button>
+    </div>
+    <div id="tunnel-add-form" hidden style="margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--surface)">
+      <div class="grid2">
+        <label class="field">ชื่อ (subdomain)
+          <input id="th-sub" type="text" class="mono" placeholder="app" list="th-sub-list">
+          <datalist id="th-sub-list"></datalist>
+        </label>
+        <label class="field">โดเมน
+          <select id="th-domain" class="wz-zone-select"></select>
+        </label>
+      </div>
+      <div class="grid2">
+        <label class="field">Path (ไม่บังคับ)<input id="th-path" type="text" class="mono" placeholder="/api"></label>
+        <label class="field">ชนิด<select id="th-protocol" class="wz-zone-select" onchange="adaptServiceToProtocol(this, document.getElementById('th-service'))"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="udp">UDP</option></select></label>
+      </div>
+      <label class="field">บริการ/พอร์ต<input id="th-service" type="text" class="mono" value="http://localhost:8080" placeholder="http://localhost:8080 หรือ tcp://localhost:22"></label>
+      <p style="margin:0 0 10px;font-size:0.8rem;color:var(--muted);line-height:1.5">💡 เลือกชนิดให้ตรงกับบริการ: <b>HTTP</b> = เว็บธรรมดา (เช่น <span class="mono">http://localhost:8080</span>) · <b>HTTPS</b> = พอร์ต SSL เช่น 443/8443 (ต้องเป็น <span class="mono">https://localhost:443</span> — ถ้าผูกเป็น http จะเจอ "Bad Request") · <b>TCP/UDP</b> = SSH/game/VPN (เช่น <span class="mono">tcp://localhost:22</span>)</p>
+      <button id="th-bind" class="btn-primary" type="button">ผูกกับ tunnel</button>
+      <button id="th-cancel" class="btn-secondary" type="button">ยกเลิก</button>
+      <div id="th-msg"></div>
+    </div>
+    <div id="tunnel-hosts" hidden style="margin-top:10px"></div>
+    <details class="wz-help" style="margin-top:12px">
+      <summary style="cursor:pointer;font-weight:600">ข้อควรรู้</summary>
+      <ul style="margin:8px 0 0;padding-left:20px">
+        <li>ชื่อเดียวใช้ได้อย่างใดอย่างหนึ่ง: A/AAAA (DDNS) หรือ CNAME (tunnel) — Cloudflare ห้ามซ้ำชื่อกัน ต้องใช้คนละชื่อ (เช่น DDNS = home.โดเมน, tunnel = app.โดเมน)</li>
+        <li>Tunnel ไม่ต้องเปิดพอร์ต / ไม่พึ่ง IP — เหมาะกับ CGNAT หรือไม่อยากแตะเราเตอร์</li>
+        <li>DDNS เหมาะกับบริการที่ต้องรับ connection ตรง (SSH, game server)</li>
+        <li>บริการที่ผูก (เช่น localhost:8080) ต้องรันอยู่ ถึงจะเข้าเว็บได้</li>
+        <li>ผูก hostname ต้องใช้ API token ที่มีสิทธิ์ Account &gt; Cloudflare Tunnel &gt; Edit</li>
+        <li>tunnel รันตาม service — หยุด service = tunnel หยุด</li>
+        <li>tunnel token ใช้ได้จนกว่าจะ revoke ที่ Zero Trust</li>
+      </ul>
+    </details>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Windows Service</h2>
+      <p id="svc-ctx">…</p>
+    </div>
+    <div class="tg-row">
+      <span id="svc-status" class="tg-status">กำลังโหลด…</span>
+      <button id="svcStart" class="btn-secondary">เริ่ม service</button>
+      <button id="svcStop" class="btn-secondary">หยุด service</button>
+      <button id="svcRestart" class="btn-secondary">Restart service</button>
+      <button id="svcInstall" class="btn-secondary">ติดตั้ง service</button>
+      <button id="svcUninstall" class="btn-secondary">ถอนการติดตั้ง</button>
+    </div>
+    <details class="wz-help" style="margin-top:12px">
+      <summary style="cursor:pointer;font-weight:600">ข้อควรรู้</summary>
+      <ul style="margin:8px 0 0;padding-left:20px">
+        <li>ต้องมีสิทธิ์ admin — ถ้าหน้าเว็บนี้รันเป็น service อยู่แล้ว (เปิดเองหลัง boot) การติดตั้ง/ถอน/หยุดทำไม่ได้จากเว็บ (จะตัดการเชื่อมต่อตัวเอง) — ใช้ install.bat / uninstall.bat แทน ส่วน Restart ใช้ได้เสมอ (เว็บหลุด ~10-15 วิ แล้วกลับมา)</li>
+        <li>รันแบบ standalone (คำสั่ง webui / เปิด exe เปล่า ๆ) ต้องเปิดด้วยสิทธิ์ admin ถึงจะติดตั้ง/ควบคุม service ได้</li>
+        <li>ถอนการติดตั้งไม่ลบ config/state/ข้อมูล — แค่เอา service ออกจาก Windows</li>
+      </ul>
+    </details>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>สแกนพอร์ต</h2>
+      <p>ตรวจบริการที่เปิดอยู่บน host ที่ตั้งไว้ (resolve IP ปัจจุบันให้อัตโนมัติ)</p>
+    </div>
+    <div class="tg-row">
+      <select id="scan-host" class="wz-zone-select" style="max-width:280px"></select>
+      <input id="scan-ports" class="mono" style="flex:1;min-width:200px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--ink);font-size:0.9rem" value="21,22,23,25,53,80,110,143,443,445,993,995,1433,3306,3389,5900,6379,8080,8443,27017">
+      <button id="scanBtn" class="btn-primary">สแกน</button>
+    </div>
+    <div id="scan-result" style="margin-top:12px"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>ประวัติการอัปเดต</h2>
+      <p>50 รายการล่าสุด</p>
+    </div>
+    <div id="history"><p style="color:var(--muted)">กำลังโหลด…</p></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Log ล่าสุด</h2>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button id="openFolder" class="btn-secondary">เปิดโฟลเดอร์ข้อมูล</button>
+        <button id="logReload" class="btn-secondary">โหลดใหม่</button>
+        <button id="logClear" class="btn-secondary" title="ล้างไฟล์ log (ไม่กระทบการทำงาน)">ล้าง log</button>
+      </div>
+    </div>
+    <pre id="logview" style="margin:0;padding:10px 12px;background:var(--surface-2);border-radius:8px;font-family:'Cascadia Code',Consolas,monospace;font-size:0.8rem;color:var(--ink-2);max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-all">กำลังโหลด…</pre>
+  </section>
+
+  <section class="panel" id="settings-panel">
+    <div class="panel-head">
+      <h2>ตั้งค่า</h2>
+      <div style="display:flex;gap:10px;align-items:center">
+        <div class="mode-switch" role="tablist">
+          <button id="mode-form" type="button" class="active" role="tab">แบบฟอร์ม</button>
+          <button id="mode-file" type="button" role="tab">แก้ไขไฟล์โดยตรง</button>
+        </div>
+        <button id="saveBtn" class="btn-primary">บันทึกการตั้งค่า</button>
+      </div>
+    </div>
+
+    <div id="form-view">
+      <h3>Cloudflare</h3>
+    <div class="grid2">
+      <label class="field">API Token
+        <input id="api_token" type="password" autocomplete="off" placeholder="cfut_... หรือ token รูปแบบอื่น">
+      </label>
+      <label class="field">ตรวจ IP ทุก (วินาที, ขั้นต่ำ 15)
+        <input id="interval" type="number" min="15" step="5">
+      </label>
+    </div>
+    <div class="grid2">
+      <label class="field">รหัสผ่านหน้าเว็บ (เว้นว่าง = ไม่ต้องใช้)
+        <input id="webui_password" type="password" autocomplete="off" placeholder="ตั้งไว้ถ้าไม่อยากให้ใครเปิดหน้าได้">
+      </label>
+      <label class="field">พอร์ตหน้าเว็บ
+        <input id="webui_port" type="number" min="1" max="65535" placeholder="8123">
+      </label>
+    </div>
+    <div class="grid2">
+      <label class="field">หน้าเว็บเปิดที่ (host)
+        <input id="webui_host" type="text" class="mono" autocomplete="off" placeholder="127.0.0.1" title="127.0.0.1 = เฉพาะเครื่องนี้ · 0.0.0.0 = เข้าจากเครื่องอื่นในเน็ตเวิร์กได้ (ต้องตั้งรหัสผ่าน + เปิดพอร์ต firewall)">
+      </label>
+      <label class="field" title="ต้องตั้ง webui_password ก่อนเปิด 0.0.0.0">คำเตือน: 0.0.0.0 = ใครในวง LAN เข้าได้ — ตั้งรหัสผ่านด้านบนเสมอ</label>
+    </div>
+    <div class="grid2">
+      <label class="field">ที่เก็บ log (เว้นว่าง = โฟลเดอร์เดียวกับ exe)
+        <input id="log_dir" type="text" class="mono" autocomplete="off" placeholder="เช่น D:\CloudflareDDNS\logs">
+      </label>
+      <label class="field">ที่เก็บข้อมูล (state, คิว) — เว้นว่าง = โฟลเดอร์เดียวกับ exe
+        <input id="data_dir" type="text" class="mono" autocomplete="off" placeholder="(คงที่: โฟลเดอร์เดียวกับ exe)" disabled>
+      </label>
+    </div>
+    <div class="toggles">
+      <label><input id="use_ipv4" type="checkbox"> อัปเดต IPv4 (A record)</label>
+      <label><input id="use_ipv6" type="checkbox"> อัปเดต IPv6 (AAAA record)</label>
+      <label title="กัน IP ที่เป็นของ Cloudflare เอง (anycast/CDN) ถูกเขียนลง record โดยไม่ตั้งใจ"><input id="reject_cf_ips" type="checkbox"> กัน IP ของ Cloudflare (anycast)</label>
+    </div>
+
+    <h3>Heartbeat (ไม่บังคับ)</h3>
+    <p style="color:var(--muted);font-size:0.85rem;margin-top:0">ส่งสัญญาณ "ยังทำงาน" ทุกรอบให้บริการเฝ้าดู — รู้ว่าเครื่อง/program ตายหรือไม่จากนอกบ้าน (กรอก URL อันใดอันหนึ่งหรือทั้งคู่)</p>
+    <div class="grid2">
+      <label class="field">Healthchecks.io ping URL (ฟรี: healthchecks.io)
+        <input id="hc_url" type="text" class="mono" autocomplete="off" placeholder="https://hc-ping.com/xxxxxxxx-xxxx">
+      </label>
+      <label class="field">Uptime Kuma push URL (self-host)
+        <input id="kuma_url" type="text" class="mono" autocomplete="off" placeholder="https://kuma.example.com/api/push/xxxx">
+      </label>
+    </div>
+
+    <h3>แจ้งเตือน Telegram</h3>
+    <div class="grid2">
+      <label class="field">Bot token (จาก @BotFather)
+        <input id="tg_token" type="password" autocomplete="off" placeholder="123456789:AAHxxx...">
+      </label>
+      <label class="field">Chat ID (เว้น = wizard/notify-test หาให้)
+        <input id="tg_chat" type="text" class="mono" autocomplete="off" placeholder="123456789">
+      </label>
+    </div>
+    <div class="toggles">
+      <label><input id="notify_start" type="checkbox"> เริ่มทำงาน</label>
+      <label><input id="notify_stop" type="checkbox"> หยุดทำงาน</label>
+      <label><input id="notify_ip_change" type="checkbox"> IP เปลี่ยน</label>
+      <label><input id="notify_error" type="checkbox"> Error</label>
+      <label><input id="notify_created" type="checkbox"> สร้าง record ใหม่</label>
+      <label title="ส่งสรุปสั้นทุกครั้งที่ตรวจรอบ (ระวัง: รอบสั้น = ข้อความเยอะ)"><input id="notify_round" type="checkbox"> สรุปทุกรอบ</label>
+    </div>
+    <div class="toggles">
+      <label><input id="daily_report" type="checkbox"> สรุปรายวันทาง Telegram</label>
+      <label>เวลา (HH:MM)<input id="daily_report_time" type="text" placeholder="08:00"></label>
+    </div>
+
+    <h3>Cloudflare Tunnel (ไม่บังคับ)</h3>
+    <div class="toggles">
+      <label><input id="tunnel_enabled" type="checkbox"> เปิด tunnel อัตโนมัติตอน service เริ่ม</label>
+    </div>
+    <label class="field">Tunnel Token (ยาว — วางได้เต็มช่อง ไม่ซ่อน)
+      <textarea id="tunnel_token" rows="3" class="mono" spellcheck="false" autocomplete="off" placeholder="eyJhIjoi..."></textarea>
+    </label>
+    <div class="grid2">
+      <label class="field">ที่อยู่ cloudflared.exe (เว้นว่าง = ดาวน์โหลดข้าง exe อัตโนมัติ)
+        <input id="cloudflared_path" type="text" class="mono" autocomplete="off" placeholder="(อัตโนมัติ)">
+      </label>
+    </div>
+
+    <h3>DNS records</h3>
+    <div id="records-editor"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button id="addRecord" class="btn-secondary" type="button">+ เพิ่ม record</button>
+      <button id="loadRecords" class="btn-secondary" type="button">โหลดชื่อ record จาก Cloudflare</button>
+      <select id="rec-pick" class="wz-zone-select" hidden style="max-width:280px"></select>
+    </div>
+    </div>
+
+    <div id="file-view" hidden>
+      <p class="file-note">แก้ไขไฟล์ config.ini ตรง ๆ ระวังรูปแบบให้ถูกต้อง (ระบบตรวจ syntax และค่าพื้นฐานก่อนบันทึก) — ตัวอย่างดูได้จาก config.example.ini</p>
+      <textarea id="file-editor" spellcheck="false" aria-label="config.ini"></textarea>
+      <p style="margin-top:10px"><button id="saveFileBtn" class="btn-primary" type="button">บันทึกไฟล์</button></p>
+    </div>
+  </section>
+</main>
+
+<footer style="text-align:center;padding:8px 16px 40px;color:var(--muted);font-size:0.8rem">
+  Cloudflare DDNS Updater v__VERSION__ · MIT License ·
+  <a href="https://github.com/Witawat/Cloudflare-ddns" target="_blank" rel="noopener" style="color:var(--accent)">github.com/Witawat/Cloudflare-ddns</a>
+</footer>
+
+<div id="toast" role="status"></div>
+
+<div id="wizard" hidden>
+  <div class="wz-card" role="dialog" aria-modal="true" aria-labelledby="wz-title">
+    <div class="wz-head">
+      <div>
+        <h1 id="wz-title">ตั้งค่า Cloudflare DDNS ครั้งแรก</h1>
+        <p>ทำตามทีละขั้นตอน ประมาณ 2 นาที — ตอนไหนติด กด "ดูวิธีทำ" ได้ทุกขั้น</p>
+      </div>
+      <button id="wz-skip" class="wz-skip" type="button">ข้ามชั่วคราว</button>
+    </div>
+    <div class="wz-steps" id="wz-steps">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    </div>
+    <div id="wz-body"></div>
+  </div>
+</div>
+
+<div id="tunnel-wizard" hidden>
+  <div class="wz-card" role="dialog" aria-modal="true" aria-labelledby="twz-title">
+    <div class="wz-head">
+      <div>
+        <h1 id="twz-title">ตั้งค่า Cloudflare Tunnel</h1>
+        <p>ให้บริการเว็บผ่าน Tunnel โดยไม่ต้องเปิดพอร์ต — 4 ขั้นตอน</p>
+      </div>
+      <button id="twz-close" class="wz-skip" type="button">ปิด</button>
+    </div>
+    <div class="wz-steps" id="twz-steps">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    </div>
+    <div id="twz-body"></div>
+  </div>
+</div>
+
+<script src="/webui.js"></script>
+</body>
+</html>

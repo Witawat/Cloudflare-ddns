@@ -29,6 +29,12 @@
 - **เปิด Web UI ชนพอร์ต → ข้อความไทยชัด** ("พอร์ต 8123 ถูกใช้งาน — ปิดตัวก่อนหรือใช้ --port") ไม่ crash เงียบ
 - ล้าง state/queue/log เก่าที่แยกชุด (root) ทิ้งแล้ว — เหลือชุดเดียวข้าง exe
 
+## [1.7.22] — 2026-08-16
+
+### ปรับปรุง (Development)
+
+- **แยก HTML/CSS และ JavaScript ออกจาก webui.py**: หน้าเว็บทั้งหมดย้ายไป `cloudflare_ddns/webui.html` (HTML+CSS) + `cloudflare_ddns/webui.js` (JS ล้วน) — webui.py เหลือแค่ Python logic (handler/endpoints) — แก้หน้าตา/JS ไม่ต้องยุ่ง Python string escape (ปัญหา `\"`/quote หายไป) · build scripts เพิ่ม `--add-data` ฝังไฟล์ทั้ง 2 เข้า exe (serve ผ่าน `/` และ `/webui.js`)
+
 ## [1.7.18] — 2026-08-16
 
 ### แก้บั๊ก (Fixes)
