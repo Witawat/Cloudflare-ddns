@@ -9,7 +9,7 @@ __CSS__
 </style>
 </head>
 <body>
-<div style="display:flex;min-height:100vh;align-items:center;justify-content:center">
+<div style="display:flex;min-height:100vh;align-items:center;justify-content:center;flex-direction:column;gap:16px">
 <div class="panel" style="width:320px;margin:0">
   <h2 style="margin-bottom:14px">เข้าสู่ระบบ</h2>
   <form onsubmit="doLogin(event)">
@@ -20,7 +20,12 @@ __CSS__
     <p id="login-err" style="margin:8px 0 0;font-size:0.85rem;color:var(--danger)" hidden>รหัสผ่านไม่ถูกต้อง</p>
     <p style="margin-top:12px"><button class="btn-primary" type="submit" style="width:100%">เข้าสู่ระบบ</button></p>
   </form>
-</div></div>
+</div>
+<footer style="text-align:center;color:var(--muted);font-size:0.8rem">
+  Cloudflare DDNS Updater v__VERSION__ · MIT License ·
+  <a href="https://github.com/Witawat/Cloudflare-ddns" target="_blank" rel="noopener" style="color:var(--accent)">github.com/Witawat/Cloudflare-ddns</a>
+</footer>
+</div>
 <script>
 async function doLogin(ev) {
   ev.preventDefault();

@@ -460,7 +460,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
             style_start = PAGE.index("<style>") + len("<style>")
             style_end = PAGE.index("</style>")
             css = PAGE[style_start:style_end]
-            return self._send(200, PAGE_LOGIN.replace("__CSS__", css))
+            return self._send(
+                200,
+                PAGE_LOGIN.replace("__CSS__", css).replace("__VERSION__", __version__),
+            )
         return self._send(200, PAGE.replace("__LOGIN__", "").replace("__VERSION__", __version__))
 
     # ---- POST ----
