@@ -1225,11 +1225,12 @@ async function scanPorts() {
     const filtered = j.ports.filter(p => p.status === "filtered");
     const rows = j.ports.map(p => {
       const cls = p.status === "open" ? "ok" : (p.status === "filtered" ? "" : "muted");
+      const icon = { open: "🟢", filtered: "⚪", closed: "🔴" }[p.status] || "•";
       const label = { open: "เปิด", filtered: "ไม่มีตอบ (ไฟร์วอลล์?)", closed: "ปิด" }[p.status];
-      return '<tr class="' + cls + '"><td class="mono">' + p.port + '</td><td class="mono">' + escapeHtml(p.service || "-") + "</td><td>" + label + "</td></tr>";
+      return '<tr class="' + cls + '"><td class="mono">' + p.port + '</td><td class="mono">' + escapeHtml(p.service || "-") + '</td><td style="white-space:nowrap">' + icon + " " + label + "</td></tr>";
     }).join("");
     box.innerHTML =
-      '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden"><table style="font-size:0.9rem;width:100%">' +
+      '<div style="border:1px solid var(--border);border-radius:8px;overflow-x:auto"><table style="font-size:0.9rem;width:100%;min-width:420px">' +
       '<tr style="background:var(--surface-2)"><th style="padding:6px 10px;text-align:left">พอร์ต</th><th style="padding:6px 10px;text-align:left">บริการ</th><th style="padding:6px 10px;text-align:left">สถานะ</th></tr>' +
       rows + "</table></div>" +
       '<p style="margin-top:8px;font-size:0.85rem;color:var(--ink-2)">' + escapeHtml(j.host) + " → " + escapeHtml(j.ip) +
@@ -1312,7 +1313,7 @@ async function tunnelHosts() {
       box.innerHTML = '<p style="color:var(--muted)">ยังไม่มี hostname ผูกกับ tunnel — ใช้ "ตั้งค่า Tunnel (wizard)" หรือ "+ เพิ่ม hostname"</p>';
       return;
     }
-    box.innerHTML = '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden"><table style="font-size:0.85rem;width:100%">' +
+    box.innerHTML = '<div style="border:1px solid var(--border);border-radius:8px;overflow-x:auto"><table style="font-size:0.85rem;width:100%;min-width:480px">' +
       '<tr style="background:var(--surface-2)"><th style="padding:5px 10px;text-align:left">hostname</th><th style="padding:5px 10px;text-align:left">ชนิด</th><th style="padding:5px 10px;text-align:left">บริการ</th><th style="padding:5px 10px"></th></tr>' +
       j.hostnames.map(h =>
         '<tr><td class="mono" style="padding:5px 10px">' + escapeHtml(h.hostname) + escapeHtml(h.path || "") + '</td>' +
@@ -1499,7 +1500,7 @@ async function tgQueue() {
       box.innerHTML = '<p style="color:var(--muted)">คิวว่าง — ไม่มีข้อความค้างส่ง</p>';
       return;
     }
-    box.innerHTML = '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden"><table style="font-size:0.85rem;width:100%">' +
+    box.innerHTML = '<div style="border:1px solid var(--border);border-radius:8px;overflow-x:auto"><table style="font-size:0.85rem;width:100%;min-width:480px">' +
       '<tr style="background:var(--surface-2)"><th style="padding:5px 10px;text-align:left">#</th><th style="padding:5px 10px;text-align:left">ข้อความ</th></tr>' +
       items.map((m, i) => '<tr><td style="padding:5px 10px;color:var(--muted)">' + (i + 1) + '</td><td style="padding:5px 10px;white-space:pre-wrap;word-break:break-all">' + escapeHtml(m) + "</td></tr>").join("") +
       "</table></div>" +
