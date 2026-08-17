@@ -272,6 +272,45 @@ class TelegramCommandTest(unittest.TestCase):
         texts = [c.args[0] for c in self.mock_send.call_args_list]
         self.assertTrue(any("กำลังรันรอบ DDNS" in t for t in texts))
 
+    def test_danger_expired_then_other_command_executes(self):
+        """BUG: คำสั่งอันตรายหมดเวลาแล้วพิมพ์คำสั่งใหม่ — ต้องประมวลผลคำสั่งใหม่ ไม่กลืน"""
+        self._run("/run")
+        notifier._danger_state["expires"] = time.time() - 10  # ทำให้หมดเวลา
+        self.mock_send.reset_mock()
+        self.mock_updates.return_value = [self._update(42, "/status", 2)]
+        notifier.check_telegram_commands(self.cfg, self.path)
+        texts = [c.args[0] for c in self.mock_send.call_args_list]
+        self.assertTrue(any("รอบล่าสุด" in t for t in texts), "คำสั่ง /status ควรประมวลผลต่อ")
+        self.assertFalse(any("รอยืนยัน" in t for t in texts))
+        self.assertEqual(notifier._danger_state["command"], "")
+
+    def test_danger_expired_yes_does_not_execute(self):
+        """BUG: ยืนยันหลังหมดเวลา — ต้องไม่รันคำสั่งอันตราย"""
+        self._run("/run")
+        notifier._danger_state["expires"] = time.time() - 10
+        self.mock_send.reset_mock()
+        self.mock_updates.return_value = [self._update(42, "yes", 2)]
+        notifier.check_telegram_commands(self.cfg, self.path)
+        texts = [c.args[0] for c in self.mock_send.call_args_list]
+        self.assertTrue(any("หมดเวลา" in t for t in texts))
+        self.assertFalse(any("กำลังรันรอบ DDNS" in t for t in texts))
+
+    def test_danger_command_cancels_pending_reset(self):
+        """BUG: พิมพ์ /run ขณะ reset ยังค้าง — ต้องยกเลิก reset (กัน yes ซ้ำไป reset เผลอ)"""
+        self.mock_updates.return_value = [self._update(42, "reset password", 1)]
+        notifier.check_telegram_commands(self.cfg, self.path)
+        self.assertTrue(notifier._reset_state["awaiting_confirm"])
+        self.mock_updates.return_value = [self._update(42, "/run", 2)]
+        notifier.check_telegram_commands(self.cfg, self.path)
+        self.assertFalse(notifier._reset_state["awaiting_confirm"])
+        # ยืนยัน /run ด้วย yes — ต้องไม่ reset
+        self.mock_send.reset_mock()
+        self.mock_updates.return_value = [self._update(42, "yes", 3)]
+        notifier.check_telegram_commands(self.cfg, self.path)
+        texts = [c.args[0] for c in self.mock_send.call_args_list]
+        self.assertTrue(any("กำลังรันรอบ DDNS" in t for t in texts))
+        self.assertFalse(any("รหัสผ่านหน้าเว็บใหม่" in t for t in texts))
+
     def test_list_shows_ddns_and_tunnel(self):
         self.cfg.tunnel_hosts = [
             {"hostname": "app.example.com", "path": "", "protocol": "http", "service": "http://localhost:8080"}

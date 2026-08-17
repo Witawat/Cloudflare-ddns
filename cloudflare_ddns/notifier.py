@@ -681,22 +681,28 @@ def _dispatch_tg_command(lower, text, uid, token, cfg, config_path, reply, confi
         pending = _danger_state["command"]
         ptext = _danger_state["text"]
         expired = time.time() > _danger_state["expires"]
+        if not expired:
+            if lower == "yes":
+                log.warning("Telegram: ยืนยันคำสั่งอันตราย: %s", pending)
+                _danger_state["command"] = ""
+                _reset_state["awaiting_confirm"] = False
+                _dispatch_tg_command(
+                    pending.lower(), ptext, uid, token, cfg, config_path, reply, confirmed=True
+                )
+                return
+            if lower == "no":
+                _danger_state["command"] = ""
+                reply("ยกเลิก: {}".format(pending))
+                return
+            # ข้อความอื่นที่ยังไม่ยืนยัน — คืนสถานะรอยืนยันให้
+            reply("มีคำสั่งรอยืนยัน: {} — พิมพ์ 'yes' เพื่อยืนยัน หรือ 'no' เพื่อยกเลิก".format(pending))
+            return
+        # หมดเวลายืนยันแล้ว — ล้าง state แล้วประมวลผลคำสั่งใหม่ที่พิมพ์มา (ไม่กลืน)
         _danger_state["command"] = ""
-        if lower == "yes" and not expired:
-            log.warning("Telegram: ยืนยันคำสั่งอันตราย: %s", pending)
-            _dispatch_tg_command(
-                pending.lower(), ptext, uid, token, cfg, config_path, reply, confirmed=True
-            )
+        log.info("Telegram: ยกเลิกคำสั่งอันตรายที่หมดเวลา: %s", pending)
+        if lower in ("yes", "no"):
+            reply("หมดเวลายืนยันแล้ว: {} — พิมพ์คำสั่งใหม่เพื่อเริ่ม".format(pending))
             return
-        if lower == "yes":
-            reply("หมดเวลายืนยันแล้ว — พิมพ์คำสั่งใหม่เพื่อเริ่ม")
-            return
-        if lower == "no":
-            reply("ยกเลิก: {}".format(pending))
-            return
-        # ข้อความอื่นที่ยังไม่ยืนยัน — คืนสถานะรอยืนยันให้
-        reply("มีคำสั่งรอยืนยัน: {} — พิมพ์ 'yes' เพื่อยืนยัน หรือ 'no' เพื่อยกเลิก".format(pending))
-        return
 
     # กู้รหัสผ่านหน้าเว็บ (2 ขั้น)
     if lower == "reset password":
@@ -744,6 +750,8 @@ def _dispatch_tg_command(lower, text, uid, token, cfg, config_path, reply, confi
         _danger_state["command"] = danger_cmd
         _danger_state["text"] = text
         _danger_state["expires"] = time.time() + _danger_confirm_seconds
+        # ตั้งคำสั่งอันตรายใหม่ = ยกเลิก reset รหัสที่ค้างอยู่ (กัน yes ซ้ำไป reset โดยไม่ตั้งใจ)
+        _reset_state["awaiting_confirm"] = False
         reply(
             "{} เป็นคำสั่งอันตราย — พิมพ์ 'yes' เพื่อยืนยัน หรือ 'no' เพื่อยกเลิก (ภายใน 2 นาที)".format(
                 danger_cmd
