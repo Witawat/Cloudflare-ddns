@@ -315,7 +315,7 @@ class UpdateCheckTest(unittest.TestCase):
         self.assertTrue(data["ok"])
         self.assertFalse(data["has_update"])
 
-    def test_cache_used_within_6h(self):
+    def test_cache_used_within_1h(self):
         with mock.patch("urllib.request.urlopen", return_value=self._fake_release("v9.9.9")) as m:
             webui._update_check_data()
             webui._update_check_data()

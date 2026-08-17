@@ -462,14 +462,14 @@ def _send_daily_report(engine, cfg, notify):
 
 
 _periodic_update_at = 0.0
-PERIODIC_UPDATE_INTERVAL = 24 * 3600  # เช็คเวอร์ชันใหม่ทุก 24 ชม. (รันยาว ๆ ก็รู้ว่ามีรุ่นใหม่)
+PERIODIC_UPDATE_INTERVAL = 3600  # เช็คเวอร์ชันใหม่ทุก 1 ชม. (รันยาว ๆ ก็รู้ว่ามีรุ่นใหม่)
 
 
 def _periodic_update_check(cfg, config_path):
-    """เช็คเวอร์ชันใหม่เป็นระยะ (ทุก 24 ชม.) — import ข้างใน กัน circular (webui import ddns).
+    """เช็คเวอร์ชันใหม่เป็นระยะ (ทุก 1 ชม.) — import ข้างใน กัน circular (webui import ddns).
 
-    ใช้ logic เดียวกับตอนเริ่มโปรแกรม (_startup_update_check) — cache 6 ชม. + แจ้ง Telegram
-    1 ครั้งต่อเวอร์ชันต่อ process (ไม่สแปม) — GitHub rate limit 60/ชม. ไม่มี token: 1 ครั้ง/24 ชม. ปลอดภัย
+    ใช้ logic เดียวกับตอนเริ่มโปรแกรม (_startup_update_check) — cache 1 ชม. + แจ้ง Telegram
+    1 ครั้งต่อเวอร์ชันต่อ process (ไม่สแปม) — GitHub rate limit 60/ชม. ไม่มี token: 24 ครั้ง/วัน ปลอดภัย
     """
     global _periodic_update_at
     now = time.time()

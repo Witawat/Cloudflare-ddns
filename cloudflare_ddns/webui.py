@@ -1217,9 +1217,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
 
 def _update_check_data():
-    """เช็คเวอร์ชันใหม่จาก GitHub Releases (cache 6 ชม.) — คืน dict สำหรับ /update-check + startup check"""
+    """เช็คเวอร์ชันใหม่จาก GitHub Releases (cache 1 ชม.) — คืน dict สำหรับ /update-check + startup/periodic check"""
     now = time.time()
-    if _update_cache["time"] and now - _update_cache["time"] < 6 * 3600:
+    if _update_cache["time"] and now - _update_cache["time"] < 1 * 3600:
         return _update_cache["data"]
     import urllib.error
     import urllib.request

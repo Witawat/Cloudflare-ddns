@@ -127,15 +127,15 @@ class PeriodicUpdateCheckTest(unittest.TestCase):
         ddns._periodic_update_check(self.cfg, self.path)
         self.mock_check.assert_called_once()
 
-    def test_skips_within_24h(self):
+    def test_skips_within_1h(self):
         ddns._periodic_update_check(self.cfg, self.path)
         self.mock_check.reset_mock()
         ddns._periodic_update_check(self.cfg, self.path)
         self.mock_check.assert_not_called()
 
-    def test_checks_again_after_24h(self):
+    def test_checks_again_after_1h(self):
         ddns._periodic_update_check(self.cfg, self.path)
-        ddns._periodic_update_at = 0.0  # จำลองผ่านไป 24 ชม. (reset ค้าง)
+        ddns._periodic_update_at = 0.0  # จำลองผ่านไป 1 ชม. (reset ค้าง)
         self.mock_check.reset_mock()
         ddns._periodic_update_check(self.cfg, self.path)
         self.mock_check.assert_called_once()
