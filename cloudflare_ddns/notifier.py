@@ -279,6 +279,7 @@ def _apply_webui_password(cfg, config_path, new_pw):
 TG_HELP_TEXT = (
     "รายการคำสั่ง (พิมพ์ในแชทนี้):\n"
     "/status — สถานะ DDNS (IP/record/รอบล่าสุด)\n"
+    "/list — รายชื่อ DDNS + tunnel ที่ตั้งค่าไว้\n"
     "/ip — IP สาธารณะปัจจุบัน\n"
     "/run — รันรอบ DDNS ทันที\n"
     "/update — เช็คเวอร์ชันใหม่\n"
@@ -287,6 +288,41 @@ TG_HELP_TEXT = (
     "/restart /start /stop — ควบคุม Windows Service\n"
     "reset password → yes — กู้รหัสผ่านหน้าเว็บ"
 )
+
+
+def _tg_list_text(cfg):
+    """รายชื่อ DDNS records + tunnel hostnames ที่ตั้งค่าไว้ สำหรับ /list"""
+    lines = []
+    records = getattr(cfg, "records", []) or []
+    if records:
+        lines.append("📋 DDNS records:")
+        for rec in records:
+            fqdn = config_mod.fqdn_name(rec.name or "", rec.zone or "")
+            fam = []
+            if rec.ipv4:
+                fam.append("A")
+            if rec.ipv6:
+                fam.append("AAAA")
+            lines.append(
+                "• {} {}{}".format(fqdn or "?", "/".join(fam) or "-", " (proxy)" if rec.proxied else "")
+            )
+    else:
+        lines.append("📋 DDNS records: (ไม่มี)")
+    hosts = getattr(cfg, "tunnel_hosts", []) or []
+    if hosts:
+        lines.append("🛰 Tunnel hostnames:")
+        for h in hosts:
+            lines.append(
+                "• {}{} → {} ({})".format(
+                    h.get("hostname", "?"),
+                    h.get("path", ""),
+                    h.get("service", "?"),
+                    h.get("protocol", "?"),
+                )
+            )
+    else:
+        lines.append("🛰 Tunnel hostnames: (ไม่มี)")
+    return "\n".join(lines)
 
 
 def _tg_status_text(config_path):
@@ -494,6 +530,8 @@ def check_telegram_commands(cfg, config_path=""):
             reply(TG_HELP_TEXT)
         elif cmd == "/status":
             reply(_tg_status_text(config_path))
+        elif cmd == "/list":
+            reply(_tg_list_text(cfg))
         elif cmd == "/ip":
             reply(_tg_ip_text())
         elif cmd == "/run":

@@ -8,7 +8,7 @@
 
 - **รหัสผ่านหน้าเว็บเก็บเป็น hash** (sha256 + salt จากตำแหน่ง config) — ไม่มีรหัสจริงหลุดใน config.ini/cookie อีก (config เดิมที่เก็บ plaintext ย้ายให้อัตโนมัติครั้งเดียว)
 - **กู้รหัสผ่านหน้าเว็บ 3 ทาง**: (1) เปลี่ยนในฟอร์มตอน session ยังอยู่ (2) คำสั่งใหม่ `reset-password` (ตั้งใหม่หรือลบรหัส — ใช้ได้แม้ login ไม่ได้) (3) **ผ่าน Telegram (opt-in)**: พิมพ์ `reset password` → ยืนยัน `yes` → โปรแกรมสุ่มรหัสใหม่ 12 ตัวส่งกลับ (เฉพาะ chat_id ที่ตั้งไว้ กัน 1 ครั้ง/10 นาที — เปิดในฟอร์มตั้งค่า/`telegram_allow_reset`)
-- **ควบคุม DDNS ผ่าน Telegram** (เปิดเดียวกับกู้รหัส — `telegram_allow_reset`): พิมพ์ `/help` ในแชทกับ bot — `/status` (IP/รอบล่าสุด/error) · `/ip` · `/run` (รันรอบทันที) · `/update` (เช็คเวอร์ชัน) · `/tunnel [start|stop]` · `/log` · `/restart /start /stop` (Windows Service) — เฉพาะ chat_id ที่ตั้งไว้
+- **ควบคุม DDNS ผ่าน Telegram** (เปิดเดียวกับกู้รหัส — `telegram_allow_reset`): พิมพ์ `/help` ในแชทกับ bot — `/status` (IP/รอบล่าสุด/error) · `/list` (รายชื่อ DDNS + tunnel) · `/ip` · `/run` (รันรอบทันที) · `/update` (เช็คเวอร์ชัน) · `/tunnel [start|stop]` · `/log` · `/restart /start /stop` (Windows Service) — เฉพาะ chat_id ที่ตั้งไว้
 - **กัน CSRF**: POST ทุกตัว (ยกเว้น /login) ตรวจ Origin — คำขอจากเว็บอื่น (เช่น เปิดหน้า 0.0.0.0 แล้วถูกเว็บโจมตี) ถูกบล็อก 403
 - **security headers**: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` + cookie ใช้ `SameSite=Lax`
 - **กัน log injection**: ข้อความจากหน้าเว็บ (log-event) ที่มีขึ้นบรรทัดใหม่ถูกกรองออก

@@ -169,6 +169,7 @@ python -m cloudflare_ddns.main setup
 |---|---|
 | `/help` | รายการคำสั่ง |
 | `/status` | สถานะ DDNS (IP ต่อ record / รอบล่าสุด / error) |
+| `/list` | รายชื่อ DDNS records + tunnel hostnames ที่ตั้งค่าไว้ |
 | `/ip` | IP สาธารณะปัจจุบัน (IPv4 + IPv6) |
 | `/run` | รันรอบ DDNS ทันที (ผลสรุปตามมา) |
 | `/update` | เช็คเวอร์ชันใหม่ |

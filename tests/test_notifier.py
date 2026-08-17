@@ -232,6 +232,15 @@ class TelegramCommandTest(unittest.TestCase):
         texts = [c.args[0] for c in self.mock_send.call_args_list]
         self.assertTrue(any("กำลังรันรอบ DDNS" in t for t in texts))
 
+    def test_list_shows_ddns_and_tunnel(self):
+        self.cfg.tunnel_hosts = [
+            {"hostname": "app.example.com", "path": "", "protocol": "http", "service": "http://localhost:8080"}
+        ]
+        self._run("/list")
+        texts = [c.args[0] for c in self.mock_send.call_args_list]
+        self.assertTrue(any("DDNS records" in t and "home.example.com" in t for t in texts))
+        self.assertTrue(any("Tunnel hostnames" in t and "app.example.com" in t for t in texts))
+
     def test_restart_calls_service(self):
         with mock.patch("cloudflare_ddns.service.restart_service", return_value="restarted") as m, \
              mock.patch("cloudflare_ddns.webui._in_service", return_value=False):
