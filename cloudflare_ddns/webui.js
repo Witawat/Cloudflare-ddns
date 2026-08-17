@@ -294,6 +294,7 @@ let recordsData = [];
 let tunnelHostsData = [];
 let currentWebuiPassword = "";
 let currentWebuiPort = 8123;
+let pwRemove = false;
 
 async function loadConfig() {
   try {
@@ -307,8 +308,9 @@ async function loadConfig() {
     $("reject_cf_ips").checked = c.cloudflare.reject_cloudflare_ips !== false;
     $("hc_url").value = c.cloudflare.healthchecks_url || "";
     $("kuma_url").value = c.cloudflare.uptimekuma_url || "";
-    $("webui_password").value = c.cloudflare.webui_password;
+    $("webui_password").value = "";
     currentWebuiPassword = c.cloudflare.webui_password;
+    $("pwClear").style.display = currentWebuiPassword ? "" : "none";
     $("webui_port").value = c.cloudflare.webui_port || 8123;
     currentWebuiPort = c.cloudflare.webui_port || 8123;
     $("webui_host").value = c.cloudflare.webui_host || "127.0.0.1";
@@ -406,6 +408,8 @@ async function saveConfig() {
     btn.disabled = false;
     return;
   }
+  let pwValue = $("webui_password").value.trim();
+  if (!pwValue && !pwRemove) pwValue = currentWebuiPassword; // เว้นว่าง = คงรหัสเดิม
   const payload = {
     cloudflare: {
       api_token: $("api_token").value.trim(),
@@ -418,7 +422,7 @@ async function saveConfig() {
       uptimekuma_url: $("kuma_url").value.trim(),
       webui_port: Math.max(1, Math.min(65535, Math.floor(+$("webui_port").value || currentWebuiPort))),
       webui_host: $("webui_host").value.trim() || "127.0.0.1",
-      webui_password: $("webui_password").value.trim(),
+      webui_password: pwValue,
       log_dir: $("log_dir").value.trim(),
     },
     telegram: {
@@ -451,15 +455,17 @@ async function saveConfig() {
     const j = await r.json();
     toast(j.ok ? "บันทึกสำเร็จ — มีผลในรอบถัดไป" : "บันทึกไม่สำเร็จ: " + j.message, j.ok ? "ok" : "err");
     if (j.ok) {
-      const pwChanged = $("webui_password").value.trim() !== currentWebuiPassword;
+      const pwChanged = pwValue !== currentWebuiPassword;
       const portChanged = payload.cloudflare.webui_port !== currentWebuiPort;
+      const removedPw = pwRemove && pwChanged;
+      pwRemove = false;
       if (pwChanged) {
         // cookie เก่าใช้ไม่ได้แล้ว — อย่าโหลด config ตอนนี้ (จะ error 401) — login ใหม่แล้ว reload
-        toast(payload.cloudflare.webui_password ? "ตั้งรหัสผ่านหน้าเว็บแล้ว — กำลังเข้าสู่ระบบใหม่" : "ลบรหัสผ่านหน้าเว็บแล้ว", "ok");
+        toast(removedPw ? "ลบรหัสผ่านหน้าเว็บแล้ว — เข้าเว็บได้โดยไม่ต้อง login" : "ตั้งรหัสผ่านหน้าเว็บแล้ว — กำลังเข้าสู่ระบบใหม่", "ok");
         setTimeout(async () => {
-          if (payload.cloudflare.webui_password) {
+          if (!removedPw && pwValue) {
             try {
-              await fetch("/login", { method: "POST", body: new URLSearchParams({ pw: payload.cloudflare.webui_password }) });
+              await fetch("/login", { method: "POST", body: new URLSearchParams({ pw: pwValue }) });
             } catch (e) { logClientError("auto-login หลังเปลี่ยนรหัส", e); }
           }
           location.reload();
@@ -1592,6 +1598,16 @@ $("refresh").addEventListener("click", refreshAll);
 $("heartbeatTest").addEventListener("click", heartbeatTest);
 $("tunnelUpdateCheck").addEventListener("click", tunnelUpdateCheck);
 $("exportCfg").addEventListener("click", exportConfig);
+$("pwClear").addEventListener("click", () => {
+  pwRemove = true;
+  $("webui_password").value = "";
+  $("pwClear").style.display = "none";
+  toast("จะลบรหัสผ่านเมื่อกดบันทึก — เข้าเว็บได้โดยไม่ต้อง login", "ok");
+});
+$("webui_password").addEventListener("input", () => {
+  pwRemove = false;
+  $("pwClear").style.display = currentWebuiPassword ? "" : "none";
+});
 $("importCfg").addEventListener("click", () => $("importCfgFile").click());
 $("importCfgFile").addEventListener("change", importConfigFile);
 

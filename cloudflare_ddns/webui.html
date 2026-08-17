@@ -481,8 +481,11 @@ __LOGIN__
       </label>
     </div>
     <div class="grid2">
-      <label class="field">รหัสผ่านหน้าเว็บ (เว้นว่าง = ไม่ต้องใช้)
-        <input id="webui_password" type="password" autocomplete="off" placeholder="ตั้งไว้ถ้าไม่อยากให้ใครเปิดหน้าได้">
+      <label class="field">รหัสผ่านหน้าเว็บ (เว้นว่าง = ไม่เปลี่ยน · พิมพ์ใหม่ = เปลี่ยน)
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="webui_password" type="password" autocomplete="off" placeholder="ตั้งไว้แล้ว" style="flex:1">
+          <button id="pwClear" class="btn-secondary" type="button" style="display:none;white-space:nowrap" title="ลบรหัสผ่าน — เข้าเว็บได้โดยไม่ต้อง login">ลบรหัส</button>
+        </div>
       </label>
       <label class="field">พอร์ตหน้าเว็บ
         <input id="webui_port" type="number" min="1" max="65535" placeholder="8123">
