@@ -34,7 +34,25 @@
 ### ปรับปรุง (Development)
 
 - **แยก HTML/CSS และ JavaScript ออกจาก webui.py**: หน้าเว็บทั้งหมดย้ายไป `cloudflare_ddns/webui.html` (HTML+CSS) + `cloudflare_ddns/webui.js` (JS ล้วน) — webui.py เหลือแค่ Python logic (handler/endpoints) — แก้หน้าตา/JS ไม่ต้องยุ่ง Python string escape (ปัญหา `\"`/quote หายไป) · build scripts เพิ่ม `--add-data` ฝังไฟล์ทั้ง 2 เข้า exe (serve ผ่าน `/` และ `/webui.js`)
-- **แยกหน้า login เป็นไฟล์ `webui_login.html`** (เดิมเป็น Python string ใน webui.py) — ยังใช้ CSS เดียวกับหน้า main · **ปุ่ม "รีเฟรช" โหลดทุกส่วนใหม่หมด** (สถานะ/IP/NAT/log/tunnel/service/config) — จากเดิมโหลดแค่สถานะ
+- **แยกหน้า login เป็นไฟล์ `webui_login.html`** (เดิมเป็น Python string ใน webui.py) — ยังใช้ CSS เดียวกับหน้า main · **ปุ่ม "รีเฟรช" โหลดทุกส่วนใหม่หมด** (สถานะ/IP/NAT/log/tunnel/service/config) — จากเดิมโหลดแค่สถานะ · เพิ่มเครดิต/ไลเซน + ลิงก์ GitHub ที่หน้า login (ขึ้นบรรทัดใหม่ไม่ล้นจอเล็ก)
+- **exe เล็กลง 17% ด้วย UPX**: 9.7MB → 8MB — build.bat/build-install.bat บีบให้อัตโนมัติ (tools/upx.exe) — ถ้าเครื่องไม่มี UPX ข้ามได้ (ยัง build ปกติ)
+- **คู่มือทดสอบ release** (`docs/RELEASE-TEST.md` + `test-release.mjs`): จำลองผู้ใช้ใหม่ (โฟลเดอร์ใหม่ + exe เปล่า ๆ) → เดิน wizard ครบ 5 ขั้นด้วย playwright 15 รายการ — ผลเทสต์ล่าสุด **15/15 (100%)**
+
+### แก้บั๊ก (Fixes)
+
+- **ข้อมูล runtime อยู่ที่เดียวกับ exe ไม่ว่า exe อยู่ที่ไหน**: state/queue/log/tunnel.pid/cloudflared.exe คำนวณจาก **config.ini ที่ใช้จริง** — กัน state/queue แยกชุด (root vs dist) — รอบล่าสุดไม่ตรงกัน / คิว Telegram คนละที่ / HTTP 400 ข้อความว่างซ้ำ — หมดไป (รวมไม่ifier กรองข้อความว่างในคิว + ล้างคิวขยะ ProgramData)
+- **`--config` ใช้ได้ทั้งหน้า/หลัง subcommand** (เดิมวางหน้าโดน argparse ทับเงียบ ๆ)
+- **เปิด Web UI ชนพอร์ต → ข้อความไทยชัด** ไม่ crash เงียบ
+- **หน้าเว็บ CSS เพี้ยนหลังแยกไฟล์**: DOCTYPE หาย (quirks mode) + `<style>` ซ้อนแท็กในหน้า login — แก้ทั้ง 2
+- **wizard ขั้น Telegram: เพิ่มช่องกรอก chat id ด้วยมือ** (กรณี bot ไม่มีข้อความใหม่ resolve ไม่ได้ — เดิมตั้งค่า Telegram ไม่ได้เลย)
+- **เลือก record จาก Cloudflare: ตัดชื่อเต็มเป็นชื่อย่อ + เติม zone ให้อัตโนมัติ** (home.example.com → home + example.com — ทั้งฟอร์มหลักและ wizard)
+- **/status.json กรอง record ที่ลบออกจาก config แล้ว** (cache เก่าไม่โชว์ค้าง)
+- **ตัวตรวจ NAT แม่นขึ้น + หน้าตาใหม่**: ตรวจ 3 ชั้น (provider + tracert ฮอปแรกหลัง WAN + STUN ซ้ำ) — **NAT บ้าน (double-nat กี่ชั้นก็ได้) = เขียว "เป็น NAT ส่วนตัวในบ้าน (ซ้อน N ชั้น)"** — **CGNAT ของ ISP = แดง** — แสดงเป็นการ์ดแถบสี (ไอคอนวงกลม + พื้นหลังสีอ่อนสด) · ไม่ส่ง Telegram เตือนสำหรับ NAT บ้าน
+- **จัด layout จอมือถือ**: ตารางทุกแบบบีบตามจอ (ไม่เลื่อนแนวนอน) · ปุ่มการ์ดสถานะ IP เรียงเท่ากัน · NAT box ไม่ล้น — เทสต์ 360/768/1920 ผ่าน
+
+### ปรับปรุง
+
+- **กด exe เปล่า ๆ = เทียบเท่า service ครบจบ**: Web UI + DDNS loop + Cloudflare Tunnel + Telegram (ปิดด้วย Ctrl+C หยุดครบ) — จากเดิมเปิดแค่หน้าเว็บรอเฉย ๆ
 
 ### แก้บั๊ก (Fixes)
 
