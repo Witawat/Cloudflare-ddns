@@ -177,3 +177,49 @@ powershell -File <temp>\svc-reinstall.cmd # remove+install+start
 - ถ้าผู้ใช้ติดตั้ง service อยู่: หลัง rebuild **ต้อง reinstall/restart** ไม่งั้นผู้ใช้ยังใช้ exe เก่า (เว็บจะไม่เห็นฟีเจอร์ใหม่)
 - อัปเดต `CHANGELOG.md` เมื่อ feature/fix สำคัญ
 - **เครื่อง dev (เครื่องนี้): ห้ามติดตั้ง service** — ใช้ `build.bat` (build อย่างเดียว ไม่ต้อง admin ถ้าไม่มี service) · webui ทดสอบรันด้วย `python -m cloudflare_ddns.main webui` (ปิดด้วย Ctrl+C) — ถ้า build เจอ `PermissionError` (exe ล็อก) = มี webui/python ค้าง ต้องปิดก่อน · release แนบ exe ที่ build จากเครื่อง dev นี้ (ใช้ `build-install.bat` เฉพาะเครื่องปลายทางที่ต้องการ service)
+
+## 10. รูปแบบข้อความ release (บังคับทุกครั้ง)
+
+ข้อความ release (GitHub Release Notes) ต้องใช้รูปแบบด้านล่าง — เขียนเป็นไฟล์ .md ชั่วคราวแล้วใช้ `gh release create <tag> --notes-file`:
+
+```markdown
+## 🚀 v<เวอร์ชัน> — Cloudflare DDNS Updater
+
+**วันที่:** <dd/มม/ปปปป> · **ขนาดไฟล์:** <X.X> MB
+
+### ✨ ฟีเจอร์ใหม่
+- <สั้น 1 บรรทัด เริ่มด้วยคำสำคัญ>
+
+### 🔧 แก้บั๊ก
+- <สั้น 1 บรรทัด>
+
+### 📥 วิธีอัปเดต
+**โหมดกด exe (ใช้งานตรง):**
+```
+1. หยุดโปรแกรม (Ctrl+C) / ปิดหน้าต่าง
+2. ดาวน์โหลด cloudflare-ddns.exe ใหม่
+3. วางทับไฟล์เดิม (config/state/log อยู่ข้าง exe — ไม่หาย)
+4. เปิด exe ตามปกติ
+```
+
+**โหมด Windows Service (admin):**
+```
+cloudflare-ddns.exe stop
+cloudflare-ddns.exe remove
+(วาง exe ใหม่ทับ)
+cloudflare-ddns.exe install
+cloudflare-ddns.exe start
+```
+> หรือใช้ `build-install.bat` ครอบจบในตัวเดียว
+
+### ✅ ตรวจสอบไฟล์
+- SHA256: `<จาก gh release view ... --json assets --jq .assets[0].digest>`
+- ดูวิธีทดสอบ exe ก่อนใช้งาน: `docs/RELEASE-TEST.md`
+```
+
+**กฎ:**
+- หัวข้อสั้น เริ่มด้วย emoji (✨ ใหม่ / 🔧 แก้ / ⚠️ หมายเหตุ / 📥 วิธี / ✅ ตรวจสอบ)
+- bullet สั้น 1 บรรทัด ไม่ยัดทุกอย่าง — รายละเอียดอยู่ใน CHANGELOG.md
+- **"วิธีอัปเดต" ห้ามลืม** (ส่วนที่ผู้ใช้โหลดแล้วต้องทำต่อ) — ครอบทั้งโหมด exe และ service
+- SHA256 ดึงจาก `gh release view <tag> --json assets --jq '.assets[0].digest'`
+- exe ที่แนบ = build จาก `build.bat` (8.0 MB) — ตรวจเทสต์ release (`docs/RELEASE-TEST.md`) ผ่าน 15/15 ก่อนปล่อยทุกครั้ง
