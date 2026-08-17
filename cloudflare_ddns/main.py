@@ -285,10 +285,11 @@ def cmd_reset_password(args):
     parser.set("cloudflare", "webui_password", new_value)
     buf = io.StringIO()
     parser.write(buf)
-    ok, message = cfg.save_text(buf.getvalue())
-    if not ok:
-        print(f"✗ บันทึกไม่ได้: {message}")
+    # เขียนตรงแบบ atomic (ไม่ใช้ save_text — ต้องใช้ได้แม้ config ยังตั้งไม่ครบ)
+    if not config_mod.atomic_write_text(cfg.path, buf.getvalue()):
+        print(f"✗ เขียนไฟล์ไม่ได้: {cfg.path}")
         return 1
+    cfg.reload()
     if pw1:
         print("✓ ตั้งรหัสผ่านหน้าเว็บใหม่แล้ว (เก็บเป็น hash) — session เก่าหมดอายุ ต้อง login ใหม่")
     else:

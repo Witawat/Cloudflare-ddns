@@ -149,6 +149,22 @@ def rotate_backup(path, keep=3):
         return False
 
 
+def atomic_write_text(path, text):
+    """เขียนไฟล์ข้อความแบบ atomic (temp + os.replace) — คืน True/False.
+
+    ใช้กับงานที่ต้องเขียนได้เสมอ (เช่น กู้รหัสผ่าน) — ไม่ผ่าน validate เหมือน save_text
+    """
+    try:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(tmp, path)
+        return True
+    except OSError:
+        return False
+
+
 def password_is_hash(value):
     """ค่าเป็น hash 64 hex หรือไม่ (config เก่าที่ยังเก็บ plaintext = ไม่ใช่)"""
     value = str(value or "")

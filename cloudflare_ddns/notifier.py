@@ -246,7 +246,10 @@ def _tg_updates(token, offset, timeout=10):
 
 
 def _apply_webui_password(cfg, config_path, new_pw):
-    """เขียน webui_password (hash) ใหม่ลง config — ใช้ save_text (validate + backup + atomic)"""
+    """เขียน webui_password (hash) ใหม่ลง config — atomic + ใช้ได้แม้ config ยังตั้งไม่ครบ.
+
+    ตรวจรูปแบบ ini ก่อน (parse ได้) แล้วเขียนตรง (ไม่ใช้ save_text เพราะ validate เต็มจะกีดกัน)
+    """
     import configparser
     import io
 
@@ -265,7 +268,10 @@ def _apply_webui_password(cfg, config_path, new_pw):
     )
     buf = io.StringIO()
     parser.write(buf)
-    return cfg.save_text(buf.getvalue())
+    if not config_mod.atomic_write_text(config_path, buf.getvalue()):
+        return False, "เขียนไฟล์ไม่ได้"
+    cfg.reload()
+    return True, "บันทึกสำเร็จ"
 
 
 def check_telegram_reset(cfg, config_path=""):

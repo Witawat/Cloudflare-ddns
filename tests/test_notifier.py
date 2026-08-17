@@ -70,6 +70,14 @@ class ApplyWebuiPasswordTest(unittest.TestCase):
             config_mod.password_hash("new-secret", self.path) == self.cfg.webui_password
         )
 
+    def test_writes_hash_even_when_config_incomplete(self):
+        # config ไม่ครบ (ไม่มี record) — กู้รหัสต้องใช้ได้เสมอ
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write("[cloudflare]\napi_token = test\n")
+        ok, message = notifier._apply_webui_password(self.cfg, self.path, "new-secret")
+        self.assertTrue(ok, message)
+        self.assertTrue(config_mod.password_is_hash(self.cfg.webui_password))
+
     def test_rejects_broken_config(self):
         with open(self.path, "w", encoding="utf-8") as handle:
             handle.write("[broken\nnope")
