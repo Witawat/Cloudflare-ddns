@@ -73,6 +73,26 @@ python -c "..."   # เรียก Cloudflare API ดู record (หรือ�
 Select-String -Path D:\CFDDNS-Release-Test\logs\cloudflare-ddns.log -Pattern "Telegram สำเร็จ"
 ```
 
+## เทสต์ความปลอดภัย (ตั้งแต่ v1.8.0)
+
+```powershell
+# 1) ตั้งรหัสผ่านผ่านฟอร์ม (หรือแก้ config: webui_password = <ค่าใหม่>) → ตรวจว่าเป็น hash 64 ตัวในไฟล์
+Get-Content D:\CFDDNS-Release-Test\config.ini          # webui_password = <64 hex> ไม่ใช่รหัสจริง
+
+# 2) login ผิด 5 ครั้ง → ครั้งที่ 6 ต้องโดน 429 (ล็อก 5 นาที)
+curl -s -X POST http://127.0.0.1:8123/login -d "pw=wrong1" ; ... (ซ้ำ 5 ครั้ง)
+curl -s -X POST http://127.0.0.1:8123/login -d "pw=right"  # ต้อง 429
+
+# 3) กัน CSRF: POST พร้อม Origin ต่าง → 403
+curl -s -X POST http://127.0.0.1:8123/save-config -H "Origin: http://evil.example" -d "{}"
+
+# 4) header ความปลอดภัยในทุก response
+curl -s -I http://127.0.0.1:8123/   # X-Content-Type-Options: nosniff · X-Frame-Options: DENY · Referrer-Policy: no-referrer
+
+# 5) reset-password ใช้ได้แม้ config ไม่ครบ (ลบ [record] ทิ้งก่อนก็ใช้ได้)
+cloudflare-ddns.exe reset-password   # ตั้งรหัสใหม่ → ตรวจ config เป็น hash
+```
+
 ## ล้างของหลังเทสต์ (สำคัญ)
 
 ```powershell

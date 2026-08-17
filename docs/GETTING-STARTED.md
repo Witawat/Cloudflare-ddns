@@ -1,6 +1,6 @@
 # คู่มือหา API Key / Token (อัปเดตล่าสุด)
 
-> **เวอร์ชันปัจจุบัน: 1.7.12** — ดูเวอร์ชันได้ใน Web UI (แถบบน) หรือ `dist\cloudflare-ddns.exe status`
+> **เวอร์ชันปัจจุบัน: 1.7.23** — ดูเวอร์ชันได้ใน Web UI (แถบบน) หรือ `dist\cloudflare-ddns.exe status`
 >
 > **ไม่ต้องติดตั้ง Python** — ใช้ `dist\cloudflare-ddns.exe` ที่ build แล้วได้เลย (ทุกคำสั่งเหมือนโหมด Python) — ต้องการ Python เฉพาะเมื่อจะ build จากโค้ดเท่านั้น
 >
@@ -146,4 +146,5 @@ Tunnel ให้บริการผ่าน Cloudflare โดยไม่ต�
 
 - **Cloudflare token / Tunnel token** อยู่ใน `config.ini` (ในโฟลเดอร์เดียวกับ exe) — ห้ามแชร์ไฟล์นี้
 - **Bot token** เป็นกุญแจเข้า bot — ใครได้ไปสามารถส่งข้อความปลอมในนาม bot ได้ (แต่ทำอะไรกับบัญชีของคุณไม่ได้)
+- **รหัสผ่านหน้าเว็บ** เก็บเป็น hash ใน config (ไม่มีรหัสจริงหลุดในไฟล์/cookie) + กันสุ่มรหัส (ผิด 5 ครั้ง → ล็อก 5 นาที) + กัน CSRF (ตรวจ Origin) — **ลืมรหัส = กู้ได้ 3 ทาง**: (1) เปลี่ยนในฟอร์มตอน session ยังอยู่ (2) รัน `cloudflare-ddns.exe reset-password` (3) กู้ผ่าน Telegram (เปิด `telegram_allow_reset = true` ไว้ก่อน) — ดูรายละเอียดใน [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 - รีโวค/สร้าง token ใหม่ได้ทุกเมื่อที่หน้า Cloudflare API Tokens หรือ BotFather (`/revoke`) และหน้า Zero Trust → Tunnels

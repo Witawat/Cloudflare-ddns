@@ -77,7 +77,7 @@
 
 - **tunnel รันตาม service** — เปิด `tunnel_enabled = true` ในฟอร์ม → service เริ่ม = tunnel เริ่ม (เริ่มเองตอน boot)
 - **สถานะ**: การ์ด Tunnel — ปิด/เปิดใช้งาน · cloudflared ติดตั้งไหม (เวอร์ชัน) · รันอยู่ (pid)
-- **ปุ่ม**: เริ่ม / หยุด / ดาวน์โหลด cloudflared (ถ้าหาย)
+- **ปุ่ม**: เริ่ม / หยุด / ดาวน์โหลด cloudflared (ถ้าหาย) / **เช็คอัปเดต cloudflared** (เทียบเวอร์ชัน exe กับเวอร์ชันล่าสุดจาก GitHub — cache 6 ชม.; ถ้ามีเวอร์ชันใหม่ กดดาวน์โหลดเพื่ออัปเดต)
 - **แจ้งเตือน Telegram**: เริ่ม tunnel (พร้อมรายชื่อ hostname) / หยุด / ดาวน์โหลด cloudflared — ส่งอัตโนมัติ
 - **log**: ดูในหน้าเว็บ (Log ล่าสุด) — ค้นหา `Cloudflare Tunnel` / `cloudflared`
 

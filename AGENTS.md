@@ -40,6 +40,8 @@ D:\MyCode\Cloudflare\
 2. **handlers** (`do_GET` / `do_POST`): endpoints ทั้งหมด
 3. helper: `_cfg_to_dict` / `_dict_to_ini` (แปลง config <-> JSON)
 
+> ตั้งแต่ v1.7.20+ หน้าเว็บแยกเป็นไฟล์: `webui.html` (HTML+CSS) + `webui.js` (script แยก) + `webui_login.html` (หน้า login) — PyInstaller ต้อง `--add-data` ทั้ง 3 (build.bat มีแล้ว) — แก้ JS = แก้ `webui.js` + `node --check` ตรง ๆ ไม่ต้องสกัดจาก PAGE
+
 ## 3. คำสั่ง (ใช้ `python -m cloudflare_ddns.main <cmd>` หรือ `dist\cloudflare-ddns.exe <cmd>`)
 
 | คำสั่ง | ความหมาย |
@@ -52,6 +54,7 @@ D:\MyCode\Cloudflare\
 | `status` | สถานะ service + IP + tunnel |
 | `webui` | เปิด Web UI (blocking) |
 | `notify-test` | ส่งข้อความทดสอบ Telegram |
+| `reset-password` | ตั้ง/ลบรหัสผ่านหน้าเว็บใหม่ (เขียน hash ตรง — ใช้ได้แม้ config ไม่ครบ) |
 | (ไม่มี args) | เปิด Web UI + browser อัตโนมัติ |
 | `run-service` | internal — SCM เรียก (ห้ามรันเองนอกจากเทสต์) |
 
@@ -77,8 +80,10 @@ POST /notify-test / notify-test-raw
 POST /port-scan          สแกนพอร์ต (จำกัดเฉพาะ host ใน config เท่านั้น!)
 POST /notify-queue/flush|clear
 POST /tunnel/test|start|stop|download|bind|hostnames|unbind|sync|zones
+POST /tunnel/update-check  เช็ค cloudflared ล่าสุดจาก GitHub (cache 6 ชม.)
 POST /service/install|start|stop|restart|uninstall   ควบคุม Windows Service (ต้อง admin; stop/install/uninstall ปฏิเสธเมื่อรันใน service เอง)
 POST /ddns-run           รันรอบ DDNS ทันที (thread + กันซ้ำ busy)
+POST /heartbeat-test     ทดสอบส่ง heartbeat ทันที (ไม่โดน rate limit รอบ)
 POST /open-data-folder   เปิดโฟลเดอร์ข้อมูล (os.startfile)
 ```
 
@@ -108,8 +113,14 @@ POST /open-data-folder   เปิดโฟลเดอร์ข้อมูล 
 
 ### ความปลอดภัย / สถิติ
 - **login กันสุ่มรหัส**: ผิด 5 ครั้งติด → ล็อก 5 นาที (`_login_guard` ในหน่วยความจำ) — **เทสต์ login ระวัง!** กดผิด 5 ครั้งจะล็อกตัวเอง — ปลดได้โดย restart service หรือเซ็ต `_login_guard["locked_until"] = 0`
-- `api_stats` (จำนวนเรียก Cloudflare API / error / 429) นับในหน่วยความจำของ `cloudflare_api.py` — **เริ่มใหม่ทุกครั้งที่ service restart** (ไม่ใช่สะสมข้าม restart) — อย่าทำเป็น "ยอดรวมตลอดกาล"
+- **webui_password เก็บเป็น hash** (`config.password_hash()` = sha256 + salt จาก path config — 64 hex) — `_authed()`/`/login` รองรับทั้ง hash และ plaintext เก่า (ช่วง migrate) — `/login` ต้องยอมรับ hash ตรงด้วย (webui.js re-login ส่งค่าจากฟอร์มซึ่งอาจเป็น hash) — `_dict_to_ini` hash ค่าที่ไม่ใช่ hash เอง (ส่ง config_path ด้วย!)
+- **กัน CSRF**: ทุก POST ยกเว้น `/login` ตรวจ Origin (`_origin_allowed()`) — ไม่มี Origin (CLI/curl) ผ่าน, Origin ไม่ตรงกับ Host → 403 — endpoint ใหม่ที่ต้อง login วางหลัง `if not self._authed()` เสมอ
+- **เขียน config งานกู้คืน (reset-password / Telegram reset / migrate hash) ต้องใช้ `config_mod.atomic_write_text()`** — `save_text()` validate config เต็มจะบล็อก (ลืมรหัส + config ไม่ครบ = กู้ไม่ได้!) — อย่าลืม `cfg.reload()` หลังเขียน
+- **`api_stats`** (จำนวนเรียก Cloudflare API / error / 429) นับในหน่วยความจำของ `cloudflare_api.py` — **เริ่มใหม่ทุกครั้งที่ service restart** (ไม่ใช่สะสมข้าม restart) — อย่าทำเป็น "ยอดรวมตลอดกาล"
 - `record_errors` ใน state: จด error ล่าสุดต่อ record (key `fqdn|TYPE`) — ลบเมื่อสำเร็จ/ปิด family/ลบ record (cleanup ท้าย `run_once`) — dry-run ห้ามแตะ
+- Telegram reset (`notifier.check_telegram_reset`): opt-in `telegram_allow_reset = false` — ฟังเฉพาะ `telegram_chat_id`, 2 ขั้น "reset password"→"yes" ภายใน 10 นาที, cooldown 600 วิ (`_last_reset_time`), offset กันรับซ้ำ (`_updates_offset`) — เรียกทุก loop ใน `run_forever` (ไม่ dry-run) — ฟิลด์ config ต้องเพิ่มใน `__init__`/`reload()`/**ทั้ง 2 จุด parse** + `_cfg_to_dict`/`_dict_to_ini` + `webui.html`/`webui.js` + `config.example.ini`
+- `ip_consensus`: ต้อง ≥2 provider เห็น IP เดียวกัน (`get_public_ip(consensus=2)`) — ส่งต่อใน `_sync_family` — ปิด default
+- state/queue `.bak`: `config_mod.rotate_backup(path, keep=3)` ก่อนเขียน **เฉพาะเนื้อหาเปลี่ยน** (เทียบข้อความเดิมก่อนเขียน)
 - `/update-check` เรียก GitHub API — cache 6 ชม. (`_update_cache`) — อย่าเรียกถี่ (rate limit 60/ชม. ไม่มี token)
 
 ### Service
@@ -117,6 +128,7 @@ POST /open-data-folder   เปิดโฟลเดอร์ข้อมูล 
 - **ห้ามบล็อก SvcDoRun นาน** (SCM timeout 30 วิ) — tunnel start ต้อง async thread (เคย crash 1053)
 - `run_forever` ครอบ try/except ทั้ง loop — ห้ามปล่อย exception หลุด (service ตายเงียบ)
 - หยุด service ไว: `stop_event.wait(min(interval, 5))`
+- `install_service()` ตั้ง auto-restart ด้วย `_configure_failure_actions()` (`ChangeServiceConfig2(SERVICE_CONFIG_FAILURE_ACTIONS)`: restart 5/30 วิ, reset 86400) — ติดตั้งใหม่แล้วถอนได้เฉพาะตอน reinstall
 
 ### build / deploy
 - **build.bat จะหยุด service → build → เริ่มใหม่เอง** (อย่า build ขณะ service รันด้วยมือ — exe ถูกล็อก PermissionError)
@@ -139,7 +151,7 @@ POST /open-data-folder   เปิดโฟลเดอร์ข้อมูล 
 
 - **ห้าม dependency ใหม่** — ใช้ urllib/socket/http.server/configparser เท่านั้น (+ pywin32 สำหรับ service)
 - ข้อความไทยทั้งหมด: UI, log, error — `sys.stdout.reconfigure(encoding="utf-8")` ที่ entry (Windows console)
-- Config ใหม่: เพิ่ม field ใน `config.py` **ทั้ง 2 จุด** (`__init__`/`reload()` และ `_load_from_parser()`) + `_cfg_to_dict`/`_dict_to_ini` ใน webui + `config.example.ini` + validate
+- Config ใหม่: เพิ่ม field ใน `config.py` **ทั้ง 3 จุด** (`__init__` ค่า default + `reload()` + `_load_from_parser()` อ่านจาก section) + `_cfg_to_dict`/`_dict_to_ini` ใน webui + `config.example.ini` + validate
 - validate config ก่อนบันทึกเสมอ (`Config.validate()` → `save_text` ใช้ validate กันเขียนไฟล์เสีย)
 - Cloudflare API: จับ `CloudflareRateLimit` (429) แยกจาก `CloudflareError` — rate limit → ข้ามรอบไม่ retry
 - tunnel token = JWT: `_decode_tunnel_token()` แยก `a` (account) / `t` (tunnel) จาก payload

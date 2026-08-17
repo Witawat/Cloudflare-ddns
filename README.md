@@ -14,6 +14,8 @@
 | **แจ้งเตือน Telegram** | ทุกข้อความระบุชื่อเครื่อง + เวลา · IP เปลี่ยนรวมเป็นข้อความเดียว · tunnel เริ่ม/หยุด/ดาวน์โหลด · กันสแปม error 10 นาที · สรุปทุกรอบ (ไม่บังคับ) + สรุปรายวัน — คิว retry + จัดการในเว็บ |
 | **Heartbeat monitoring** | ส่งสัญญาณ "ยังทำงาน" ทุกรอบให้ Healthchecks.io / Uptime Kuma — รู้ว่าเครื่อง/โปรแกรมตายจากนอกบ้าน (รอบมีปัญหา = สัญญาณ fail) |
 | **กัน Cloudflare anycast IP** | ตรวจว่า IP ที่ตรวจได้ไม่อยู่ในช่วงของ Cloudflare เองก่อนเขียน record (กัน record ชี้ผิดทั้งบ้าน) |
+| **ตรวจฉันทามติ IP** | เลือกได้ว่าให้อัปเดตเฉพาะเมื่อ provider ตรวจ IP ≥ 2 รายเห็น IP เดียวกัน (กัน provider ตอบผิด/ล้าสมัย) |
+| **ความปลอดภัย Web UI** | รหัสผ่านหน้าเว็บเก็บเป็น **hash** (ไม่มีรหัสจริงใน config/cookie) + กันสุ่มรหัส (5 ครั้ง → ล็อก) + กัน CSRF (ตรวจ Origin) + security headers — **กู้รหัสได้ 3 ทาง** (ฟอร์ม / `reset-password` / Telegram opt-in) |
 | **Cloudflare Tunnel** | เปิด cloudflared ตาม service, wizard 4 ขั้น, ผูก hostname อัตโนมัติ (ตั้ง DNS + config ให้) — ดู/**แก้ไข**/ลบ hostname ได้ในเว็บ + คู่มือละเอียด ([docs/TUNNEL.md](docs/TUNNEL.md)) |
 | **ตรวจ NAT** | รู้ว่า IP อยู่หลัง CGNAT หรือไม่ (STUN) — เตือนถ้า DDNS ใช้ไม่ได้ |
 | **EXE ไฟล์เดียว** | build ด้วย PyInstaller — ไม่ต้องติดตั้ง Python |
@@ -49,7 +51,7 @@ install.bat                   REM ติดตั้ง service (ใช้ exe �
 ```
 
 - เอา exe ไปวางโฟลเดอร์ไหนก็ได้ — config.ini, log, state, คิวแจ้งเตือน **อยู่ข้าง exe ทั้งหมด** (ย้าย exe = ย้ายทั้งชุด)
-- ทุกคำสั่งเหมือนโหมด Python: `setup / run / dry-run / install / start / stop / restart / remove / status / webui / notify-test`
+- ทุกคำสั่งเหมือนโหมด Python: `setup / run / dry-run / install / start / stop / restart / remove / status / webui / notify-test / reset-password`
 
 ## คำสั่งทั้งหมด
 
@@ -63,6 +65,7 @@ install.bat                   REM ติดตั้ง service (ใช้ exe �
 | `... status` | สถานะ service + IP ล่าสุด + tunnel |
 | `... webui` | เปิด Web UI ที่ http://127.0.0.1:8123 |
 | `... notify-test` | ส่งข้อความทดสอบ Telegram |
+| `... reset-password` | ตั้ง/ลบรหัสผ่านหน้าเว็บใหม่ (ใช้เมื่อลืมรหัส — ใช้ได้แม้ config ไม่ครบ) |
 
 `install.bat` / `uninstall.bat` ครอบคำสั่ง install/remove (ขอสิทธิ์ admin ให้อัตโนมัติ)
 

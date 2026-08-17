@@ -17,11 +17,12 @@
 - **ปุ่มทดสอบ heartbeat** ในฟอร์มตั้งค่า (ส่ง ping ทันที ไม่รอรอบ)
 - **ปุ่มเช็คอัปเดต cloudflared** (เทียบเวอร์ชัน exe กับ GitHub releases — cache 6 ชม.)
 - **ดาวน์โหลด/นำเข้า config.ini** จากหน้าเว็บ (สำรองข้อมูล/ย้ายเครื่อง — นำเข้าตรวจสอบก่อนเขียน)
-- **unit tests 51 ตัว** (`tests/` — unittest stdlib: config/ip_detect/notifier/ddns/ความปลอดภัยเว็บ) — รัน `python -m unittest discover -s tests -v`
+- **unit tests 62 ตัว** (`tests/` — unittest stdlib: config/ip_detect/notifier/ddns/main/ความปลอดภัยเว็บ) — รัน `python -m unittest discover -s tests -v`
 
 ### แก้บั๊ก (Fixes)
 
 - **login รับเฉพาะรหัสจริง**: เดิม session cookie เทียบกับรหัสจริงใน config — หลังเก็บ hash โค้ดทุกจุด (login/authed/migrate) รองรับทั้ง config ใหม่ (hash) และ config เก่า (plaintext) ชั่วคราว
+- **กู้รหัสผ่านใช้ได้แม้ config ยังตั้งไม่ครบ**: เดิม `reset-password`/Telegram reset/migrate hash เขียนผ่าน `save_text` ซึ่ง validate config เต็มก่อนเขียน — ลืมรหัส + config ไม่สมบูรณ์ (เช่น token ว่าง) = กู้ไม่ได้ — ตอนนี้เขียนแบบ atomic ตรง (`atomic_write_text`) ยังตรวจรูปแบบ ini ก่อนเขียน
 
 ## [1.7.19] — 2026-08-16
 

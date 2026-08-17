@@ -116,7 +116,7 @@ python -m cloudflare_ddns.main setup
 
 ### 4.5 Cloudflare Tunnel
 - สถานะ: เปิดใช้งานไหม / cloudflared ติดตั้งไหม / รันอยู่ (pid)
-- ปุ่ม: **ตั้งค่า Tunnel (wizard)** / ดู hostname ที่ผูกแล้ว (ตาราง + ลบ) / เริ่ม / หยุด / ดาวน์โหลด cloudflared
+- ปุ่ม: **ตั้งค่า Tunnel (wizard)** / ดู hostname ที่ผูกแล้ว (ตาราง + ลบ) / เริ่ม / หยุด / ดาวน์โหลด cloudflared / **เช็คอัปเดต cloudflared** (เทียบ exe ที่ติดตั้งกับเวอร์ชันล่าสุดจาก GitHub — cache 6 ชม.)
 - **ข้อควรรู้** (คลิกขยาย)
 
 ### 4.5 สแกนพอร์ต
@@ -131,7 +131,8 @@ python -m cloudflare_ddns.main setup
 
 ### 4.8 ตั้งค่า
 - สลับโหมด: **แบบฟอร์ม** | **แก้ไขไฟล์โดยตรง**
-- ฟอร์ม: API token / interval / IPv4-6 / **กัน IP ของ Cloudflare (anycast)** / **Heartbeat (Healthchecks.io + Uptime Kuma URL)** / รหัสผ่านหน้าเว็บ + พอร์ต + **host ที่เปิด (webui_host)** / ที่เก็บ log / Telegram (token, chat id, 6 เหตุการณ์รวม "สรุปทุกรอบ", สรุปรายวัน+เวลา) / Tunnel (เปิดอัตโนมัติ, token แบบช่องยาวเห็นเต็ม, ที่อยู่ cloudflared) / DNS records (เพิ่ม-ลบ-แก้ทีละแถว: ชื่อ, zone, proxy, TTL, 4/6)
+- ฟอร์ม: API token / interval / IPv4-6 / **ตรวจฉันทามติ IP (≥2 provider เห็นตรงกัน)** / **กัน IP ของ Cloudflare (anycast)** / **Heartbeat (Healthchecks.io + Uptime Kuma URL + ปุ่มทดสอบส่งทันที)** / รหัสผ่านหน้าเว็บ + พอร์ต + **host ที่เปิด (webui_host)** / ที่เก็บ log / Telegram (token, chat id, 6 เหตุการณ์รวม "สรุปทุกรอบ", สรุปรายวัน+เวลา, **กู้รหัสผ่านหน้าเว็บผ่าน Telegram**) / Tunnel (เปิดอัตโนมัติ, token แบบช่องยาวเห็นเต็ม, ที่อยู่ cloudflared, **เช็คอัปเดต**) / DNS records (เพิ่ม-ลบ-แก้ทีละแถว: ชื่อ, zone, proxy, TTL, 4/6)
+- **ดาวน์โหลด config** — เก็บ config.ini เป็นไฟล์สำรอง (รหัสผ่านในไฟล์เป็น hash อยู่แล้ว) · **นำเข้า config** — เลือกไฟล์ config.ini (ตรวจสอบก่อนเขียน) แล้วหน้าเว็บ reload
 - โหมดไฟล์: แก้ config.ini ทั้งไฟล์ (ตรวจ syntax/ค่าก่อนบันทึก)
 - **บันทึกแล้ว** → backup อัตโนมัติ (`config.ini.bak` หมุน 5) + มีผลในรอบถัดไป (ไม่ต้อง restart) — เปลี่ยนพอร์ต/รหัสผ่าน → แจ้งเตือน + เข้าสู่ระบบใหม่ให้อัตโนมัติ
 
@@ -226,21 +227,26 @@ ipv4 / ipv6 = true/false
 
 - **ทุก interval**: อ่าน config ใหม่ → ตรวจ IP (IPv4+IPv6 ขนาน, หลาย provider) → เทียบ cache (state.json) → ถ้าเปลี่ยน: เทียบ record ใน Cloudflare → PATCH/สร้าง + บันทึกประวัติ + แจ้งเตือน
 - **ประหยัด quota**: แคช zone id ข้ามรอบ, ข้ามเมื่อ IP เท่าเดิม, โดน 429 → ข้ามรอบ
+- **ตรวจฉันทามติ IP** (`ip_consensus`): ต้องมี provider ≥2 รายเห็น IP ตัวเดียวกัน ถึงจะอัปเดต (กัน provider ตอบผิด/ล้าสมัย — ปิด default)
 - **NAT**: ตอนเริ่ม loop ตรวจ STUN ครั้งเดียว — CGNAT/private → เตือน
-- **Service**: webui เปิดใน thread เดียวกับ loop; หยุด service ภายใน ~5 วิ; tunnel หยุดพร้อมกัน
+- **Service**: webui เปิดใน thread เดียวกับ loop; หยุด service ภายใน ~5 วิ; tunnel หยุดพร้อมกัน; ติดตั้ง service ตั้ง auto-restart ให้ (crash → เริ่มใหม่ 5/30 วิ)
 - **Dry-run**: ตรวจอย่างเดียว ไม่แตะ state/record
+- **State/คิว**: เขียนแบบ atomic (temp + rename) + backup `.bak` หมุน 3 เฉพาะเมื่อเนื้อหาเปลี่ยน — กันไฟล์เสีย/สำรองกู้คืน
+- **Telegram กู้รหัสผ่าน** (opt-in): ทุกรอบ loop ฟัง getUpdates — "reset password" → "yes" → สุ่มรหัสใหม่ส่งกลับ (เฉพาะ chat_id ที่ตั้ง, กัน 1 ครั้ง/10 นาที)
 
 ## 9. อัปเดต/ย้ายเครื่อง
 
-1. **ย้ายเครื่อง/โฟลเดอร์**: คัดลอกทั้งโฟลเดอร์ (exe + config.ini + state.json + logs) ไปที่ใหม่ → `install.bat` (ถ้าเป็นเครื่องใหม่)
+1. **ย้ายเครื่อง/โฟลเดอร์**: คัดลอกทั้งโฟลเดอร์ (exe + config.ini + state.json + logs) ไปที่ใหม่ → `install.bat` (ถ้าเป็นเครื่องใหม่) — หรือดาวน์โหลด/นำเข้า config.ini จากหน้าเว็บก็ได้
 2. **อัปเดตโค้ด**: pull/build ใหม่ → หยุด service → แทนที่ exe → start
 3. **หลังย้าย**: เปิดเว็บตรวจสถานะ — ประวัติ/IP เดิมยังอยู่ (state.json ติดตามไป)
 
 ## 10. ความปลอดภัย
 
 - **Web UI เปิดเฉพาะเครื่องตัวเอง** (`127.0.0.1`) เป็นค่าเริ่มต้น — ตั้ง `webui_host = 0.0.0.0` + ตั้ง `webui_password` + เปิดพอร์ต firewall ได้ถ้าต้องการเข้าจากเครื่องอื่นใน LAN (ดู TROUBLESHOOTING)
-- **รหัสผ่านหน้าเว็บ** (`webui_password`): ตั้งในฟอร์ม — ใครได้รหัสสามารถแก้ config/ควบคุม service ได้ อย่าแชร์
+- **รหัสผ่านหน้าเว็บ** (`webui_password`): ตั้งในฟอร์ม — **เก็บเป็น hash** (sha256 + salt จากตำแหน่ง config) ไม่มีรหัสจริงใน config.ini/cookie — ใครได้รหัสสามารถแก้ config/ควบคุม service ได้ อย่าแชร์
+- **กู้รหัสผ่าน 3 ทาง**: (1) เปลี่ยนในฟอร์มตอน session ยังอยู่ (2) `cloudflare-ddns.exe reset-password` (ตั้งใหม่/ลบรหัส — ใช้ได้แม้ config ไม่ครบ) (3) กู้ผ่าน Telegram (`telegram_allow_reset = true` — "reset password" → "yes" → รหัสใหม่ 12 ตัวส่งกลับ) — รายละเอียดใน TROUBLESHOOTING
 - **กันสุ่มรหัสผ่าน**: ผิด 5 ครั้งติดต่อกัน → ล็อกชั่วคราว 5 นาที (ตอบ HTTP 429) + log เตือน — นับในหน่วยความจำ (restart service = ปลดล็อกทันที)
+- **กัน CSRF**: POST ทุกตัว (ยกเว้น /login) ตรวจ Origin — คำขอจากเว็บอื่นถูกบล็อก 403 + response header ความปลอดภัย (`nosniff`/`X-Frame-Options: DENY`/`no-referrer`) + cookie `SameSite=Lax`
 - **สิทธิ์ admin**: ปุ่มควบคุม service (ติดตั้ง/เริ่ม/หยุด/ถอน) ต้องเปิด webui ด้วย admin — ถ้ารันใน service เอง ปุ่มที่ทำไม่ได้จะปิดอัตโนมัติ (Restart ใช้ได้เสมอ — ทำผ่าน sc.exe แยก process)
 - **สถิติ Cloudflare API** (การ์ดสถานะ IP): เรียกทั้งหมด / error / โดน rate limit — ใช้ดูว่าใกล้โควตา (~1200 req/hr) หรือไม่
 - **Token ต่าง ๆ** (Cloudflare API / Tunnel / Telegram bot) เก็บใน `config.ini` ข้าง exe — ห้ามแชร์ไฟล์นี้; รีโวคได้ทุกเมื่อที่หน้า API Tokens / BotFather / Zero Trust
