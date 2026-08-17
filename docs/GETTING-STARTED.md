@@ -1,6 +1,6 @@
 # คู่มือหา API Key / Token (อัปเดตล่าสุด)
 
-> **เวอร์ชันปัจจุบัน: 1.7.23** — ดูเวอร์ชันได้ใน Web UI (แถบบน) หรือ `dist\cloudflare-ddns.exe status`
+> **เวอร์ชันปัจจุบัน: 1.8.0** — ดูเวอร์ชันได้ใน Web UI (แถบบน) หรือ `dist\cloudflare-ddns.exe status`
 >
 > **ไม่ต้องติดตั้ง Python** — ใช้ `dist\cloudflare-ddns.exe` ที่ build แล้วได้เลย (ทุกคำสั่งเหมือนโหมด Python) — ต้องการ Python เฉพาะเมื่อจะ build จากโค้ดเท่านั้น
 >

@@ -2,7 +2,7 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
-## [ยังไม่ release]
+## [1.8.0] — 2026-08-17
 
 ### เพิ่ม (Features)
 
