@@ -274,12 +274,158 @@ def _apply_webui_password(cfg, config_path, new_pw):
     return True, "บันทึกสำเร็จ"
 
 
-def check_telegram_reset(cfg, config_path=""):
-    """ฟังคำสั่งกู้รหัสผ่านหน้าเว็บจาก Telegram — เฉพาะ chat_id ที่ตั้งไว้เท่านั้น.
+# ---- คำสั่ง Telegram (เปิดด้วย telegram_allow_reset = true — เฉพาะ chat_id ที่ตั้งไว้) ----
 
-    - เปิดด้วย telegram_allow_reset = true ใน config
-    - พิมพ์ 'reset password' -> ตอบ 'yes' -> สุ่มรหัสใหม่ 12 ตัว ส่งกลับทาง Telegram
-    - กันสแปม: reset ได้ 1 ครั้ง/10 นาที + log ทุกครั้ง + ข้อความจาก chat อื่นถูกละเลย
+TG_HELP_TEXT = (
+    "รายการคำสั่ง (พิมพ์ในแชทนี้):\n"
+    "/status — สถานะ DDNS (IP/record/รอบล่าสุด)\n"
+    "/ip — IP สาธารณะปัจจุบัน\n"
+    "/run — รันรอบ DDNS ทันที\n"
+    "/update — เช็คเวอร์ชันใหม่\n"
+    "/tunnel [start|stop] — สถานะ/ควบคุม tunnel\n"
+    "/log — log 30 บรรทัดสุดท้าย\n"
+    "/restart /start /stop — ควบคุม Windows Service\n"
+    "reset password → yes — กู้รหัสผ่านหน้าเว็บ"
+)
+
+
+def _tg_status_text(config_path):
+    """ข้อความสถานะสำหรับ /status"""
+    from . import ddns
+
+    lines = []
+    try:
+        st = ddns.DDNSEngine(config_path).status()
+        records = st.get("records", {})
+        if records:
+            for key, ip in records.items():
+                lines.append("• {}: {}".format(key, ip))
+        else:
+            lines.append("• ยังไม่มีข้อมูล record (รอรอบแรก)")
+        lines.append("รอบล่าสุด: {}".format(st.get("last_run") or "—"))
+        for key, err in list(st.get("record_errors", {}).items())[:3]:
+            lines.append("⚠ {}: {}".format(key, str(err)[:80]))
+    except Exception as exc:
+        lines.append("อ่านสถานะไม่ได้: {}".format(exc))
+    return "\n".join(lines)
+
+
+def _tg_ip_text():
+    """IP สาธารณะสำหรับ /ip"""
+    from . import ip_detect
+
+    parts = []
+    for family in (4, 6):
+        try:
+            ip = ip_detect.get_public_ip(family, timeout=6)
+            parts.append("IPv{}: {}".format(family, ip or "หาไม่ได้"))
+        except Exception:
+            parts.append("IPv{}: error".format(family))
+    return "IP สาธารณะ: " + " · ".join(parts)
+
+
+def _tg_update_text():
+    """เช็คเวอร์ชันใหม่สำหรับ /update"""
+    try:
+        from . import webui as webui_mod
+
+        data = webui_mod._update_check_data()
+        if not data.get("ok"):
+            return "เช็คเวอร์ชันไม่ได้: " + (data.get("message") or "ลองใหม่ภายหลัง")
+        if data.get("has_update"):
+            return "มีเวอร์ชันใหม่ v{} (ปัจจุบัน v{}) — {}".format(
+                data["latest"], webui_mod.__version__, data.get("url")
+            )
+        return "ใช้เวอร์ชันล่าสุดแล้ว (v{})".format(webui_mod.__version__)
+    except Exception as exc:
+        return "เช็คเวอร์ชันไม่ได้: {}".format(exc)
+
+
+def _tg_run_now(cfg, config_path, reply):
+    """รันรอบ DDNS ทันที (thread แยก — กันบล็อก loop) แล้วตอบผลสรุป"""
+    from . import ddns
+
+    def work():
+        try:
+            summary = ddns.DDNSEngine(config_path, dry_run=False).run_once()
+            if not summary:
+                reply("ตรวจเสร็จ: ทุก record ตรง ไม่มีการเปลี่ยน")
+                return
+            changed = sum(1 for e in summary if e.get("action") in ("updated", "created"))
+            problems = sum(1 for e in summary if e.get("action") in ("error", "no-ip", "skip"))
+            lines = ["ตรวจ {} รายการ · เปลี่ยน {} · มีปัญหา {}".format(len(summary), changed, problems)]
+            for e in summary[:8]:
+                lines.append("• {}: {}".format(e.get("record") or "-", e.get("message") or e.get("action")))
+            reply("\n".join(lines))
+        except Exception as exc:
+            reply("รันรอบไม่ได้: {}".format(exc))
+
+    threading.Thread(target=work, daemon=True).start()
+    reply("กำลังรันรอบ DDNS — ผลจะตามมาในไม่กี่วิ")
+
+
+def _tg_tunnel_text(cfg, action):
+    """สถานะ/ควบคุม tunnel สำหรับ /tunnel [start|stop]"""
+    try:
+        from . import tunnel as tunnel_mod
+
+        mgr = tunnel_mod.TunnelManager(config_path=cfg.path)
+        if action == "start":
+            return "เริ่ม tunnel: " + mgr.start(cfg)
+        if action == "stop":
+            return "หยุด tunnel: " + mgr.stop()
+        st = mgr.status(cfg)
+        return "Tunnel: {} · cloudflared {} · รันอยู่: {}".format(
+            "เปิด" if st.get("enabled") else "ปิด",
+            st.get("version") or "ยังไม่ติดตั้ง",
+            "ใช่" if st.get("running") else "ไม่",
+        )
+    except Exception as exc:
+        return "tunnel: {}".format(exc)
+
+
+def _tg_service_action(action):
+    """ควบคุม Windows Service สำหรับ /restart /start /stop"""
+    try:
+        from . import service as service_mod
+        from .webui import _in_service
+
+        if _in_service():
+            if action == "stop":
+                return "รันใน service เอง — หยุดตัวเองไม่ได้ (ใช้ /restart ได้)"
+            if action == "start":
+                return "service กำลังรันอยู่แล้ว"
+        if action == "restart":
+            return service_mod.restart_service()
+        if action == "stop":
+            return service_mod.stop_service()
+        return service_mod.start_service()
+    except Exception as exc:
+        return "ทำไม่ได้: {}".format(exc)
+
+
+def _tg_log_tail(cfg, limit=30):
+    """log 30 บรรทัดสุดท้ายสำหรับ /log"""
+    import os
+
+    log_path = os.path.join(cfg.log_dir, "cloudflare-ddns.log")
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as handle:
+            tail = "".join(handle.readlines()[-limit:])
+        if len(tail) > 3500:
+            tail = "…" + tail[-3500:]
+        return tail or "(log ว่าง)"
+    except OSError as exc:
+        return "อ่าน log ไม่ได้: {}".format(exc)
+
+
+def check_telegram_commands(cfg, config_path=""):
+    """ฟังคำสั่งจาก Telegram — เฉพาะ chat_id ที่ตั้งไว้เท่านั้น (log ทุกคำสั่ง).
+
+    - เปิดด้วย telegram_allow_reset = true ใน config (ฟอร์ม: "ควบคุม/กู้รหัสผ่านผ่าน Telegram")
+    - คำสั่ง: /status /ip /run /update /tunnel /log /restart /start /stop /help
+    - กู้รหัสผ่าน: 'reset password' -> ตอบ 'yes' -> สุ่มรหัสใหม่ 12 ตัว ส่งกลับ (กัน 1 ครั้ง/10 นาที)
+    - ข้อความจาก chat อื่นถูกละเลย (ไม่ตอบ ไม่ log)
     """
     import secrets
 
@@ -299,7 +445,7 @@ def check_telegram_reset(cfg, config_path=""):
     def reply(text):
         ok, error = notify.send_raw(text)
         if not ok:
-            log.warning("telegram reset: ส่งข้อความตอบไม่ได้: %s", error)
+            log.warning("telegram command: ส่งข้อความตอบไม่ได้: %s", error)
 
     for update in updates:
         msg = update.get("message") or {}
@@ -307,12 +453,18 @@ def check_telegram_reset(cfg, config_path=""):
         if str(chat.get("id", "")) != str(cfg.telegram_chat_id):
             continue  # ข้อความจาก chat อื่น — ไม่ตอบ ไม่ log
         text = str(msg.get("text", "")).strip()
-        if text.lower() == "reset password":
+        if not text:
+            continue
+        lower = text.lower()
+        log.info("Telegram: คำสั่งจาก chat_id=%s: %r", chat.get("id"), text[:60])
+
+        # กู้รหัสผ่านหน้าเว็บ (2 ขั้น)
+        if lower == "reset password":
             _reset_state["awaiting_confirm"] = True
             _reset_state["last_ask"] = time.time()
-            log.warning("Telegram: รับคำสั่ง 'reset password' — กำลังรอยืนยัน")
             reply("รหัสผ่านหน้าเว็บจะถูกสุ่มใหม่ — พิมพ์ 'yes' เพื่อยืนยัน (ภายใน 10 นาที)")
-        elif text.lower() == "yes" and _reset_state["awaiting_confirm"]:
+            continue
+        if lower == "yes" and _reset_state["awaiting_confirm"]:
             _reset_state["awaiting_confirm"] = False
             if time.time() - _reset_state["last_ask"] > 600:
                 log.warning("Telegram: คำสั่ง reset หมดเวลา (เกิน 10 นาที)")
@@ -334,6 +486,30 @@ def check_telegram_reset(cfg, config_path=""):
             else:
                 log.warning("Telegram: reset รหัสผ่านไม่สำเร็จ: %s", message)
                 reply("reset ไม่สำเร็จ: {}".format(message))
+            continue
+
+        # คำสั่งควบคุม (ต้องมาจาก chat_id ที่ตั้งไว้เท่านั้น — กรองไว้แล้วด้านบน)
+        cmd = lower.split()[0]
+        if cmd == "/help":
+            reply(TG_HELP_TEXT)
+        elif cmd == "/status":
+            reply(_tg_status_text(config_path))
+        elif cmd == "/ip":
+            reply(_tg_ip_text())
+        elif cmd == "/run":
+            _tg_run_now(cfg, config_path, reply)
+        elif cmd == "/update":
+            reply(_tg_update_text())
+        elif cmd == "/tunnel":
+            parts = lower.split()
+            action = parts[1] if len(parts) > 1 else ""
+            reply(_tg_tunnel_text(cfg, action))
+        elif cmd in ("/restart", "/start", "/stop"):
+            reply(_tg_service_action(cmd[1:]))
+        elif cmd == "/log":
+            reply(_tg_log_tail(cfg))
+        else:
+            log.info("Telegram: คำสั่งไม่รู้จัก: %r", text[:60])
 
 
 def _tg_api(bot_token, method, timeout=10):

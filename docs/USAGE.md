@@ -163,6 +163,22 @@ python -m cloudflare_ddns.main setup
 - wizard หรือฟอร์ม: วาง bot token (จาก @BotFather) → chat_id หาให้อัตโนมัติ (เปิดแชทกับ bot + กด Start ก่อน)
 - ทดสอบ: `notify-test` หรือปุ่มในเว็บ
 
+### คำสั่งผ่าน Telegram (เปิดในฟอร์ม: "ควบคุม/กู้รหัสผ่านผ่าน Telegram" — เฉพาะ chat_id ที่ตั้งไว้)
+
+| คำสั่ง | ความหมาย |
+|---|---|
+| `/help` | รายการคำสั่ง |
+| `/status` | สถานะ DDNS (IP ต่อ record / รอบล่าสุด / error) |
+| `/ip` | IP สาธารณะปัจจุบัน (IPv4 + IPv6) |
+| `/run` | รันรอบ DDNS ทันที (ผลสรุปตามมา) |
+| `/update` | เช็คเวอร์ชันใหม่ |
+| `/tunnel` / `/tunnel start` / `/tunnel stop` | สถานะ / เริ่ม / หยุด tunnel |
+| `/log` | log 30 บรรทัดสุดท้าย |
+| `/restart` / `/start` / `/stop` | ควบคุม Windows Service (รันใน service เอง: `/stop` ใช้ไม่ได้) |
+| `reset password` → `yes` | กู้รหัสผ่านหน้าเว็บ (รหัสใหม่ 12 ตัวส่งกลับ — กัน 1 ครั้ง/10 นาที) |
+
+> เงื่อนไข: ตั้ง bot token + chat_id แล้ว · เปิด "ควบคุม/กู้รหัสผ่านผ่าน Telegram" · โปรแกรมอ่านข้อความใหม่ทุก ~1 นาที (ตามรอบ DDNS)
+
 ## 6. Cloudflare Tunnel
 
 > คู่มือละเอียด (สร้าง token / เลือกชนิด protocol / แก้ไข-ลบ / แก้ปัญหา): **[docs/TUNNEL.md](TUNNEL.md)**

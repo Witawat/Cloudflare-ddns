@@ -528,12 +528,12 @@ def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_
         interval = max(cfg.interval_seconds, config_mod.MIN_INTERVAL)
         elapsed = time.monotonic() - started
 
-        # กู้รหัสผ่านหน้าเว็บผ่าน Telegram (opt-in) — ฟังคำสั่งในแชท bot ทุกรอบ
+        # ฟังคำสั่ง Telegram (opt-in: telegram_allow_reset) — /status /run /restart ฯลฯ + กู้รหัสผ่าน
         if not dry_run:
             try:
-                notifier.check_telegram_reset(cfg, config_path)
+                notifier.check_telegram_commands(cfg, config_path)
             except Exception as exc:
-                log.debug("telegram reset: ตรวจคำสั่งไม่ได้: %s", exc)
+                log.debug("telegram commands: ตรวจคำสั่งไม่ได้: %s", exc)
 
         # เช็คเวอร์ชันใหม่เป็นระยะ (ทุก 24 ชม.) — service รันยาว ๆ ก็รู้ว่ามีรุ่นใหม่
         if not dry_run:
