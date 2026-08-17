@@ -38,6 +38,16 @@ def setup_console_logging():
         root.addHandler(handler)
 
 
+def print_banner():
+    """แสดงชื่อโปรแกรม + เวอร์ชัน + เครดิตผู้เขียน (ตอนเปิด console)"""
+    from . import __version__
+
+    print()
+    print("Cloudflare DDNS Updater  v{}".format(__version__))
+    print("ผู้พัฒนา: MAKER WITAWAT  ·  github.com/Witawat/Cloudflare-ddns")
+    print()
+
+
 def _ask(question, default=None):
     suffix = f" [{default}]" if default is not None else ""
     answer = input(f"{question}{suffix}: ").strip()
@@ -213,6 +223,7 @@ def cmd_run(args):
 
     cfg = config_mod.Config(args.config)
     setup_console_logging()
+    print_banner()
     service_mod.setup_file_logging(cfg.log_dir)
     ddns.run_forever(args.config, dry_run=False)
 
@@ -385,6 +396,7 @@ def cmd_webui(args):
     from . import webui
 
     setup_console_logging()
+    print_banner()
     try:
         ui = webui.WebUI(args.config, port=args.port, password=args.password)
     except RuntimeError as exc:
@@ -402,6 +414,7 @@ def cmd_default(args):
     from . import webui
 
     setup_console_logging()
+    print_banner()
     cfg = config_mod.Config(args.config)
     errors = cfg.validate()
     if errors:

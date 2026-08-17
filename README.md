@@ -215,7 +215,7 @@ ipv6 = true
 
 ## เครดิต & License
 
-- **ผู้พัฒนา:** Witawat (XSoFTz) · [github.com/Witawat/Cloudflare-ddns](https://github.com/Witawat/Cloudflare-ddns)
+- **ผู้พัฒนา:** MAKER WITAWAT · [github.com/Witawat/Cloudflare-ddns](https://github.com/Witawat/Cloudflare-ddns)
 - **License:** [MIT](LICENSE) — ใช้ แก้ไข แจกจ่ายได้ฟรี (แจ้งที่มาด้วยก็ดี)
 - **ไอคอน exe:** icons8 ([icons8.com](https://icons8.com))
 - **เครื่องมือ:** Cloudflare API v4, Telegram Bot API, PyInstaller, pywin32, Pillow, Playwright (ทดสอบ UI)
