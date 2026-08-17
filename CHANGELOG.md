@@ -16,6 +16,7 @@
 - **state/queue backup หมุน 3**: `state.json.bak`/`.2`/`.3` + คิวเช่นกัน — เขียนเท่าที่เนื้อหาเปลี่ยน
 - **ปุ่มทดสอบ heartbeat** ในฟอร์มตั้งค่า (ส่ง ping ทันที ไม่รอรอบ)
 - **ปุ่มเช็คอัปเดต cloudflared** (เทียบเวอร์ชัน exe กับ GitHub releases — cache 6 ชม.)
+- **เช็คเวอร์ชันใหม่ตอนเริ่มโปรแกรม/service**: เปิด webui เมื่อไหร่ก็เช็ค — พบเวอร์ชันใหม่ log + แจ้ง Telegram 1 ครั้งต่อเวอร์ชัน (เฉพาะที่ตั้งค่า Telegram ไว้)
 - **ดาวน์โหลด/นำเข้า config.ini** จากหน้าเว็บ (สำรองข้อมูล/ย้ายเครื่อง — นำเข้าตรวจสอบก่อนเขียน)
 - **unit tests 62 ตัว** (`tests/` — unittest stdlib: config/ip_detect/notifier/ddns/main/ความปลอดภัยเว็บ) — รัน `python -m unittest discover -s tests -v`
 

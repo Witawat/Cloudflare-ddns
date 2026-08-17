@@ -454,39 +454,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
         if self.path == "/update-check":
             """เช็คเวอร์ชันใหม่จาก GitHub Releases (cache 6 ชม.)"""
-            now = time.time()
-            if _update_cache["time"] and now - _update_cache["time"] < 6 * 3600:
-                return self._send_json(200, _update_cache["data"])
-            import urllib.error
-            import urllib.request
-
-            data = {
-                "ok": False,
-                "latest": "",
-                "has_update": False,
-                "url": "https://github.com/Witawat/Cloudflare-ddns/releases",
-                "message": "",
-            }
-            try:
-                request = urllib.request.Request(
-                    "https://api.github.com/repos/Witawat/Cloudflare-ddns/releases/latest",
-                    headers={"User-Agent": config_mod.user_agent(), "Accept": "application/vnd.github+json"},
-                )
-                with urllib.request.urlopen(request, timeout=8) as response:
-                    release = json.loads(response.read().decode("utf-8", "replace"))
-                latest = str(release.get("tag_name", "")).strip().lstrip("v")
-                if latest:
-                    data.update(ok=True, latest=latest, has_update=_version_newer(latest, __version__))
-                    if release.get("html_url"):
-                        data["url"] = release["html_url"]
-                else:
-                    data["message"] = "ไม่พบ release ล่าสุด (tag ว่าง)"
-            except urllib.error.HTTPError as exc:
-                data["message"] = f"GitHub ตอบ {exc.code} (ไม่มี release/rate limit)"
-            except Exception as exc:
-                data["message"] = f"เช็คไม่ได้: {exc}"
-            _update_cache.update(time=now, data=data)
-            return self._send_json(200, data)
+            return self._send_json(200, _update_check_data())
 
         if self.path == "/webui.js":
             # JavaScript หน้าเว็บ (แยกไฟล์ — static ไม่ต้อง login เพราะไม่มีข้อมูลลับ)
@@ -1248,6 +1216,71 @@ class WebUIHandler(BaseHTTPRequestHandler):
         return self._send_json(404, {"ok": False, "message": "ไม่พบ path"})
 
 
+def _update_check_data():
+    """เช็คเวอร์ชันใหม่จาก GitHub Releases (cache 6 ชม.) — คืน dict สำหรับ /update-check + startup check"""
+    now = time.time()
+    if _update_cache["time"] and now - _update_cache["time"] < 6 * 3600:
+        return _update_cache["data"]
+    import urllib.error
+    import urllib.request
+
+    data = {
+        "ok": False,
+        "latest": "",
+        "has_update": False,
+        "url": "https://github.com/Witawat/Cloudflare-ddns/releases",
+        "message": "",
+    }
+    try:
+        request = urllib.request.Request(
+            "https://api.github.com/repos/Witawat/Cloudflare-ddns/releases/latest",
+            headers={"User-Agent": config_mod.user_agent(), "Accept": "application/vnd.github+json"},
+        )
+        with urllib.request.urlopen(request, timeout=8) as response:
+            release = json.loads(response.read().decode("utf-8", "replace"))
+        latest = str(release.get("tag_name", "")).strip().lstrip("v")
+        if latest:
+            data.update(ok=True, latest=latest, has_update=_version_newer(latest, __version__))
+            if release.get("html_url"):
+                data["url"] = release["html_url"]
+        else:
+            data["message"] = "ไม่พบ release ล่าสุด (tag ว่าง)"
+    except urllib.error.HTTPError as exc:
+        data["message"] = f"GitHub ตอบ {exc.code} (ไม่มี release/rate limit)"
+    except Exception as exc:
+        data["message"] = f"เช็คไม่ได้: {exc}"
+    _update_cache.update(time=now, data=data)
+    return data
+
+
+_update_notified = {"version": "", "at": 0.0}
+
+
+def _startup_update_check(cfg, config_path):
+    """เช็คเวอร์ชันใหม่ตอนโปรแกรม/service เริ่ม (thread แยก — ไม่บล็อก boot).
+
+    มีเวอร์ชันใหม่ -> log + แจ้ง Telegram 1 ครั้งต่อเวอร์ชันต่อ process (ถ้าตั้งค่า Telegram ไว้)
+    """
+    try:
+        data = _update_check_data()
+        if not data.get("ok") or not data.get("has_update"):
+            return
+        latest = data["latest"]
+        if latest == _update_notified["version"]:
+            return  # แจ้งแล้วสำหรับเวอร์ชันนี้ (process นี้)
+        _update_notified.update(version=latest, at=time.time())
+        log.info("พบเวอร์ชันใหม่ v%s (ปัจจุบัน v%s) — %s", latest, __version__, data.get("url"))
+        notify = notifier.TelegramNotifier.from_config(cfg)
+        if not notify.enabled:
+            return
+        notify.send_raw(
+            "🆕 มี Cloudflare DDNS Updater เวอร์ชันใหม่ v{} (ปัจจุบัน v{})\n"
+            "ดาวน์โหลด: {}".format(latest, __version__, data.get("url"))
+        )
+    except Exception as exc:
+        log.debug("startup update check: %s", exc)
+
+
 def _migrate_password_hash(cfg):
     """config เก่าที่ยังเก็บ webui_password แบบ plaintext -> แปลงเป็น hash + เขียนไฟล์ (ครั้งเดียว).
 
@@ -1303,6 +1336,14 @@ class WebUI:
         self.server.cfg = self.cfg
         self.server.config_path = config_path
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+        # เช็คเวอร์ชันใหม่ตอนเริ่ม (async — ไม่บล็อก boot) — ใช้ได้กับทุกโหมด
+        # (service / run / webui / กด exe เปล่า ๆ — ทุกจุดที่ WebUI ถูกสร้าง)
+        def _startup_check():
+            time.sleep(3)
+            _startup_update_check(self.cfg, config_path)
+
+        threading.Thread(target=_startup_check, daemon=True).start()
 
     def start(self):
         self.thread.start()

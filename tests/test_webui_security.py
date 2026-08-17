@@ -1,5 +1,6 @@
 """เทสต์ความปลอดภัย Web UI: Origin check, hash password, security headers, log injection"""
 
+import json
 import os
 import tempfile
 import unittest
@@ -274,6 +275,81 @@ class MigratePasswordHashTest(unittest.TestCase):
         cfg = config_mod.Config(self.path)
         webui._migrate_password_hash(cfg)
         self.assertEqual(cfg.webui_password, "")
+
+
+class UpdateCheckTest(unittest.TestCase):
+    """เช็คเวอร์ชันใหม่: cache 6 ชม. + แจ้ง Telegram ตอนเริ่ม (1 ครั้งต่อเวอร์ชัน)"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "config.ini")
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write(MINIMAL_INI)
+        webui._update_cache["time"] = 0.0
+        webui._update_cache["data"] = {}
+        webui._update_notified["version"] = ""
+
+    def tearDown(self):
+        webui._update_cache["time"] = 0.0
+        webui._update_cache["data"] = {}
+        webui._update_notified["version"] = ""
+        self.tmp.cleanup()
+
+    def _fake_release(self, tag):
+        body = json.dumps({"tag_name": tag, "html_url": "https://github.com/x/y/releases/tag/" + tag}).encode()
+        response = mock.MagicMock()
+        response.read.return_value = body
+        response.__enter__.return_value = response
+        return response
+
+    def test_finds_newer_version(self):
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_release("v9.9.9")):
+            data = webui._update_check_data()
+        self.assertTrue(data["ok"])
+        self.assertTrue(data["has_update"])
+        self.assertEqual(data["latest"], "9.9.9")
+
+    def test_no_update_when_same_version(self):
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_release("v" + webui.__version__)):
+            data = webui._update_check_data()
+        self.assertTrue(data["ok"])
+        self.assertFalse(data["has_update"])
+
+    def test_cache_used_within_6h(self):
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_release("v9.9.9")) as m:
+            webui._update_check_data()
+            webui._update_check_data()
+        self.assertEqual(m.call_count, 1)
+
+    def test_notify_on_startup_when_update(self):
+        cfg = config_mod.Config(self.path)
+        notify = mock.Mock()
+        notify.enabled = True
+        with mock.patch.object(webui, "_update_check_data", return_value={"ok": True, "has_update": True, "latest": "9.9.9", "url": "https://github.com/x/y/releases"}):
+            with mock.patch.object(webui.notifier.TelegramNotifier, "from_config", return_value=notify) as fc:
+                webui._startup_update_check(cfg, self.path)
+                webui._startup_update_check(cfg, self.path)  # ซ้ำ — ต้องไม่ส่งอีก
+        fc.assert_called_once()
+        notify.send_raw.assert_called_once()
+        self.assertIn("9.9.9", notify.send_raw.call_args[0][0])
+
+    def test_no_notify_when_no_update(self):
+        cfg = config_mod.Config(self.path)
+        notify = mock.Mock()
+        with mock.patch.object(webui, "_update_check_data", return_value={"ok": True, "has_update": False, "latest": ""}):
+            with mock.patch.object(webui.notifier.TelegramNotifier, "from_config", return_value=notify) as fc:
+                webui._startup_update_check(cfg, self.path)
+        fc.assert_not_called()
+
+    def test_no_notify_when_telegram_disabled(self):
+        cfg = config_mod.Config(self.path)
+        notify = mock.Mock()
+        notify.enabled = False
+        with mock.patch.object(webui, "_update_check_data", return_value={"ok": True, "has_update": True, "latest": "9.9.9", "url": ""}):
+            with mock.patch.object(webui.notifier.TelegramNotifier, "from_config", return_value=notify) as fc:
+                webui._startup_update_check(cfg, self.path)
+        fc.assert_called_once()
+        notify.send_raw.assert_not_called()
 
 
 if __name__ == "__main__":
