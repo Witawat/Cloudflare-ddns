@@ -260,8 +260,6 @@ def cmd_reset_password(args):
     import configparser
     import io
 
-    from . import webui as webui_mod
-
     cfg = config_mod.Config(args.config)
     pw1 = getpass.getpass("รหัสผ่านหน้าเว็บใหม่ (เว้นว่าง = ลบรหัส ไม่ต้อง login): ").strip()
     if pw1:

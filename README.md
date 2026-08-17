@@ -130,6 +130,8 @@ api_token = ................................
 interval_seconds = 60
 use_ipv4 = true
 use_ipv6 = true
+; ต้องมี provider ตรวจ IP ≥ 2 รายเห็น IP เดียวกัน ถึงจะอัปเดต (กัน provider ตอบผิด)
+ip_consensus = false
 ; กัน IP ที่เป็นของ Cloudflare เอง (anycast) ถูกเขียนลง record
 reject_cloudflare_ips = true
 
@@ -152,6 +154,8 @@ notify_created = true
 notify_round = false
 daily_report = true
 daily_report_time = 08:00
+; กู้รหัสผ่านหน้าเว็บผ่าน Telegram (ลืมรหัส -> พิมพ์ "reset password" ในแชทกับ bot — opt-in ปิด default)
+telegram_allow_reset = false
 
 tunnel_enabled = false
 tunnel_token =

@@ -1273,11 +1273,13 @@ def _migrate_password_hash(cfg):
     parser.set("cloudflare", "webui_password", config_mod.password_hash(pw, cfg.path))
     buf = io.StringIO()
     parser.write(buf)
-    ok, message = cfg.save_text(buf.getvalue())
-    if ok:
+    # เขียนตรงแบบ atomic — migrate ต้องเกิดขึ้นเสมอ แม้ config ยังตั้งไม่ครบ
+    # (save_text validate เต็มจะกีดกัน -> plaintext จะค้างในไฟล์)
+    if config_mod.atomic_write_text(cfg.path, buf.getvalue()):
+        cfg.reload()
         log.info("ย้าย webui_password เป็น hash แล้ว (config เดิมเก็บ plaintext)")
     else:
-        log.debug("migrate webui_password -> hash ข้าม (config ยังไม่สมบูรณ์): %s", message)
+        log.warning("migrate webui_password -> hash ไม่ได้ (เขียนไฟล์ไม่ได้): %s", cfg.path)
 
 
 class WebUI:

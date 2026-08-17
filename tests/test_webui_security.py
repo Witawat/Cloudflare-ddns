@@ -211,5 +211,70 @@ class LogEventFilterTest(unittest.TestCase):
         self.assertNotIn("\r", joined)
 
 
+class DictToIniTest(unittest.TestCase):
+    """_dict_to_ini: ต้อง hash รหัสผ่านใหม่ แต่คง hash เดิม / ว่างไว้"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "config.ini")
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write(MINIMAL_INI)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_plaintext_gets_hashed(self):
+        payload = {"cloudflare": {"webui_password": "my-secret"}, "telegram": {}, "tunnel": {}, "records": []}
+        text = webui._dict_to_ini(payload, self.path)
+        self.assertIn("webui_password = {}".format(config_mod.password_hash("my-secret", self.path)), text)
+        self.assertNotIn("webui_password = my-secret", text)
+
+    def test_hash_stays_as_is(self):
+        h = config_mod.password_hash("old", self.path)
+        payload = {"cloudflare": {"webui_password": h}, "telegram": {}, "tunnel": {}, "records": []}
+        text = webui._dict_to_ini(payload, self.path)
+        self.assertIn("webui_password = {}".format(h), text)
+
+    def test_empty_stays_empty(self):
+        payload = {"cloudflare": {"webui_password": ""}, "telegram": {}, "tunnel": {}, "records": []}
+        text = webui._dict_to_ini(payload, self.path)
+        self.assertIn("webui_password =", text)
+
+
+class MigratePasswordHashTest(unittest.TestCase):
+    """config เก่าที่เก็บ plaintext -> ต้องย้ายเป็น hash เสมอ (แม้ config ยังตั้งไม่ครบ)"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "config.ini")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_migrates_plaintext_even_when_config_incomplete(self):
+        # config ไม่ครบ (ไม่มี record) — save_text เดิมจะกีดกัน แต่ migrate ต้องทำได้
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write("[cloudflare]\napi_token = test\nwebui_password = plain-old\n")
+        cfg = config_mod.Config(self.path)
+        webui._migrate_password_hash(cfg)
+        self.assertTrue(config_mod.password_is_hash(cfg.webui_password))
+        self.assertEqual(cfg.webui_password, config_mod.password_hash("plain-old", self.path))
+
+    def test_skips_when_already_hash(self):
+        h = config_mod.password_hash("secret", self.path)
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write("[cloudflare]\napi_token = test\nwebui_password = {}\n".format(h))
+        cfg = config_mod.Config(self.path)
+        webui._migrate_password_hash(cfg)
+        self.assertEqual(cfg.webui_password, h)
+
+    def test_skips_when_empty(self):
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write("[cloudflare]\napi_token = test\nwebui_password =\n")
+        cfg = config_mod.Config(self.path)
+        webui._migrate_password_hash(cfg)
+        self.assertEqual(cfg.webui_password, "")
+
+
 if __name__ == "__main__":
     unittest.main()
