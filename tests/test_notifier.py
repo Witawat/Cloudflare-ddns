@@ -2,7 +2,9 @@
 
 import os
 import tempfile
+import time
 import unittest
+import urllib.error
 from unittest import mock
 
 from cloudflare_ddns import config as config_mod
@@ -105,6 +107,7 @@ class TelegramResetTest(unittest.TestCase):
         notifier._reset_state["last_ask"] = 0.0
         notifier._last_reset_time.clear()
         notifier._updates_offset.clear()
+        notifier._handled_updates.clear()
 
     def tearDown(self):
         self.patcher_updates.stop()
@@ -114,7 +117,7 @@ class TelegramResetTest(unittest.TestCase):
     def _update(self, chat_id, text, update_id=1):
         return {
             "update_id": update_id,
-            "message": {"chat": {"id": chat_id}, "text": text},
+            "message": {"chat": {"id": chat_id}, "text": text, "date": int(time.time())},
         }
 
     def test_opt_out_does_nothing(self):
@@ -129,9 +132,9 @@ class TelegramResetTest(unittest.TestCase):
         self.mock_send.assert_not_called()
 
     def test_confirm_changes_password(self):
-        self.mock_updates.return_value = [self._update(42, "reset password")]
+        self.mock_updates.return_value = [self._update(42, "reset password", 1)]
         notifier.check_telegram_commands(self.cfg, self.path)
-        self.mock_updates.return_value = [self._update(42, "yes")]
+        self.mock_updates.return_value = [self._update(42, "yes", 2)]
         notifier.check_telegram_commands(self.cfg, self.path)
         self.assertTrue(self.mock_send.called)
         self.assertTrue(config_mod.password_is_hash(self.cfg.webui_password))
@@ -140,15 +143,16 @@ class TelegramResetTest(unittest.TestCase):
         self.assertTrue(any("รหัสผ่านหน้าเว็บใหม่" in t for t in texts))
 
     def test_cooldown_blocks_second_reset(self):
-        self.mock_updates.return_value = [self._update(42, "reset password")]
+        self.mock_updates.return_value = [self._update(42, "reset password", 1)]
         notifier.check_telegram_commands(self.cfg, self.path)
-        self.mock_updates.return_value = [self._update(42, "yes")]
+        self.mock_updates.return_value = [self._update(42, "yes", 2)]
         notifier.check_telegram_commands(self.cfg, self.path)
         first = self.cfg.webui_password
+        self.assertTrue(first)
         # reset อีกทันที — ต้องโดนกัน cooldown
-        self.mock_updates.return_value = [self._update(42, "reset password")]
+        self.mock_updates.return_value = [self._update(42, "reset password", 3)]
         notifier.check_telegram_commands(self.cfg, self.path)
-        self.mock_updates.return_value = [self._update(42, "yes")]
+        self.mock_updates.return_value = [self._update(42, "yes", 4)]
         notifier.check_telegram_commands(self.cfg, self.path)
         self.assertEqual(self.cfg.webui_password, first)
 
@@ -172,6 +176,7 @@ class TelegramCommandTest(unittest.TestCase):
         self.mock_send.return_value = (True, "")
         notifier._reset_state["awaiting_confirm"] = False
         notifier._updates_offset.clear()
+        notifier._handled_updates.clear()
 
     def tearDown(self):
         self.patcher_updates.stop()
@@ -181,7 +186,7 @@ class TelegramCommandTest(unittest.TestCase):
     def _update(self, chat_id, text, update_id=1):
         return {
             "update_id": update_id,
-            "message": {"chat": {"id": chat_id}, "text": text},
+            "message": {"chat": {"id": chat_id}, "text": text, "date": int(time.time())},
         }
 
     def _run(self, text):
@@ -252,6 +257,135 @@ class TelegramCommandTest(unittest.TestCase):
     def test_unknown_command_no_reply(self):
         self._run("/nosuch")
         self.mock_send.assert_not_called()
+
+    def test_name_target_mismatch_ignored(self):
+        """คำสั่งระบุ @ชื่อ ที่ไม่ตรงกับเครื่องนี้ -> ไม่ตอบ"""
+        self.cfg.telegram_command_name = "เครื่องA"
+        with mock.patch("cloudflare_ddns.ip_detect.get_public_ip", return_value="9.9.9.9") as m:
+            self._run("/ip @เครื่องB")
+        m.assert_not_called()
+        self.mock_send.assert_not_called()
+
+    def test_name_target_match_executes(self):
+        """คำสั่งระบุ @ชื่อ ที่ตรงกับเครื่องนี้ -> ตอบปกติ"""
+        self.cfg.telegram_command_name = "เครื่องA"
+        with mock.patch("cloudflare_ddns.ip_detect.get_public_ip", return_value="9.9.9.9"):
+            self._run("/ip @เครื่องA")
+        texts = [c.args[0] for c in self.mock_send.call_args_list]
+        self.assertTrue(any("9.9.9.9" in t for t in texts))
+
+    def test_name_case_insensitive(self):
+        self.cfg.telegram_command_name = "PC-SERVER-01"
+        with mock.patch("cloudflare_ddns.ip_detect.get_public_ip", return_value="9.9.9.9"):
+            self._run("/ip @pc-server-01")
+        texts = [c.args[0] for c in self.mock_send.call_args_list]
+        self.assertTrue(any("9.9.9.9" in t for t in texts))
+
+    def test_name_fallback_to_hostname(self):
+        """ไม่ตั้ง telegram_command_name -> ใช้ hostname ของระบบเป็นชื่อ"""
+        import socket as _socket
+
+        host = _socket.gethostname()
+        with mock.patch("cloudflare_ddns.ip_detect.get_public_ip", return_value="9.9.9.9"):
+            self._run("/ip @" + host)
+        texts = [c.args[0] for c in self.mock_send.call_args_list]
+        self.assertTrue(any("9.9.9.9" in t for t in texts))
+
+    def test_reply_prefixed_with_machine_name(self):
+        """คำตอบทุกข้อความขึ้นต้นด้วย [ชื่อเครื่อง] — รู้ว่ามาจากเครื่องไหน"""
+        self.cfg.telegram_command_name = "เครื่องA"
+        with mock.patch("cloudflare_ddns.ip_detect.get_public_ip", return_value="9.9.9.9"):
+            self._run("/ip")
+        texts = [c.args[0] for c in self.mock_send.call_args_list]
+        self.assertTrue(any(t.startswith("[เครื่องA] ") for t in texts))
+
+    def test_reset_with_name_mismatch_ignored(self):
+        """reset password ระบุ @ชื่อไม่ตรง -> ไม่เข้ากระบวนการกู้รหัส"""
+        self.cfg.telegram_command_name = "เครื่องA"
+        self._run("reset password @เครื่องB")
+        self.mock_send.assert_not_called()
+        self.assertFalse(notifier._reset_state["awaiting_confirm"])
+
+    def test_foreign_blocks_confirm_until_owner_takes_it(self):
+        """คำสั่งของเครื่องอื่นคั่นหน้าคำสั่งของเรา -> เรายังตอบ แต่ไม่ confirm offset (กันขโมยคำสั่ง)"""
+        self.cfg.telegram_command_name = "เครื่องA"
+        token = "123456:TESTTOKEN"
+        self.mock_updates.return_value = [
+            self._update(42, "/ip @เครื่องB", 1),
+            self._update(42, "/ip", 2),
+        ]
+        with mock.patch("cloudflare_ddns.ip_detect.get_public_ip", return_value="9.9.9.9"):
+            notifier.check_telegram_commands(self.cfg, self.path)
+        texts = [c.args[0] for c in self.mock_send.call_args_list]
+        self.assertTrue(any("9.9.9.9" in t for t in texts))
+        self.assertEqual(notifier._updates_offset.get(token, 0), 0, "ห้าม confirm ข้ามคำสั่งเครื่องอื่น")
+        # รอบถัดไป ยังรับซ้ำแต่ไม่ตอบซ้ำ (dedupe) และยังไม่ confirm
+        self.mock_send.reset_mock()
+        notifier.check_telegram_commands(self.cfg, self.path)
+        self.mock_send.assert_not_called()
+        self.assertEqual(notifier._updates_offset.get(token, 0), 0)
+        # เครื่อง B รับคำสั่งของตัวเองไปแล้ว -> คราวนี้ confirm ได้ (offset=3 = confirm เฉพาะ id 2)
+        self.mock_updates.return_value = [self._update(42, "/ip", 2)]
+        with mock.patch("cloudflare_ddns.ip_detect.get_public_ip", return_value="9.9.9.9"):
+            notifier.check_telegram_commands(self.cfg, self.path)
+        self.assertEqual(notifier._updates_offset.get(token, 0), 3)
+
+    def test_own_command_before_foreign_confirms_prefix(self):
+        """คำสั่งของเรามาก่อนคำสั่งเครื่องอื่น -> confirm เฉพาะส่วนของเรา ไม่ทับของเครื่องอื่น"""
+        self.cfg.telegram_command_name = "เครื่องA"
+        token = "123456:TESTTOKEN"
+        self.mock_updates.return_value = [
+            self._update(42, "/ip", 1),
+            self._update(42, "/ip @เครื่องB", 2),
+        ]
+        with mock.patch("cloudflare_ddns.ip_detect.get_public_ip", return_value="9.9.9.9"):
+            notifier.check_telegram_commands(self.cfg, self.path)
+        # offset=2 = confirm เฉพาะ id 1 (confirm = update_id < offset) — id 2 ของเครื่อง B ยังรอคิวอยู่
+        self.assertEqual(notifier._updates_offset.get(token, 0), 2)
+        # ตรวจว่า id 2 (คำสั่งเครื่องอื่น) ยังไม่ถูก confirm — รอบหน้า poll ยังเห็น
+        self.mock_updates.return_value = [self._update(42, "/ip @เครื่องB", 2)]
+        notifier.check_telegram_commands(self.cfg, self.path)
+        self.assertEqual(notifier._updates_offset.get(token, 0), 2, "ห้าม advance ข้ามคำสั่งเครื่องอื่น")
+
+    def test_stale_foreign_dropped_after_timeout(self):
+        """คำสั่งของเครื่องอื่นค้างเกิน 10 นาที (เครื่องเป้าออฟไลน์) -> ทิ้ง ไม่บล็อกคิว"""
+        self.cfg.telegram_command_name = "เครื่องA"
+        token = "123456:TESTTOKEN"
+        old = int(time.time()) - 3600
+        self.mock_updates.return_value = [
+            {"update_id": 1, "message": {"chat": {"id": 42}, "text": "/ip @เครื่องB", "date": old}},
+            self._update(42, "/ip", 2),
+        ]
+        with mock.patch("cloudflare_ddns.ip_detect.get_public_ip", return_value="9.9.9.9"):
+            notifier.check_telegram_commands(self.cfg, self.path)
+        texts = [c.args[0] for c in self.mock_send.call_args_list]
+        self.assertTrue(any("9.9.9.9" in t for t in texts))
+        # offset=3 = confirm ทั้ง id 1 (ทิ้งของค้าง) และ id 2 (ของเรา)
+        self.assertEqual(notifier._updates_offset.get(token, 0), 3)
+
+
+class TgUpdatesNetTest(unittest.TestCase):
+    """เทสต์ _tg_updates ตรง ๆ (เครือข่ายจำลอง — ห้ามอยู่ในคลาสที่ patch _tg_updates)"""
+
+    def test_409_retries_then_gives_up(self):
+        """409 (bot lock/webhook) -> ลองใหม่ + ลบ webhook อีกครั้ง แล้วถอย ไม่วนลูป"""
+        err = urllib.error.HTTPError("https://api.telegram.org", 409, "Conflict", {}, None)
+        with mock.patch("urllib.request.urlopen", side_effect=err), \
+             mock.patch.object(notifier.time, "sleep"), \
+             mock.patch.object(notifier, "_tg_api", return_value={"ok": True}) as m_api:
+            self.assertEqual(notifier._tg_updates("t", 0), [])
+        m_api.assert_called_once_with("t", "deleteWebhook", timeout=10)
+
+    def test_429_backs_off(self):
+        """429 flood wait -> รอตาม retry_after แล้วข้ามรอบ"""
+        import io
+
+        body = io.BytesIO(b'{"ok":false,"parameters":{"retry_after":3}}')
+        err = urllib.error.HTTPError("https://api.telegram.org", 429, "Too Many Requests", {}, body)
+        with mock.patch("urllib.request.urlopen", side_effect=err), \
+             mock.patch.object(notifier.time, "sleep") as m_sleep:
+            self.assertEqual(notifier._tg_updates("t", 0), [])
+        m_sleep.assert_called_once_with(4)
 
 
 if __name__ == "__main__":

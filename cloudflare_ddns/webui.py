@@ -177,6 +177,7 @@ def _cfg_to_dict(cfg):
             "daily_report": cfg.daily_report,
             "daily_report_time": cfg.daily_report_time,
             "allow_reset": cfg.telegram_allow_reset,
+            "command_name": cfg.telegram_command_name,
         },
         "tunnel": {
             "enabled": cfg.tunnel_enabled,
@@ -242,6 +243,7 @@ def _dict_to_ini(data, config_path=""):
     kv("daily_report", str(bool(tg.get("daily_report", True))).lower())
     kv("daily_report_time", str(tg.get("daily_report_time", "08:00")).strip() or "08:00")
     kv("telegram_allow_reset", str(bool(tg.get("allow_reset", False))).lower())
+    kv("telegram_command_name", str(tg.get("command_name", "")).strip())
     tu = data.get("tunnel", {})
     kv("tunnel_enabled", str(bool(tu.get("enabled", False))).lower())
     kv("tunnel_token", str(tu.get("token", "")).strip())

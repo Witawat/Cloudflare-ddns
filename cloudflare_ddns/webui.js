@@ -326,6 +326,7 @@ async function loadConfig() {
     $("daily_report").checked = !!c.telegram.daily_report;
     $("daily_report_time").value = c.telegram.daily_report_time || "08:00";
     $("tg_allow_reset").checked = !!c.telegram.allow_reset;
+    $("tg_cmd_name").value = c.telegram.command_name || "";
     $("tunnel_enabled").checked = !!c.tunnel.enabled;
     $("tunnel_token").value = c.tunnel.token;
     $("cloudflared_path").value = c.tunnel.cloudflared_path || "";
@@ -437,6 +438,7 @@ async function saveConfig() {
       daily_report: $("daily_report").checked,
       daily_report_time: $("daily_report_time").value.trim() || "08:00",
       allow_reset: $("tg_allow_reset").checked,
+      command_name: $("tg_cmd_name").value.trim(),
     },
     tunnel: {
       enabled: $("tunnel_enabled").checked,
@@ -1492,6 +1494,7 @@ function renderWizard() {
           daily_report: tgl.daily_report !== false,
           daily_report_time: tgl.daily_report_time || "08:00",
           allow_reset: tgl.allow_reset === true,
+          command_name: tgl.command_name || "",
         },
         tunnel: {
           enabled: !!tun.enabled,

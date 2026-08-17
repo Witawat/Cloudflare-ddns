@@ -242,6 +242,8 @@ class Config:
         self.daily_report_time = "08:00"
         # อนุญาตกู้รหัสผ่านหน้าเว็บผ่าน Telegram (opt-in — ปิด default)
         self.telegram_allow_reset = False
+        # ชื่อเครื่องสำหรับรับคำสั่ง Telegram (เว้นว่าง = ชื่อเครื่องของระบบ — ใช้ bot กลางหลายเครื่อง: /status @ชื่อ)
+        self.telegram_command_name = ""
         # Cloudflare Tunnel (cloudflared)
         self.tunnel_enabled = False
         self.tunnel_token = ""
@@ -293,6 +295,7 @@ class Config:
         self.daily_report = self._as_bool(section, "daily_report", True)
         self.daily_report_time = section.get("daily_report_time", "08:00").strip() or "08:00"
         self.telegram_allow_reset = self._as_bool(section, "telegram_allow_reset", False)
+        self.telegram_command_name = section.get("telegram_command_name", "").strip()
         self.tunnel_enabled = self._as_bool(section, "tunnel_enabled", False)
         self.tunnel_token = section.get("tunnel_token", "").strip()
         self.cloudflared_path = section.get("cloudflared_path", "").strip()
@@ -374,6 +377,8 @@ class Config:
 
             if not _re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", self.daily_report_time):
                 errors.append(f"daily_report_time ต้องเป็น HH:MM (0-23:0-59) เช่น 08:00 (ตอนนี้: {self.daily_report_time})")
+        if self.telegram_command_name and re.search(r"\s", self.telegram_command_name):
+            errors.append("telegram_command_name ต้องไม่มีช่องว่าง (ใช้ในคำสั่ง /cmd @ชื่อ)")
         if not (1 <= self.webui_port <= 65535):
             errors.append(f"webui_port ต้องอยู่ระหว่าง 1-65535 (ตอนนี้: {self.webui_port})")
         if not re.fullmatch(r"[A-Za-z0-9.\-_\[\]:]+", self.webui_host):
@@ -488,6 +493,7 @@ class Config:
         self.daily_report = self._as_bool(section, "daily_report", True)
         self.daily_report_time = section.get("daily_report_time", "08:00").strip() or "08:00"
         self.telegram_allow_reset = self._as_bool(section, "telegram_allow_reset", False)
+        self.telegram_command_name = section.get("telegram_command_name", "").strip()
         self.tunnel_enabled = self._as_bool(section, "tunnel_enabled", False)
         self.tunnel_token = section.get("tunnel_token", "").strip()
         self.cloudflared_path = section.get("cloudflared_path", "").strip()

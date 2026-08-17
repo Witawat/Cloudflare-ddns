@@ -220,29 +220,57 @@ def clear_queue(path=None):
 
 _reset_cooldown = 600  # reset ได้ 1 ครั้งต่อ 10 นาที
 _reset_state = {"awaiting_confirm": False, "last_ask": 0.0}
-_updates_offset = {}  # token -> offset (กันรับข้อความเดิมซ้ำ)
+_updates_offset = {}  # token -> offset (ยืนยันแล้ว = update_id < offset) — กันรับซ้ำ/กันขโมยคำสั่งของเครื่องอื่น
+_handled_updates = {}  # token -> set(update_id ที่จัดการแล้ว) — กันตอบซ้ำตอนถูกบล็อกโดยคำสั่งเครื่องอื่น
+_tg_foreign_stale = 600  # คำสั่งของเครื่องอื่นที่ค้างเกิน 10 นาที (เครื่องเป้าออฟไลน์) -> ทิ้ง ไม่บล็อกคิวทั้ง bot
 _last_reset_time = {}
 
 
 def _tg_updates(token, offset, timeout=10):
-    """เรียก getUpdates คืน list ของ updates (จัดการ webhook 409 อัตโนมัติ)"""
+    """เรียก getUpdates คืน list ของ updates (short polling — กัน bot lock หลาย instance).
+
+    - timeout=0 (short polling): ไม่ถือ connection ค้าง -> หลายโปรแกรมใช้ bot เดียวกัน
+      poll พร้อมกันได้ (long polling จะโดน Telegram ตัดด้วย 409 "terminated by other getUpdates")
+    - 409: ลองใหม่ก่อน (instance อื่น poll พร้อมกัน) ถ้ายังติด -> ลบ webhook (ของอื่นค้าง) แล้วลองอีกรอบ
+    - 429: flood wait — รอตาม retry_after แล้วข้ามรอบ (ไม่ยิงซ้ำถี่)
+    """
     url = "https://api.telegram.org/bot{}/getUpdates?timeout=0".format(token.strip())
     if offset:
         url += "&offset={}".format(int(offset))
-    try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:
-            data = json.loads(response.read().decode("utf-8", "replace"))
-        return data.get("result", []) if data.get("ok") else []
-    except urllib.error.HTTPError as exc:
-        if exc.code == 409:
-            try:
-                _tg_api(token, "deleteWebhook", timeout=timeout)
-            except Exception:
-                pass
-            return _tg_updates(token, offset, timeout)
-        return []
-    except Exception:
-        return []
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as response:
+                data = json.loads(response.read().decode("utf-8", "replace"))
+            return data.get("result", []) if data.get("ok") else []
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429:
+                retry_after = 5
+                try:
+                    body = exc.read().decode("utf-8", "replace")
+                    retry_after = json.loads(body).get("parameters", {}).get("retry_after", 5)
+                except Exception:
+                    pass
+                time.sleep(min(int(retry_after) + 1, 30))
+                return []
+            if exc.code == 409:
+                if attempt == 0:
+                    time.sleep(2)  # instance อื่นกำลัง poll พร้อมกัน (short polling เจอน้อย) — ลองใหม่
+                    continue
+                if attempt == 1:
+                    # webhook ค้างจากโปรแกรมอื่น -> ลบให้แล้วลองอีกรอบ
+                    try:
+                        _tg_api(token, "deleteWebhook", timeout=timeout)
+                    except Exception:
+                        pass
+                    time.sleep(2)
+                    continue
+                log.warning("Telegram: getUpdates ติด 409 ซ้ำ 3 รอบ — ข้ามรอบนี้")
+                return []
+            log.warning("Telegram: getUpdates error HTTP %s", exc.code)
+            return []
+        except Exception:
+            return []
+    return []
 
 
 def _apply_webui_password(cfg, config_path, new_pw):
@@ -286,8 +314,17 @@ TG_HELP_TEXT = (
     "/tunnel [start|stop] — สถานะ/ควบคุม tunnel\n"
     "/log — log 30 บรรทัดสุดท้าย\n"
     "/restart /start /stop — ควบคุม Windows Service\n"
-    "reset password → yes — กู้รหัสผ่านหน้าเว็บ"
+    "reset password → yes — กู้รหัสผ่านหน้าเว็บ\n"
+    "ใช้ bot กลางหลายเครื่อง? ต่อท้าย @ชื่อเครื่อง "
+    "(เช่น /status @เครื่องA) — เฉพาะเครื่องที่ชื่อตรงตอบ\n"
+    "ทุกคำตอบขึ้นต้นด้วย [ชื่อเครื่อง] — รู้ว่ามาจากเครื่องไหน"
 )
+
+
+def _tg_command_name(cfg):
+    """ชื่อเครื่องที่ใช้รับคำสั่ง (telegram_command_name หรือ hostname ของระบบ)"""
+    name = getattr(cfg, "telegram_command_name", "").strip()
+    return name or _hostname()
 
 
 def _tg_list_text(cfg):
@@ -460,8 +497,13 @@ def check_telegram_commands(cfg, config_path=""):
 
     - เปิดด้วย telegram_allow_reset = true ใน config (ฟอร์ม: "ควบคุม/กู้รหัสผ่านผ่าน Telegram")
     - คำสั่ง: /status /ip /run /update /tunnel /log /restart /start /stop /help
+    - ใช้ bot กลางร่วมหลายเครื่อง (รันหลายตัวพร้อมกัน): ต่อท้าย @ชื่อเครื่อง เช่น /status @เครื่องA —
+      เฉพาะเครื่องที่ชื่อตรง (telegram_command_name หรือ hostname) ตอบ ที่เหลือข้ามโดย**ไม่ confirm offset**
+      (คำสั่งยังรอคิวอยู่ ให้เครื่องเป้าได้รับเอง — กัน "ขโมยคำสั่ง" จาก bot ตัวเดียวกัน)
+      คำสั่งของเครื่องอื่นที่ค้างเกิน 10 นาที (เครื่องเป้าออฟไลน์) จะถูกทิ้ง ไม่บล็อกคิวทั้ง bot
+    - ไม่ระบุชื่อ = ส่งถึงทุกเครื่อง (ทุกตัวตอบ)
     - กู้รหัสผ่าน: 'reset password' -> ตอบ 'yes' -> สุ่มรหัสใหม่ 12 ตัว ส่งกลับ (กัน 1 ครั้ง/10 นาที)
-    - ข้อความจาก chat อื่นถูกละเลย (ไม่ตอบ ไม่ log)
+    - ข้อความจาก chat อื่นถูกละเลย (ไม่ตอบ ไม่ log แต่ confirm ทิ้ง)
     """
     import secrets
 
@@ -470,84 +512,143 @@ def check_telegram_commands(cfg, config_path=""):
     if not cfg.telegram_bot_token or not cfg.telegram_chat_id:
         return
     token = cfg.telegram_bot_token.strip()
-    offset = _updates_offset.get(token, 0)
-    updates = _tg_updates(token, offset)
+    display_name = _tg_command_name(cfg)
+    my_name = display_name.lower()
+    cur = _updates_offset.get(token, 0)
+    updates = _tg_updates(token, cur)
     if not updates:
         return
-    _updates_offset[token] = max(int(u.get("update_id", 0) or 0) + 1 for u in updates)
 
     notify = TelegramNotifier.from_config(cfg)
 
     def reply(text):
-        ok, error = notify.send_raw(text)
+        # ขึ้นต้นด้วย [ชื่อเครื่อง] — รู้ว่าคำตอบมาจากเครื่องไหน (ใช้ bot กลางหลายเครื่อง)
+        ok, error = notify.send_raw("[{}] {}".format(display_name, text))
         if not ok:
             log.warning("telegram command: ส่งข้อความตอบไม่ได้: %s", error)
+
+    handled = _handled_updates.setdefault(token, set())
+    confirm_upto = -1  # update_id สุดท้ายที่ confirm ได้ (prefix ต่อเนื่อง ไม่มีคำสั่งเครื่องอื่นคั่น)
+    blocked = False  # เจอคำสั่งของเครื่องอื่น (ยังไม่แก่) -> ต่อไปนี้หยุด confirm แต่ยังตอบคำสั่งของเรา
+
+    def is_mine(text_lower):
+        """ชื่อเครื่องจากคำสั่ง (/cmd @ชื่อ) — ว่าง = ส่งถึงทุกเครื่อง (เป็นของเรา)"""
+        parts = text_lower.split()
+        if len(parts) >= 2 and parts[1].startswith("@"):
+            target = parts[1][1:].strip().lower()
+            if target != my_name:
+                log.info("Telegram: ข้ามคำสั่ง (ชื่อเครื่องไม่ตรง): เป้า=%s เครื่องนี้=%s", target, my_name)
+                return False
+        return True
 
     for update in updates:
         msg = update.get("message") or {}
         chat = msg.get("chat") or {}
+        uid = int(update.get("update_id", 0) or 0)
+        if uid < cur:
+            handled.discard(uid)
+            continue
         if str(chat.get("id", "")) != str(cfg.telegram_chat_id):
-            continue  # ข้อความจาก chat อื่น — ไม่ตอบ ไม่ log
+            confirm_upto = max(confirm_upto, uid)  # chat อื่น — รับทิ้ง (confirm) ไม่ตอบ ไม่ log
+            continue
         text = str(msg.get("text", "")).strip()
         if not text:
+            confirm_upto = max(confirm_upto, uid)
             continue
         lower = text.lower()
-        log.info("Telegram: คำสั่งจาก chat_id=%s: %r", chat.get("id"), text[:60])
 
-        # กู้รหัสผ่านหน้าเว็บ (2 ขั้น)
-        if lower == "reset password":
-            _reset_state["awaiting_confirm"] = True
-            _reset_state["last_ask"] = time.time()
-            reply("รหัสผ่านหน้าเว็บจะถูกสุ่มใหม่ — พิมพ์ 'yes' เพื่อยืนยัน (ภายใน 10 นาที)")
+        if blocked:
+            # มีคำสั่งเครื่องอื่นคั่นอยู่ก่อนหน้า — ตอบคำสั่งของเราได้ แต่ยังไม่ confirm
+            if is_mine(lower) and uid not in handled:
+                handled.add(uid)
+                _dispatch_tg_command(lower, text, uid, token, cfg, config_path, reply)
             continue
-        if lower == "yes" and _reset_state["awaiting_confirm"]:
-            _reset_state["awaiting_confirm"] = False
-            if time.time() - _reset_state["last_ask"] > 600:
-                log.warning("Telegram: คำสั่ง reset หมดเวลา (เกิน 10 นาที)")
-                reply("คำสั่ง reset หมดเวลาแล้ว — พิมพ์ 'reset password' ใหม่เพื่อเริ่ม")
-                continue
-            if time.time() - _last_reset_time.get(token, 0) < _reset_cooldown:
-                log.warning("Telegram: ข้าม reset (เพิ่งทำไปไม่นาน)")
-                reply("ข้าม: เพิ่ง reset ไปเมื่อไม่นาน — รอ 10 นาทีแล้วลองใหม่")
-                continue
-            _last_reset_time[token] = time.time()
-            new_pw = secrets.token_urlsafe(9)  # 12 ตัวอักษร
-            ok, message = _apply_webui_password(cfg, config_path, new_pw)
-            if ok:
-                log.warning("Telegram: reset รหัสผ่านหน้าเว็บสำเร็จ (ส่งรหัสใหม่ทาง Telegram)")
-                reply(
-                    "รหัสผ่านหน้าเว็บใหม่: {}\n"
-                    "เข้าหน้าเว็บแล้วเปลี่ยนเป็นรหัสที่จำง่ายได้ในฟอร์มตั้งค่า".format(new_pw)
-                )
+
+        if not is_mine(lower):
+            # คำสั่งของเครื่องอื่น — ต้องไม่ confirm (ไม่งั้นเครื่องเป้าไม่เห็น)
+            age = time.time() - int(msg.get("date", 0) or 0)
+            if age > _tg_foreign_stale:
+                log.info("Telegram: ทิ้งคำสั่งค้างของเครื่องอื่น (เกิน %d วิ ไม่ตอบ): %r", _tg_foreign_stale, text[:60])
+                confirm_upto = max(confirm_upto, uid)
             else:
-                log.warning("Telegram: reset รหัสผ่านไม่สำเร็จ: %s", message)
-                reply("reset ไม่สำเร็จ: {}".format(message))
+                blocked = True
             continue
 
-        # คำสั่งควบคุม (ต้องมาจาก chat_id ที่ตั้งไว้เท่านั้น — กรองไว้แล้วด้านบน)
-        cmd = lower.split()[0]
-        if cmd == "/help":
-            reply(TG_HELP_TEXT)
-        elif cmd == "/status":
-            reply(_tg_status_text(config_path))
-        elif cmd == "/list":
-            reply(_tg_list_text(cfg))
-        elif cmd == "/ip":
-            reply(_tg_ip_text())
-        elif cmd == "/run":
-            _tg_run_now(cfg, config_path, reply)
-        elif cmd == "/update":
-            reply(_tg_update_text())
-        elif cmd == "/tunnel":
-            parts = lower.split()
-            action = parts[1] if len(parts) > 1 else ""
-            reply(_tg_tunnel_text(cfg, action))
-        elif cmd in ("/restart", "/start", "/stop"):
-            reply(_tg_service_action(cmd[1:]))
-        elif cmd == "/log":
-            reply(_tg_log_tail(cfg))
+        # คำสั่งของเรา
+        if uid in handled:
+            # เคยจัดการแล้ว (โดนบล็อกโดยคำสั่งเครื่องอื่นรอบก่อน) — เครื่องอื่นรับไปแล้ว ไม่ตอบซ้ำ แต่ confirm ได้
+            confirm_upto = max(confirm_upto, uid)
+            continue
+        handled.add(uid)
+        confirm_upto = max(confirm_upto, uid)
+        _dispatch_tg_command(lower, text, uid, token, cfg, config_path, reply)
+
+    if confirm_upto >= 0 and confirm_upto + 1 > cur:
+        _updates_offset[token] = confirm_upto + 1
+        # ล้าง update_id ที่ confirm ไปแล้วออกจาก handled (กัน set โต)
+        handled &= {u for u in handled if u >= _updates_offset[token]}
+
+
+def _dispatch_tg_command(lower, text, uid, token, cfg, config_path, reply):
+    """จัดการคำสั่ง Telegram หนึ่งคำสั่ง (แยกฟังก์ชัน — ใช้จาก check_telegram_commands)"""
+    import secrets
+
+    log.info("Telegram: คำสั่งจาก chat_id=%s: %r", cfg.telegram_chat_id, text[:60])
+
+    # กู้รหัสผ่านหน้าเว็บ (2 ขั้น)
+    if lower == "reset password":
+        _reset_state["awaiting_confirm"] = True
+        _reset_state["last_ask"] = time.time()
+        reply("รหัสผ่านหน้าเว็บจะถูกสุ่มใหม่ — พิมพ์ 'yes' เพื่อยืนยัน (ภายใน 10 นาที)")
+        return
+    if lower == "yes" and _reset_state["awaiting_confirm"]:
+        _reset_state["awaiting_confirm"] = False
+        if time.time() - _reset_state["last_ask"] > 600:
+            log.warning("Telegram: คำสั่ง reset หมดเวลา (เกิน 10 นาที)")
+            reply("คำสั่ง reset หมดเวลาแล้ว — พิมพ์ 'reset password' ใหม่เพื่อเริ่ม")
+            return
+        if time.time() - _last_reset_time.get(token, 0) < _reset_cooldown:
+            log.warning("Telegram: ข้าม reset (เพิ่งทำไปไม่นาน)")
+            reply("ข้าม: เพิ่ง reset ไปเมื่อไม่นาน — รอ 10 นาทีแล้วลองใหม่")
+            return
+        _last_reset_time[token] = time.time()
+        new_pw = secrets.token_urlsafe(9)  # 12 ตัวอักษร
+        ok, message = _apply_webui_password(cfg, config_path, new_pw)
+        if ok:
+            log.warning("Telegram: reset รหัสผ่านหน้าเว็บสำเร็จ (ส่งรหัสใหม่ทาง Telegram)")
+            reply(
+                "รหัสผ่านหน้าเว็บใหม่: {}\n"
+                "เข้าหน้าเว็บแล้วเปลี่ยนเป็นรหัสที่จำง่ายได้ในฟอร์มตั้งค่า".format(new_pw)
+            )
         else:
-            log.info("Telegram: คำสั่งไม่รู้จัก: %r", text[:60])
+            log.warning("Telegram: reset รหัสผ่านไม่สำเร็จ: %s", message)
+            reply("reset ไม่สำเร็จ: {}".format(message))
+        return
+
+    # คำสั่งควบคุม (ต้องมาจาก chat_id ที่ตั้งไว้เท่านั้น — กรองไว้แล้วด้านบน)
+    cmd = lower.split()[0]
+    if cmd == "/help":
+        reply(TG_HELP_TEXT)
+    elif cmd == "/status":
+        reply(_tg_status_text(config_path))
+    elif cmd == "/list":
+        reply(_tg_list_text(cfg))
+    elif cmd == "/ip":
+        reply(_tg_ip_text())
+    elif cmd == "/run":
+        _tg_run_now(cfg, config_path, reply)
+    elif cmd == "/update":
+        reply(_tg_update_text())
+    elif cmd == "/tunnel":
+        parts = lower.split()
+        action = parts[1] if len(parts) > 1 else ""
+        reply(_tg_tunnel_text(cfg, action))
+    elif cmd in ("/restart", "/start", "/stop"):
+        reply(_tg_service_action(cmd[1:]))
+    elif cmd == "/log":
+        reply(_tg_log_tail(cfg))
+    else:
+        log.info("Telegram: คำสั่งไม่รู้จัก: %r", text[:60])
 
 
 def _tg_api(bot_token, method, timeout=10):
