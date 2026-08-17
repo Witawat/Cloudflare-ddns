@@ -236,3 +236,22 @@ cloudflare-ddns.exe start
 - **"วิธีอัปเดต" ห้ามลืม** (ส่วนที่ผู้ใช้โหลดแล้วต้องทำต่อ) — ครอบทั้งโหมด exe และ service
 - SHA256 ดึงจาก `gh release view <tag> --json assets --jq '.assets[0].digest'`
 - exe ที่แนบ = build จาก `build.bat` (8.0 MB) — ตรวจเทสต์ release (`docs/RELEASE-TEST.md`) ผ่าน 15/15 ก่อนปล่อยทุกครั้ง
+
+### ขั้นตอนสร้าง release (เจอจริง v1.8.0)
+
+```text
+1. bump: __version__ ใน cloudflare_ddns/__init__.py + CHANGELOG.md [x.y.z] + วันที่
+2. rebuild exe (build.bat — exe ต้องมีเวอร์ชันใหม่) + ตรวจ webui เสิร์ฟ v1.8.0 จริง
+3. commit bump + push
+4. เขียนไฟล์ notes ด้วย write tool (UTF-8 ไม่มี BOM) — วาง <SHA256> ปลอมไว้ก่อน
+5. gh release create v<tag> dist\cloudflare-ddns.exe --title "..." --notes-file <ไฟล์>
+6. ดึง digest: gh release view <tag> --json assets --jq '.assets[0].digest'
+7. อัปเดต SHA ใน notes แล้ว PATCH ผ่าน Python/urllib ตรง (ดูกับดักด้านล่าง)
+8. ตรวจ body กลับมาไทยปกติ (หลีกเลี่ยง PowerShell pipeline — ดูกับดัก)
+```
+
+**กับดัก encoding (เจอจริง v1.8.0 — ไทยเพี้ยนทั้ง release!):**
+- **ห้าม** `Set-Content -Encoding UTF8` (PS 5.1) แก้ไฟล์ notes ที่มีไทย — อ่าน UTF-8 ไม่มี BOM เป็น cp874 → mojibake
+- **ห้าม** `gh release edit --notes-file` กับไฟล์ไทยบนเครื่องนี้ — gh อ่านไฟล์ด้วย cp874 → ส่ง mojibake ขึ้น GitHub
+- ตรวจผล **ห้าม**ผ่าน PowerShell pipeline (`gh view | Out-File`) — PS รับ stdout ของ gh เป็น cp874 → เห็น `?`/เพี้ยนแม้ GitHub เก็บถูก
+- วิธีที่ปลอดภัย: เขียนไฟล์ด้วย write tool / Python · อัปเดต SHA ด้วย **Python + urllib PATCH** (json utf-8) · ตรวจด้วย `gh api ... --jq .body | python -c "import sys; open('<path>','wb').write(sys.stdin.buffer.read())"` แล้วอ่านไฟล์
