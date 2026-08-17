@@ -39,11 +39,12 @@ API_URL = "https://api.telegram.org/bot{token}/sendMessage"
 
 
 class TelegramNotifier:
-    def __init__(self, bot_token="", chat_id="", events=None, config_path=None):
+    def __init__(self, bot_token="", chat_id="", events=None, config_path=None, name=""):
         self.bot_token = (bot_token or "").strip()
         self.chat_id = str(chat_id or "").strip()
         self.events = events or {}
         self._last_dedupe_key = ""
+        self.name = name or ""
         # คิวอยู่ข้าง config.ini ที่ใช้ (ข้าง exe เมื่อรัน exe) — กันคิวแยกชุด
         self.queue_path = config_mod.queue_path_for(config_path)
 
@@ -65,6 +66,7 @@ class TelegramNotifier:
                 EVENT_ROUND: cfg.notify_round,
             },
             config_path=getattr(cfg, "path", None),
+            name=_tg_command_name(cfg),
         )
 
     def event_enabled(self, event):
@@ -104,7 +106,7 @@ class TelegramNotifier:
             return
         if not self.event_enabled(event):
             return
-        message = build_message(event, text)
+        message = build_message(event, text, self.name)
         if not message or not message.strip():
             # กันข้อความว่างเข้าคิว — ส่งให้ Telegram ไม่ได้ (HTTP 400) แล้วจะติดคิวซ้ำไปเรื่อย ๆ
             log.debug("ข้ามการแจ้ง (ข้อความว่าง) event=%s", event)
@@ -222,7 +224,7 @@ _reset_cooldown = 600  # reset ได้ 1 ครั้งต่อ 10 นาท
 _reset_state = {"awaiting_confirm": False, "last_ask": 0.0}
 _updates_offset = {}  # token -> offset (ยืนยันแล้ว = update_id < offset) — กันรับซ้ำ/กันขโมยคำสั่งของเครื่องอื่น
 _handled_updates = {}  # token -> set(update_id ที่จัดการแล้ว) — กันตอบซ้ำตอนถูกบล็อกโดยคำสั่งเครื่องอื่น
-_tg_foreign_stale = 600  # คำสั่งของเครื่องอื่นที่ค้างเกิน 10 นาที (เครื่องเป้าออฟไลน์) -> ทิ้ง ไม่บล็อกคิวทั้ง bot
+_tg_foreign_stale = 300  # คำสั่งของเครื่องอื่นที่ค้างเกิน 5 นาที (เครื่องเป้าออฟไลน์) -> ทิ้ง ไม่บล็อกคิวทั้ง bot
 _last_reset_time = {}
 
 
@@ -231,7 +233,8 @@ def _tg_updates(token, offset, timeout=10):
 
     - timeout=0 (short polling): ไม่ถือ connection ค้าง -> หลายโปรแกรมใช้ bot เดียวกัน
       poll พร้อมกันได้ (long polling จะโดน Telegram ตัดด้วย 409 "terminated by other getUpdates")
-    - 409: ลองใหม่ก่อน (instance อื่น poll พร้อมกัน) ถ้ายังติด -> ลบ webhook (ของอื่นค้าง) แล้วลองอีกรอบ
+    - 409: รอสักครู่แล้วลองใหม่ — ถ้ายังติดให้ข้ามรอบนี้ไปก่อน (รอรอบหน้าลองใหม่
+      ไม่ไปลบ webhook เพราะอาจกระทบเครื่องอื่นที่ใช้ webhook)
     - 429: flood wait — รอตาม retry_after แล้วข้ามรอบ (ไม่ยิงซ้ำถี่)
     """
     url = "https://api.telegram.org/bot{}/getUpdates?timeout=0".format(token.strip())
@@ -253,15 +256,7 @@ def _tg_updates(token, offset, timeout=10):
                 time.sleep(min(int(retry_after) + 1, 30))
                 return []
             if exc.code == 409:
-                if attempt == 0:
-                    time.sleep(2)  # instance อื่นกำลัง poll พร้อมกัน (short polling เจอน้อย) — ลองใหม่
-                    continue
-                if attempt == 1:
-                    # webhook ค้างจากโปรแกรมอื่น -> ลบให้แล้วลองอีกรอบ
-                    try:
-                        _tg_api(token, "deleteWebhook", timeout=timeout)
-                    except Exception:
-                        pass
+                if attempt <= 1:
                     time.sleep(2)
                     continue
                 log.warning("Telegram: getUpdates ติด 409 ซ้ำ 3 รอบ — ข้ามรอบนี้")
@@ -739,10 +734,10 @@ def _now_ts():
     return datetime.now().strftime("[%d/%m %H:%M]")
 
 
-def build_message(event, detail=None):
+def build_message(event, detail=None, name=None):
     """สร้างข้อความแจ้งเตือนรูปแบบอ่านง่าย (ภาษาไทย สั้น กระชับ + เวลาเกิด + ชื่อเครื่อง)."""
     ts = _now_ts()
-    host = _hostname()
+    host = name or _hostname()
     if event == EVENT_START:
         return f"🟢 DDNS เริ่มทำงาน {ts} · {host}\n" + (detail or "")
     if event == EVENT_STOP:

@@ -2,6 +2,19 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [1.8.2] — 2026-08-17
+
+### เพิ่ม (Features)
+
+- **notification ใช้ชื่อเครื่องที่ตั้งไว้** (`telegram_command_name`): ตั้งชื่อแล้วข้อความแจ้งเตือนเป็น `🔄 IP เปลี่ยน [เวลา] · เครื่องA` (ไม่ตั้ง = hostname เหมือนเดิม)
+- **ลด `_tg_foreign_stale` 600→300 วิ**: คำสั่งของเครื่องอื่นที่ค้าง clear คิวไวขึ้น (5 นาที) — ถ้าเครื่องเป้าออฟไลน์ รู้ผลเร็วขึ้น
+- **409 ไม่ลบ webhook**: เจอ 409 (bot lock) → ลองใหม่ 2 รอบแล้วข้ามรอบ ไม่ไปลบ webhook ของคนอื่นอีก
+- **README + docs/USAGE.md**: เพิ่มคำอธิบายใช้ bot ตัวเดียวหลายเครื่อง (วิธีตั้งชื่อ, syntax `@ชื่อ`, ต่อท้าย notification)
+
+### แก้บั๊ก (Fixes)
+
+- `test_409_retries_then_gives_up`: ปรับ assertion `deleteWebhook` → `assert_not_called()`
+
 ## [1.8.1] — 2026-08-17
 
 ### เพิ่ม (Features)

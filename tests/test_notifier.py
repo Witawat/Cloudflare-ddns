@@ -23,6 +23,33 @@ zone = example.com
 """
 
 
+class TestBuildMessage(unittest.TestCase):
+    """build_message ใช้ชื่อเครื่องที่ส่งมาหรือ fallback เป็น hostname"""
+
+    def test_with_name(self):
+        msg = notifier.build_message(notifier.EVENT_START, "running", name="เครื่องA")
+        self.assertIn("· เครื่องA", msg)
+
+    def test_without_name_falls_back_to_hostname(self):
+        import socket as _socket
+        msg = notifier.build_message(notifier.EVENT_START, "running")
+        self.assertIn("· " + _socket.gethostname(), msg)
+
+    def test_from_config_passes_name(self):
+        import tempfile
+        tmp = tempfile.TemporaryDirectory()
+        path = os.path.join(tmp.name, "config.ini")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(MINIMAL_INI.replace(
+                "telegram_chat_id = 42",
+                "telegram_chat_id = 42\ntelegram_command_name = เครื่องA",
+            ))
+        cfg = config_mod.Config(path)
+        n = notifier.TelegramNotifier.from_config(cfg)
+        self.assertEqual(n.name, "เครื่องA")
+        tmp.cleanup()
+
+
 class QueueTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -368,13 +395,13 @@ class TgUpdatesNetTest(unittest.TestCase):
     """เทสต์ _tg_updates ตรง ๆ (เครือข่ายจำลอง — ห้ามอยู่ในคลาสที่ patch _tg_updates)"""
 
     def test_409_retries_then_gives_up(self):
-        """409 (bot lock/webhook) -> ลองใหม่ + ลบ webhook อีกครั้ง แล้วถอย ไม่วนลูป"""
+        """409 (bot lock) -> ลองใหม่ 2 รอบแล้วถอย ไม่ลบ webhook"""
         err = urllib.error.HTTPError("https://api.telegram.org", 409, "Conflict", {}, None)
         with mock.patch("urllib.request.urlopen", side_effect=err), \
              mock.patch.object(notifier.time, "sleep"), \
              mock.patch.object(notifier, "_tg_api", return_value={"ok": True}) as m_api:
             self.assertEqual(notifier._tg_updates("t", 0), [])
-        m_api.assert_called_once_with("t", "deleteWebhook", timeout=10)
+        m_api.assert_not_called()
 
     def test_429_backs_off(self):
         """429 flood wait -> รอตาม retry_after แล้วข้ามรอบ"""
