@@ -168,15 +168,18 @@ python -m cloudflare_ddns.main setup
 | คำสั่ง | ความหมาย |
 |---|---|
 | `/help` | รายการคำสั่ง |
-| `/status` | สถานะ DDNS (IP ต่อ record / รอบล่าสุด / error) |
+| `/status` | สถานะ DDNS (IP ต่อ record / รอบล่าสุด / error / เวอร์ชัน / tunnel / สถิติ API) |
 | `/list` | รายชื่อ DDNS records + tunnel hostnames ที่ตั้งค่าไว้ |
 | `/ip` | IP สาธารณะปัจจุบัน (IPv4 + IPv6) |
-| `/run` | รันรอบ DDNS ทันที (ผลสรุปตามมา) |
+| `/run` | รันรอบ DDNS ทันที (ผลสรุปตามมา — **ต้องยืนยัน `yes`**) |
 | `/update` | เช็คเวอร์ชันใหม่ |
-| `/tunnel` / `/tunnel start` / `/tunnel stop` | สถานะ / เริ่ม / หยุด tunnel |
+| `/tunnel` / `/tunnel start` / `/tunnel stop` | สถานะ / เริ่ม / หยุด tunnel (**stop ต้องยืนยัน `yes`**) |
 | `/log` | log 30 บรรทัดสุดท้าย |
-| `/restart` / `/start` / `/stop` | ควบคุม Windows Service (รันใน service เอง: `/stop` ใช้ไม่ได้) |
+| `/notify [all\|start\|stop\|ip\|error\|created\|round\|daily] [on\|off]` | ดู/เปิด/ปิดการแจ้งเตือน — ไม่ระบุ on/off = สลับค่าปัจจุบัน |
+| `/restart` / `/start` / `/stop` | ควบคุม Windows Service (รันใน service เอง: `/stop` ใช้ไม่ได้ — **restart ต้องยืนยัน `yes`**) |
 | `reset password` → `yes` | กู้รหัสผ่านหน้าเว็บ (รหัสใหม่ 12 ตัวส่งกลับ — กัน 1 ครั้ง/10 นาที) |
+
+> **คำสั่งอันตรายต้องยืนยัน 2 ขั้น**: `/run`, `/restart`, `/tunnel stop` — ระบบถาม "พิมพ์ `yes` เพื่อยืนยัน (ภายใน 2 นาที)" ก่อนรันจริง (พิมพ์ `no` เพื่อยกเลิก) กันสั่งพลาด/กดผิด
 
 > เงื่อนไข: ตั้ง bot token + chat_id แล้ว · เปิด "ควบคุม/กู้รหัสผ่านผ่าน Telegram" · โปรแกรมอ่านข้อความใหม่ทุก ~1 นาที (ตามรอบ DDNS)
 

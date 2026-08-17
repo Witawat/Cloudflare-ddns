@@ -222,6 +222,10 @@ def clear_queue(path=None):
 
 _reset_cooldown = 600  # reset ได้ 1 ครั้งต่อ 10 นาที
 _reset_state = {"awaiting_confirm": False, "last_ask": 0.0}
+
+# ยืนยันคำสั่งอันตราย (/run /restart /tunnel stop) — ต้องพิมพ์ yes ภายใน 2 นาที
+_danger_confirm_seconds = 120
+_danger_state = {"command": "", "text": "", "expires": 0}
 _updates_offset = {}  # token -> offset (ยืนยันแล้ว = update_id < offset) — กันรับซ้ำ/กันขโมยคำสั่งของเครื่องอื่น
 _handled_updates = {}  # token -> set(update_id ที่จัดการแล้ว) — กันตอบซ้ำตอนถูกบล็อกโดยคำสั่งเครื่องอื่น
 _tg_foreign_stale = 300  # คำสั่งของเครื่องอื่นที่ค้างเกิน 5 นาที (เครื่องเป้าออฟไลน์) -> ทิ้ง ไม่บล็อกคิวทั้ง bot
@@ -301,14 +305,15 @@ def _apply_webui_password(cfg, config_path, new_pw):
 
 TG_HELP_TEXT = (
     "รายการคำสั่ง (พิมพ์ในแชทนี้):\n"
-    "/status — สถานะ DDNS (IP/record/รอบล่าสุด)\n"
+    "/status — สถานะ DDNS (IP/รอบล่าสุด/error/เวอร์ชัน/tunnel/สถิติ API)\n"
     "/list — รายชื่อ DDNS + tunnel ที่ตั้งค่าไว้\n"
     "/ip — IP สาธารณะปัจจุบัน\n"
-    "/run — รันรอบ DDNS ทันที\n"
+    "/run — รันรอบ DDNS ทันที (ต้องยืนยัน yes)\n"
     "/update — เช็คเวอร์ชันใหม่\n"
-    "/tunnel [start|stop] — สถานะ/ควบคุม tunnel\n"
+    "/tunnel [start|stop] — สถานะ/ควบคุม tunnel (stop ต้องยืนยัน yes)\n"
     "/log — log 30 บรรทัดสุดท้าย\n"
-    "/restart /start /stop — ควบคุม Windows Service\n"
+    "/notify [all|start|stop|ip|error|created|round|daily] [on|off] — ดู/เปิด/ปิดการแจ้งเตือน\n"
+    "/restart /start /stop — ควบคุม Windows Service (restart ต้องยืนยัน yes)\n"
     "reset password → yes — กู้รหัสผ่านหน้าเว็บ\n"
     "ใช้ bot กลางหลายเครื่อง? ต่อท้าย @ชื่อเครื่อง "
     "(เช่น /status @เครื่องA) — เฉพาะเครื่องที่ชื่อตรงตอบ\n"
@@ -358,9 +363,10 @@ def _tg_list_text(cfg):
 
 
 def _tg_status_text(config_path):
-    """ข้อความสถานะสำหรับ /status"""
-    from . import ddns
+    """ข้อความสถานะสำหรับ /status (records + รอบล่าสุด + error + เวอร์ชัน + tunnel + สถิติ API)"""
+    from . import cloudflare_api, ddns
 
+    cfg = config_mod.Config(config_path)
     lines = []
     try:
         st = ddns.DDNSEngine(config_path).status()
@@ -375,7 +381,84 @@ def _tg_status_text(config_path):
             lines.append("⚠ {}: {}".format(key, str(err)[:80]))
     except Exception as exc:
         lines.append("อ่านสถานะไม่ได้: {}".format(exc))
+    # เวอร์ชันโปรแกรม
+    try:
+        from . import __version__ as ver
+
+        lines.append("โปรแกรม: v{}".format(ver))
+    except Exception:
+        pass
+    # tunnel hostnames
+    hosts = getattr(cfg, "tunnel_hosts", []) or []
+    if hosts:
+        lines.append("Tunnel: {}".format(", ".join(h.get("hostname", "?") for h in hosts)))
+    # สถิติ Cloudflare API (หน่วยความจำ เริ่มใหม่เมื่อ service restart)
+    stats = cloudflare_api.api_stats()
+    lines.append(
+        "API: เรียก {} · error {} · rate limit {}".format(
+            stats.get("calls", 0), stats.get("errors", 0), stats.get("rate_limited", 0)
+        )
+    )
     return "\n".join(lines)
+
+
+# ฟิลด์การแจ้งเตือนที่ /notify ควบคุมได้ (key ใน Telegram ↔ attribute ใน config)
+NOTIFY_FIELDS = {
+    "start": "notify_start",
+    "stop": "notify_stop",
+    "ip": "notify_ip_change",
+    "error": "notify_error",
+    "created": "notify_created",
+    "round": "notify_round",
+    "daily": "daily_report",
+}
+
+
+def _tg_notify_text(cfg, parts):
+    """จัดการ /notify — ดู/เปิด/ปิดการแจ้งเตือน (บันทึก config ผ่านเส้นทางเดียวกับฟอร์มเว็บ).
+
+    รูปแบบ: /notify · /notify all on|off · /notify <event> [on|off]
+    """
+    def current():
+        toggles = " · ".join(
+            "{}={}".format(key, "เปิด" if getattr(cfg, field) else "ปิด")
+            for key, field in NOTIFY_FIELDS.items()
+        )
+        return "การแจ้งเตือน:\n" + toggles
+
+    if len(parts) < 2:
+        return current()
+
+    target = parts[1].lower()
+    value = parts[2].lower() if len(parts) > 2 else ""
+
+    if target == "all":
+        if value not in ("on", "off"):
+            return "ใช้: /notify all on|off (เปิด/ปิดทุกประเภท)"
+        for field in NOTIFY_FIELDS.values():
+            setattr(cfg, field, value == "on")
+    elif target in NOTIFY_FIELDS:
+        field = NOTIFY_FIELDS[target]
+        if value not in ("on", "off"):
+            value = "off" if getattr(cfg, field) else "on"
+        setattr(cfg, field, value == "on")
+    else:
+        return "ไม่รู้จักประเภท: {} — ใช้: {}".format(
+            target, " / ".join(NOTIFY_FIELDS) + " / all"
+        )
+
+    # บันทึกผ่านเส้นทางเดียวกับฟอร์มเว็บ (validate + เขียน atomic)
+    try:
+        from . import webui as webui_mod
+
+        data = webui_mod._cfg_to_dict(cfg)
+        text = webui_mod._dict_to_ini(data, cfg.path)
+        ok, message = cfg.save_text(text)
+    except Exception as exc:
+        return "บันทึก config ไม่สำเร็จ: {}".format(exc)
+    if not ok:
+        return "บันทึก config ไม่สำเร็จ: {}".format(message)
+    return current()
 
 
 def _tg_ip_text():
@@ -584,11 +667,36 @@ def check_telegram_commands(cfg, config_path=""):
         handled &= {u for u in handled if u >= _updates_offset[token]}
 
 
-def _dispatch_tg_command(lower, text, uid, token, cfg, config_path, reply):
-    """จัดการคำสั่ง Telegram หนึ่งคำสั่ง (แยกฟังก์ชัน — ใช้จาก check_telegram_commands)"""
+def _dispatch_tg_command(lower, text, uid, token, cfg, config_path, reply, confirmed=False):
+    """จัดการคำสั่ง Telegram หนึ่งคำสั่ง (แยกฟังก์ชัน — ใช้จาก check_telegram_commands)
+
+    confirmed=True ใช้เฉพาะตอน re-dispatch หลังยืนยันคำสั่งอันตราย — ข้าม gate ยืนยันซ้ำ
+    """
     import secrets
 
     log.info("Telegram: คำสั่งจาก chat_id=%s: %r", cfg.telegram_chat_id, text[:60])
+
+    # ยืนยันคำสั่งอันตราย (/run /restart /tunnel stop) — พิมพ์ yes ภายใน 2 นาที
+    if not confirmed and _danger_state["command"]:
+        pending = _danger_state["command"]
+        ptext = _danger_state["text"]
+        expired = time.time() > _danger_state["expires"]
+        _danger_state["command"] = ""
+        if lower == "yes" and not expired:
+            log.warning("Telegram: ยืนยันคำสั่งอันตราย: %s", pending)
+            _dispatch_tg_command(
+                pending.lower(), ptext, uid, token, cfg, config_path, reply, confirmed=True
+            )
+            return
+        if lower == "yes":
+            reply("หมดเวลายืนยันแล้ว — พิมพ์คำสั่งใหม่เพื่อเริ่ม")
+            return
+        if lower == "no":
+            reply("ยกเลิก: {}".format(pending))
+            return
+        # ข้อความอื่นที่ยังไม่ยืนยัน — คืนสถานะรอยืนยันให้
+        reply("มีคำสั่งรอยืนยัน: {} — พิมพ์ 'yes' เพื่อยืนยัน หรือ 'no' เพื่อยกเลิก".format(pending))
+        return
 
     # กู้รหัสผ่านหน้าเว็บ (2 ขั้น)
     if lower == "reset password":
@@ -622,6 +730,27 @@ def _dispatch_tg_command(lower, text, uid, token, cfg, config_path, reply):
 
     # คำสั่งควบคุม (ต้องมาจาก chat_id ที่ตั้งไว้เท่านั้น — กรองไว้แล้วด้านบน)
     cmd = lower.split()[0]
+
+    # คำสั่งอันตราย -> ขอให้ยืนยันก่อน (กันสั่งพลาด / กดผิด)
+    danger_cmd = ""
+    if not confirmed:
+        if cmd == "/run":
+            danger_cmd = "/run"
+        elif cmd == "/restart":
+            danger_cmd = "/restart"
+        elif cmd == "/tunnel" and "stop" in lower.split()[1:2]:
+            danger_cmd = "/tunnel stop"
+    if danger_cmd:
+        _danger_state["command"] = danger_cmd
+        _danger_state["text"] = text
+        _danger_state["expires"] = time.time() + _danger_confirm_seconds
+        reply(
+            "{} เป็นคำสั่งอันตราย — พิมพ์ 'yes' เพื่อยืนยัน หรือ 'no' เพื่อยกเลิก (ภายใน 2 นาที)".format(
+                danger_cmd
+            )
+        )
+        return
+
     if cmd == "/help":
         reply(TG_HELP_TEXT)
     elif cmd == "/status":
@@ -638,6 +767,8 @@ def _dispatch_tg_command(lower, text, uid, token, cfg, config_path, reply):
         parts = lower.split()
         action = parts[1] if len(parts) > 1 else ""
         reply(_tg_tunnel_text(cfg, action))
+    elif cmd == "/notify":
+        reply(_tg_notify_text(cfg, lower.split()))
     elif cmd in ("/restart", "/start", "/stop"):
         reply(_tg_service_action(cmd[1:]))
     elif cmd == "/log":

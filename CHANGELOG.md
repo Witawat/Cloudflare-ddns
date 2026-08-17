@@ -2,6 +2,14 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [1.8.3] — 2026-08-17
+
+### เพิ่ม (Features)
+
+- **ยืนยันคำสั่งอันตราย 2 ขั้นผ่าน Telegram**: `/run`, `/restart`, `/tunnel stop` ต้องพิมพ์ `yes` ยืนยันภายใน 2 นาที (พิมพ์ `no` ยกเลิก) — กันสั่งพลาด/กดผิด (กรองชื่อเครื่องแล้ว เช่น `/run @เครื่องA`)
+- **/status ละเอียดขึ้น**: เพิ่มเวอร์ชันโปรแกรม, tunnel hostnames, สถิติ Cloudflare API (เรียก/error/rate limit)
+- **/notify**: เปิด/ปิดการแจ้งเตือนผ่าน Telegram ทันที ไม่ต้องเข้าเว็บ — รูปแบบ `/notify [all|start|stop|ip|error|created|round|daily] [on|off]` (ไม่ระบุ on/off = สลับค่า) — บันทึก config ผ่านเส้นทางเดียวกับฟอร์มเว็บ (validate + atomic)
+
 ## [1.8.2] — 2026-08-17
 
 ### เพิ่ม (Features)

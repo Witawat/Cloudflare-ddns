@@ -135,6 +135,7 @@ class TelegramResetTest(unittest.TestCase):
         notifier._last_reset_time.clear()
         notifier._updates_offset.clear()
         notifier._handled_updates.clear()
+        notifier._danger_state["command"] = ""
 
     def tearDown(self):
         self.patcher_updates.stop()
@@ -204,6 +205,7 @@ class TelegramCommandTest(unittest.TestCase):
         notifier._reset_state["awaiting_confirm"] = False
         notifier._updates_offset.clear()
         notifier._handled_updates.clear()
+        notifier._danger_state["command"] = ""
 
     def tearDown(self):
         self.patcher_updates.stop()
@@ -260,7 +262,13 @@ class TelegramCommandTest(unittest.TestCase):
         self.assertTrue(any("line2" in t for t in texts))
 
     def test_run_starts_thread_and_replies(self):
+        # /run เป็นคำสั่งอันตราย — ต้องยืนยัน yes ก่อน
         self._run("/run")
+        texts = [c.args[0] for c in self.mock_send.call_args_list]
+        self.assertTrue(any("เป็นคำสั่งอันตราย" in t for t in texts))
+        self.assertFalse(any("กำลังรันรอบ DDNS" in t for t in texts))
+        self.mock_updates.return_value = [self._update(42, "yes", 2)]
+        notifier.check_telegram_commands(self.cfg, self.path)
         texts = [c.args[0] for c in self.mock_send.call_args_list]
         self.assertTrue(any("กำลังรันรอบ DDNS" in t for t in texts))
 
@@ -277,9 +285,47 @@ class TelegramCommandTest(unittest.TestCase):
         with mock.patch("cloudflare_ddns.service.restart_service", return_value="restarted") as m, \
              mock.patch("cloudflare_ddns.webui._in_service", return_value=False):
             self._run("/restart")
-        m.assert_called_once()
+            # ยังไม่ยืนยัน — service ไม่ถูกเรียก
+            m.assert_not_called()
+            self.mock_updates.return_value = [self._update(42, "yes", 2)]
+            notifier.check_telegram_commands(self.cfg, self.path)
+            m.assert_called_once()
         texts = [c.args[0] for c in self.mock_send.call_args_list]
         self.assertTrue(any("restarted" in t for t in texts))
+
+    def test_danger_confirm_cancel_with_no(self):
+        self._run("/restart")
+        self.mock_updates.return_value = [self._update(42, "no", 2)]
+        notifier.check_telegram_commands(self.cfg, self.path)
+        texts = [c.args[0] for c in self.mock_send.call_args_list]
+        self.assertTrue(any("ยกเลิก" in t for t in texts))
+
+    def test_tunnel_stop_requires_confirm(self):
+        with mock.patch("cloudflare_ddns.tunnel.TunnelManager") as m:
+            mgr = m.return_value
+            mgr.stop.return_value = "stopped"
+            self._run("/tunnel stop")
+            mgr.stop.assert_not_called()
+            self.mock_updates.return_value = [self._update(42, "yes", 2)]
+            notifier.check_telegram_commands(self.cfg, self.path)
+            mgr.stop.assert_called_once()
+
+    def test_notify_toggles_and_saves(self):
+        self.mock_updates.return_value = [self._update(42, "/notify error off", 1)]
+        notifier.check_telegram_commands(self.cfg, self.path)
+        self.assertFalse(self.cfg.notify_error)
+        self.mock_updates.return_value = [self._update(42, "/notify error", 2)]
+        notifier.check_telegram_commands(self.cfg, self.path)
+        self.assertTrue(self.cfg.notify_error)
+        self.mock_updates.return_value = [self._update(42, "/notify all off", 3)]
+        notifier.check_telegram_commands(self.cfg, self.path)
+        self.assertFalse(self.cfg.notify_error)
+        self.assertFalse(self.cfg.notify_ip_change)
+
+    def test_notify_unknown_event(self):
+        self._run("/notify bogus")
+        texts = [c.args[0] for c in self.mock_send.call_args_list]
+        self.assertTrue(any("ไม่รู้จัก" in t for t in texts))
 
     def test_unknown_command_no_reply(self):
         self._run("/nosuch")
