@@ -87,3 +87,17 @@ def send_ping(cfg, ok=True, stopped=False):
             log.warning("heartbeat ส่งไม่ได้: %s (%s)", target, error)
         else:
             log.debug("heartbeat ส่งไม่ได้ (ซ้ำ): %s (%s)", target, error)
+
+
+def send_test(cfg):
+    """ปุ่มทดสอบในเว็บ: ส่ง ping 1 ครั้งต่อ URL ที่ตั้งไว้ (ไม่โดน rate limit ระหว่างรอบ)"""
+    results = []
+    for name, value in (
+        ("Healthchecks.io", getattr(cfg, "healthchecks_url", "")),
+        ("Uptime Kuma", getattr(cfg, "uptimekuma_url", "")),
+    ):
+        if not value or not str(value).strip():
+            continue
+        ok_sent, error = _ping(str(value).strip())
+        results.append({"name": name, "ok": ok_sent, "error": error})
+    return results

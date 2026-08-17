@@ -195,7 +195,44 @@ def install_service():
         description=SERVICE_DESCRIPTION,
         exeArgs=exe_args,
     )
+    _configure_failure_actions(win32service)
     return f"ติดตั้ง service '{SERVICE_NAME}' เรียบร้อย (เริ่มอัตโนมัติตอน boot)"
+
+
+def _configure_failure_actions(win32service):
+    """ตั้งค่า auto-restart เมื่อ service crash เอง (กัน service ตายเงียบ).
+
+    ครั้งแรก crash -> restart 5 วินาที · ครั้งที่ 2 -> 30 วินาที · reset นับหลัง 24 ชม.
+    """
+    try:
+        scm = win32service.OpenSCManager(
+            None, None, win32service.SC_MANAGER_CONNECT | win32service.SC_MANAGER_CREATE_SERVICE
+        )
+        try:
+            handle = win32service.OpenService(
+                scm, SERVICE_NAME, win32service.SERVICE_CHANGE_CONFIG | win32service.SERVICE_START
+            )
+            try:
+                info = win32service.SERVICE_FAILURE_ACTIONS(
+                    dwResetPeriod=86400,
+                    lpRebootMsg=None,
+                    lpCommand=None,
+                    lpsaActions=[
+                        (win32service.SC_ACTION_RESTART, 5000),
+                        (win32service.SC_ACTION_RESTART, 30000),
+                        (win32service.SC_ACTION_NONE, 0),
+                    ],
+                )
+                win32service.ChangeServiceConfig2(
+                    handle, win32service.SERVICE_CONFIG_FAILURE_ACTIONS, info
+                )
+                log.info("ตั้งค่า auto-restart ของ service เรียบร้อย (crash -> restart 5/30 วิ)")
+            finally:
+                win32service.CloseServiceHandle(handle)
+        finally:
+            win32service.CloseServiceHandle(scm)
+    except Exception as exc:
+        log.warning("ตั้งค่า auto-restart ของ service ไม่ได้: %s", exc)
 
 
 def remove_service():

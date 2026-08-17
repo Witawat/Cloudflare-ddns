@@ -2,6 +2,27 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [ยังไม่ release]
+
+### เพิ่ม (Features)
+
+- **รหัสผ่านหน้าเว็บเก็บเป็น hash** (sha256 + salt จากตำแหน่ง config) — ไม่มีรหัสจริงหลุดใน config.ini/cookie อีก (config เดิมที่เก็บ plaintext ย้ายให้อัตโนมัติครั้งเดียว)
+- **กู้รหัสผ่านหน้าเว็บ 3 ทาง**: (1) เปลี่ยนในฟอร์มตอน session ยังอยู่ (2) คำสั่งใหม่ `reset-password` (ตั้งใหม่หรือลบรหัส — ใช้ได้แม้ login ไม่ได้) (3) **ผ่าน Telegram (opt-in)**: พิมพ์ `reset password` → ยืนยัน `yes` → โปรแกรมสุ่มรหัสใหม่ 12 ตัวส่งกลับ (เฉพาะ chat_id ที่ตั้งไว้ กัน 1 ครั้ง/10 นาที — เปิดในฟอร์มตั้งค่า/`telegram_allow_reset`)
+- **กัน CSRF**: POST ทุกตัว (ยกเว้น /login) ตรวจ Origin — คำขอจากเว็บอื่น (เช่น เปิดหน้า 0.0.0.0 แล้วถูกเว็บโจมตี) ถูกบล็อก 403
+- **security headers**: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` + cookie ใช้ `SameSite=Lax`
+- **กัน log injection**: ข้อความจากหน้าเว็บ (log-event) ที่มีขึ้นบรรทัดใหม่ถูกกรองออก
+- **ตรวจฉันทามติ IP** (`ip_consensus`): ต้องมี provider ตรวจ IP ≥ 2 รายเห็น IP เดียวกัน ถึงจะอัปเดต record (กัน provider ตอบผิด/ล้าสมัย — ปิด default)
+- **service auto-restart**: crash แล้ว Windows เริ่มใหม่เอง (5 วิ ครั้งแรก / 30 วิ ครั้งถัดไป) — กัน service ตายเงียบ (ตอน install)
+- **state/queue backup หมุน 3**: `state.json.bak`/`.2`/`.3` + คิวเช่นกัน — เขียนเท่าที่เนื้อหาเปลี่ยน
+- **ปุ่มทดสอบ heartbeat** ในฟอร์มตั้งค่า (ส่ง ping ทันที ไม่รอรอบ)
+- **ปุ่มเช็คอัปเดต cloudflared** (เทียบเวอร์ชัน exe กับ GitHub releases — cache 6 ชม.)
+- **ดาวน์โหลด/นำเข้า config.ini** จากหน้าเว็บ (สำรองข้อมูล/ย้ายเครื่อง — นำเข้าตรวจสอบก่อนเขียน)
+- **unit tests 51 ตัว** (`tests/` — unittest stdlib: config/ip_detect/notifier/ddns/ความปลอดภัยเว็บ) — รัน `python -m unittest discover -s tests -v`
+
+### แก้บั๊ก (Fixes)
+
+- **login รับเฉพาะรหัสจริง**: เดิม session cookie เทียบกับรหัสจริงใน config — หลังเก็บ hash โค้ดทุกจุด (login/authed/migrate) รองรับทั้ง config ใหม่ (hash) และ config เก่า (plaintext) ชั่วคราว
+
 ## [1.7.19] — 2026-08-16
 
 ### ปรับปรุง

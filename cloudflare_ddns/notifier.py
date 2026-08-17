@@ -185,10 +185,23 @@ def load_queue(path=None):
 def save_queue(items, path=None):
     path = path or QUEUE_PATH
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        text = json.dumps(items, ensure_ascii=False, indent=2)
+    except TypeError:
+        log.warning("บันทึกคิวแจ้งเตือนไม่ได้ (serialize ไม่ผ่าน)")
+        return
+    # เนื้อหาเหมือนเดิม = ไม่เขียน (กัน backup หมุนสะสมไร้ประโยชน์)
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            if handle.read() == text:
+                return
+    except OSError:
+        pass
+    config_mod.rotate_backup(path, keep=3)
     tmp = path + ".tmp"
     try:
         with open(tmp, "w", encoding="utf-8") as handle:
-            json.dump(items, handle, ensure_ascii=False, indent=2)
+            handle.write(text)
         os.replace(tmp, path)
     except OSError as exc:
         log.warning("บันทึกคิวแจ้งเตือนไม่ได้: %s", exc)
@@ -201,6 +214,120 @@ def queue_size(path=None):
 def clear_queue(path=None):
     """ล้างคิวทั้งหมด (ปุ่มใน Web UI)"""
     save_queue([], path)
+
+
+# ---- กู้รหัสผ่านหน้าเว็บผ่าน Telegram (opt-in: telegram_allow_reset = true) ----
+
+_reset_cooldown = 600  # reset ได้ 1 ครั้งต่อ 10 นาที
+_reset_state = {"awaiting_confirm": False, "last_ask": 0.0}
+_updates_offset = {}  # token -> offset (กันรับข้อความเดิมซ้ำ)
+_last_reset_time = {}
+
+
+def _tg_updates(token, offset, timeout=10):
+    """เรียก getUpdates คืน list ของ updates (จัดการ webhook 409 อัตโนมัติ)"""
+    url = "https://api.telegram.org/bot{}/getUpdates?timeout=0".format(token.strip())
+    if offset:
+        url += "&offset={}".format(int(offset))
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8", "replace"))
+        return data.get("result", []) if data.get("ok") else []
+    except urllib.error.HTTPError as exc:
+        if exc.code == 409:
+            try:
+                _tg_api(token, "deleteWebhook", timeout=timeout)
+            except Exception:
+                pass
+            return _tg_updates(token, offset, timeout)
+        return []
+    except Exception:
+        return []
+
+
+def _apply_webui_password(cfg, config_path, new_pw):
+    """เขียน webui_password (hash) ใหม่ลง config — ใช้ save_text (validate + backup + atomic)"""
+    import configparser
+    import io
+
+    text = cfg.raw_text()
+    if not text:
+        return False, "อ่าน config ไม่ได้"
+    parser = configparser.ConfigParser(interpolation=None)
+    try:
+        parser.read_string(text)
+    except configparser.Error as exc:
+        return False, "config ผิดรูปแบบ: {}".format(exc)
+    if not parser.has_section("cloudflare"):
+        parser.add_section("cloudflare")
+    parser.set(
+        "cloudflare", "webui_password", config_mod.password_hash(new_pw, config_path)
+    )
+    buf = io.StringIO()
+    parser.write(buf)
+    return cfg.save_text(buf.getvalue())
+
+
+def check_telegram_reset(cfg, config_path=""):
+    """ฟังคำสั่งกู้รหัสผ่านหน้าเว็บจาก Telegram — เฉพาะ chat_id ที่ตั้งไว้เท่านั้น.
+
+    - เปิดด้วย telegram_allow_reset = true ใน config
+    - พิมพ์ 'reset password' -> ตอบ 'yes' -> สุ่มรหัสใหม่ 12 ตัว ส่งกลับทาง Telegram
+    - กันสแปม: reset ได้ 1 ครั้ง/10 นาที + log ทุกครั้ง + ข้อความจาก chat อื่นถูกละเลย
+    """
+    import secrets
+
+    if not getattr(cfg, "telegram_allow_reset", False):
+        return
+    if not cfg.telegram_bot_token or not cfg.telegram_chat_id:
+        return
+    token = cfg.telegram_bot_token.strip()
+    offset = _updates_offset.get(token, 0)
+    updates = _tg_updates(token, offset)
+    if not updates:
+        return
+    _updates_offset[token] = max(int(u.get("update_id", 0) or 0) + 1 for u in updates)
+
+    notify = TelegramNotifier.from_config(cfg)
+
+    def reply(text):
+        ok, error = notify.send_raw(text)
+        if not ok:
+            log.warning("telegram reset: ส่งข้อความตอบไม่ได้: %s", error)
+
+    for update in updates:
+        msg = update.get("message") or {}
+        chat = msg.get("chat") or {}
+        if str(chat.get("id", "")) != str(cfg.telegram_chat_id):
+            continue  # ข้อความจาก chat อื่น — ไม่ตอบ ไม่ log
+        text = str(msg.get("text", "")).strip()
+        if text.lower() == "reset password":
+            _reset_state["awaiting_confirm"] = True
+            _reset_state["last_ask"] = time.time()
+            log.warning("Telegram: รับคำสั่ง 'reset password' — กำลังรอยืนยัน")
+            reply("รหัสผ่านหน้าเว็บจะถูกสุ่มใหม่ — พิมพ์ 'yes' เพื่อยืนยัน (ภายใน 10 นาที)")
+        elif text.lower() == "yes" and _reset_state["awaiting_confirm"]:
+            _reset_state["awaiting_confirm"] = False
+            if time.time() - _reset_state["last_ask"] > 600:
+                log.warning("Telegram: คำสั่ง reset หมดเวลา (เกิน 10 นาที)")
+                reply("คำสั่ง reset หมดเวลาแล้ว — พิมพ์ 'reset password' ใหม่เพื่อเริ่ม")
+                continue
+            if time.time() - _last_reset_time.get(token, 0) < _reset_cooldown:
+                log.warning("Telegram: ข้าม reset (เพิ่งทำไปไม่นาน)")
+                reply("ข้าม: เพิ่ง reset ไปเมื่อไม่นาน — รอ 10 นาทีแล้วลองใหม่")
+                continue
+            _last_reset_time[token] = time.time()
+            new_pw = secrets.token_urlsafe(9)  # 12 ตัวอักษร
+            ok, message = _apply_webui_password(cfg, config_path, new_pw)
+            if ok:
+                log.warning("Telegram: reset รหัสผ่านหน้าเว็บสำเร็จ (ส่งรหัสใหม่ทาง Telegram)")
+                reply(
+                    "รหัสผ่านหน้าเว็บใหม่: {}\n"
+                    "เข้าหน้าเว็บแล้วเปลี่ยนเป็นรหัสที่จำง่ายได้ในฟอร์มตั้งค่า".format(new_pw)
+                )
+            else:
+                log.warning("Telegram: reset รหัสผ่านไม่สำเร็จ: %s", message)
+                reply("reset ไม่สำเร็จ: {}".format(message))
 
 
 def _tg_api(bot_token, method, timeout=10):

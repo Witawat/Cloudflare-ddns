@@ -128,11 +128,12 @@ POST /open-data-folder   เปิดโฟลเดอร์ข้อมูล 
 1. **อ่านก่อน**: ไฟล์ที่เกี่ยวข้อง + กับดักข้อ 5 + `field-journal`/git log ล่าสุด (ถ้ามี)
 2. แก้โค้ด → `python -m compileall -q cloudflare_ddns`
 3. ถ้าแตะ JS: สกัด `<script>` จาก PAGE → `node --check`
-4. เทสต์ logic ผ่าน `python` (ใช้ state/temp แยก อย่าแตะของจริง) — `dry-run` เสมอถ้าเป็น DDNS flow
-5. เทสต์ Web UI ผ่าน playwright (`ui-check.mjs`/`ui-verify.mjs` — ต้อง `npm i playwright` ในโฟลเดอร์ temp แยก เพราะไม่ควรมี node_modules ในโปรเจกต์) — เทสต์ทุกขนาดจอ 360-1920
-6. **rebuild + reinstall service** (svc-stop → PyInstaller → svc-reinstall) — ตรวจ `sc query CloudflareDDNS` = RUNNING + `curl http://127.0.0.1:8123/` = 200
-7. อัปเดต docs (README/CHANGELOG) ถ้าฟีเจอร์/behavior เปลี่ยน
-8. commit: `feat:` / `fix:` / `docs:` / `ui:` / `chore:` + คำอธิบายไทยสั้นกระชับ (ดู `git log --oneline`)
+ 4. เทสต์ logic ผ่าน `python` (ใช้ state/temp แยก อย่าแตะของจริง) — `dry-run` เสมอถ้าเป็น DDNS flow
+ 5. รัน unit tests: `python -m unittest discover -s tests -v` (tests/ — unittest stdlib ล้วน ไม่มี CI; ใช้ tempfile + unittest.mock เท่านั้น ห้ามพึ่งเน็ต)
+ 6. เทสต์ Web UI ผ่าน playwright (`ui-check.mjs`/`ui-verify.mjs` — ต้อง `npm i playwright` ในโฟลเดอร์ temp แยก เพราะไม่ควรมี node_modules ในโปรเจกต์) — เทสต์ทุกขนาดจอ 360-1920
+ 7. **rebuild + reinstall service** (svc-stop → PyInstaller → svc-reinstall) — ตรวจ `sc query CloudflareDDNS` = RUNNING + `curl http://127.0.0.1:8123/` = 200
+ 8. อัปเดต docs (README/CHANGELOG) ถ้าฟีเจอร์/behavior เปลี่ยน
+ 9. commit: `feat:` / `fix:` / `docs:` / `ui:` / `chore:` + คำอธิบายไทยสั้นกระชับ (ดู `git log --oneline`)
 
 ## 7. แนวทางโค้ด
 

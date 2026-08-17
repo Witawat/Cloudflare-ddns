@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from . import __version__
 from . import config as config_mod
 from . import ddns
+from . import heartbeat
 from . import notifier
 
 # แคชผลตรวจ NAT สำหรับ /ip-check — nat_report ตรวจเต็ม (tracert + STUN หลายรอบ) ช้า ~10 วิ
@@ -155,6 +156,7 @@ def _cfg_to_dict(cfg):
             "interval_seconds": cfg.interval_seconds,
             "use_ipv4": cfg.use_ipv4,
             "use_ipv6": cfg.use_ipv6,
+            "ip_consensus": cfg.ip_consensus,
             "reject_cloudflare_ips": cfg.reject_cloudflare_ips,
             "healthchecks_url": cfg.healthchecks_url,
             "uptimekuma_url": cfg.uptimekuma_url,
@@ -174,6 +176,7 @@ def _cfg_to_dict(cfg):
             "notify_round": cfg.notify_round,
             "daily_report": cfg.daily_report,
             "daily_report_time": cfg.daily_report_time,
+            "allow_reset": cfg.telegram_allow_reset,
         },
         "tunnel": {
             "enabled": cfg.tunnel_enabled,
@@ -203,7 +206,7 @@ def _as_int(value, default):
         return default
 
 
-def _dict_to_ini(data):
+def _dict_to_ini(data, config_path=""):
     """สร้างข้อความ config.ini จาก dict (โครงสร้างเดียวกับ _cfg_to_dict)."""
     cf = data.get("cloudflare", {})
     tg = data.get("telegram", {})
@@ -216,12 +219,17 @@ def _dict_to_ini(data):
     kv("interval_seconds", _as_int(cf.get("interval_seconds", 60), 60))
     kv("use_ipv4", str(bool(cf.get("use_ipv4"))).lower())
     kv("use_ipv6", str(bool(cf.get("use_ipv6"))).lower())
+    kv("ip_consensus", str(bool(cf.get("ip_consensus", False))).lower())
     kv("reject_cloudflare_ips", str(bool(cf.get("reject_cloudflare_ips", True))).lower())
     kv("healthchecks_url", str(cf.get("healthchecks_url", "")).strip())
     kv("uptimekuma_url", str(cf.get("uptimekuma_url", "")).strip())
     kv("webui_port", _as_int(cf.get("webui_port", 8123), 8123))
     kv("webui_host", str(cf.get("webui_host", "127.0.0.1")).strip() or "127.0.0.1")
-    kv("webui_password", str(cf.get("webui_password", "")).strip())
+    pw = str(cf.get("webui_password", "")).strip()
+    # รหัสผ่านเก็บเป็น hash เสมอ (ของใหม่) — รหัสที่กรอกใหม่ (ยังไม่ hash) ต้อง hash ก่อนเขียน
+    if pw and not config_mod.password_is_hash(pw):
+        pw = config_mod.password_hash(pw, config_path)
+    kv("webui_password", pw)
     kv("log_dir", str(cf.get("log_dir", "")).strip())
     kv("telegram_bot_token", str(tg.get("bot_token", "")).strip())
     kv("telegram_chat_id", str(tg.get("chat_id", "")).strip())
@@ -233,6 +241,7 @@ def _dict_to_ini(data):
     kv("notify_round", str(bool(tg.get("notify_round", False))).lower())
     kv("daily_report", str(bool(tg.get("daily_report", True))).lower())
     kv("daily_report_time", str(tg.get("daily_report_time", "08:00")).strip() or "08:00")
+    kv("telegram_allow_reset", str(bool(tg.get("allow_reset", False))).lower())
     tu = data.get("tunnel", {})
     kv("tunnel_enabled", str(bool(tu.get("enabled", False))).lower())
     kv("tunnel_token", str(tu.get("token", "")).strip())
@@ -283,6 +292,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
+        # security headers — กัน MIME sniffing / iframe / การรั่ว referrer
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
         self.end_headers()
         try:
             self.wfile.write(data)
@@ -295,15 +308,32 @@ class WebUIHandler(BaseHTTPRequestHandler):
         self._send(code, json.dumps(payload, ensure_ascii=False), "application/json; charset=utf-8")
 
     def _authed(self):
+        """ตรวจ session cookie — เปรียบเทียบ hash ของรหัส (รองรับ config เก่าที่ยัง plaintext)"""
         password = self.cfg.webui_password
         if not password:
             return True
+        expected = (
+            password
+            if config_mod.password_is_hash(password)
+            else config_mod.password_hash(password, self.server.config_path)
+        )
         cookies = self.headers.get("Cookie", "")
         for part in cookies.split(";"):
             key, _, value = part.strip().partition("=")
-            if key == "cfddns_session" and value == password:
+            if key == "cfddns_session" and value == expected:
                 return True
         return False
+
+    def _origin_allowed(self):
+        """กัน CSRF: browser cross-site ส่ง Origin เสมอ — ถ้ามี Origin ต้องตรงกับ host ของเรา.
+
+        CLI/curl ไม่ส่ง Origin -> ผ่าน (ผู้ใช้ในเครื่อง)
+        """
+        origin = self.headers.get("Origin", "").strip()
+        if not origin:
+            return True
+        host = self.headers.get("Host", "").strip()
+        return origin in (f"http://{host}", f"https://{host}")
 
     # ---- GET ----
 
@@ -501,6 +531,14 @@ class WebUIHandler(BaseHTTPRequestHandler):
     def _do_post_inner(self):
         body = self._read_body()
 
+        # กัน CSRF: ทุก POST ยกเว้น /login (ไม่มี cookie ใช้โจมตีได้) — ถ้า Origin มีและไม่ตรง = บล็อก
+        if self.path != "/login" and not self._origin_allowed():
+            log.warning("บล็อกคำขอข้ามไซต์ (CSRF): Origin=%r path=%s", self.headers.get("Origin"), self.path)
+            return self._send_json(
+                403,
+                {"ok": False, "message": "คำขอถูกปฏิเสธ (Origin ของเบราว์เซอร์ไม่ตรงกับหน้าเว็บนี้)"},
+            )
+
         if self.path == "/login":
             import time as _t
 
@@ -513,12 +551,23 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     {"ok": False, "message": f"พยายามเข้าสู่ระบบบ่อยเกินไป — ล็อกชั่วคราว รออีก {remain} วิ"},
                 )
             form = dict(__import__("urllib.parse", fromlist=["parse_qsl"]).parse_qsl(body))
-            if form.get("pw") == self.cfg.webui_password:
+            stored = self.cfg.webui_password
+            # รองรับ 2 แบบ: config ใหม่ = hash · config เก่า = plaintext (hash เปรียบเทียบ)
+            expected = (
+                stored
+                if config_mod.password_is_hash(stored)
+                else config_mod.password_hash(stored, self.server.config_path)
+            )
+            provided = form.get("pw", "")
+            if config_mod.password_hash(provided, self.server.config_path) == expected or provided == expected:
                 _login_guard["fails"] = 0
                 _login_guard["locked_until"] = 0.0
                 self.send_response(302)
                 self.send_header("Location", "/")
-                self.send_header("Set-Cookie", f"cfddns_session={self.cfg.webui_password}; HttpOnly; Path=/")
+                self.send_header(
+                    "Set-Cookie",
+                    f"cfddns_session={expected}; HttpOnly; Path=/; SameSite=Lax",
+                )
                 self.end_headers()
                 return
             _login_guard["fails"] += 1
@@ -550,11 +599,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 data = json.loads(body) if body else {}
             except ValueError:
                 data = {}
-            log.warning(
-                "Web UI (JS) %s: %s",
-                str(data.get("context", "?")),
-                str(data.get("message", ""))[:500],
-            )
+            # กรองขึ้นบรรทัดใหม่ — กัน log injection ผ่านข้อความ
+            context = str(data.get("context", "?")).replace("\r", " ").replace("\n", " ")
+            message = str(data.get("message", ""))[:500].replace("\r", " ").replace("\n", " ")
+            log.warning("Web UI (JS) %s: %s", context, message)
             return self._send_json(200, {"ok": True})
 
         if not self._authed():
@@ -606,6 +654,35 @@ class WebUIHandler(BaseHTTPRequestHandler):
             )
             ok, error = notify.send_raw(str(data.get("text", "ทดสอบ")))
             return self._send_json(200 if ok else 400, {"ok": ok, "message": error or "ส่งสำเร็จ"})
+
+        if self.path == "/heartbeat-test":
+            results = heartbeat.send_test(self.cfg)
+            if not results:
+                return self._send_json(
+                    400,
+                    {"ok": False, "message": "ยังไม่ได้ตั้งค่า Healthchecks/Kuma URL — ตั้งในฟอร์มก่อนแล้วลองใหม่"},
+                )
+            ok = all(r["ok"] for r in results)
+            detail = " · ".join(
+                "{}: {}".format(r["name"], "สำเร็จ" if r["ok"] else "ล้มเหลว ({})".format(r["error"]))
+                for r in results
+            )
+            return self._send_json(200 if ok else 400, {"ok": ok, "message": detail})
+
+        if self.path == "/tunnel/update-check":
+            from . import tunnel as tunnel_mod
+
+            current = tunnel_mod.cloudflared_version(self.cfg)
+            latest = tunnel_mod.latest_release()
+            if not latest:
+                return self._send_json(400, {"ok": False, "message": "เช็คเวอร์ชันล่าสุดไม่ได้ (เน็ต?) — ลองใหม่ภายหลัง"})
+            if current and current == latest:
+                message = f"cloudflared เป็นเวอร์ชันล่าสุดแล้ว ({latest})"
+            elif current:
+                message = f"มีเวอร์ชันใหม่: {current} → {latest} (กด 'อัปเดต cloudflared' ในหน้านี้)"
+            else:
+                message = f"ยังไม่ได้ติดตั้ง cloudflared — เวอร์ชันล่าสุด: {latest}"
+            return self._send_json(200, {"ok": True, "message": message, "current": current, "latest": latest})
 
         if self.path == "/save-file":
             try:
@@ -978,7 +1055,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 )
             payload = _cfg_to_dict(self.cfg)
             payload["tunnel"]["hosts"] = hosts
-            ok, message = self.cfg.save_text(_dict_to_ini(payload))
+            ok, message = self.cfg.save_text(_dict_to_ini(payload, self.server.config_path))
             if not ok:
                 return self._send_json(400, {"ok": False, "message": message})
             return self._send_json(200, {"ok": True, "message": f"ซิงค์แล้ว — บันทึก hostname {len(hosts)} รายการลง config", "hostnames": hosts})
@@ -1157,7 +1234,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 for section in ("cloudflare", "telegram", "tunnel"):
                     for key, value in current.get(section, {}).items():
                         data.setdefault(section, {}).setdefault(key, value)
-            ini_text = _dict_to_ini(data)
+            ini_text = _dict_to_ini(data, self.server.config_path)
             ok, message = self.cfg.save_text(ini_text)
             return self._send_json(200 if ok else 400, {"ok": ok, "message": message})
 
@@ -1171,15 +1248,48 @@ class WebUIHandler(BaseHTTPRequestHandler):
         return self._send_json(404, {"ok": False, "message": "ไม่พบ path"})
 
 
+def _migrate_password_hash(cfg):
+    """config เก่าที่ยังเก็บ webui_password แบบ plaintext -> แปลงเป็น hash + เขียนไฟล์ (ครั้งเดียว).
+
+    ใช้ save_text (validate + backup + atomic) — ถ้า config ยังตั้งไม่ครบจะไม่เขียน
+    (แต่ _authed/login ยังรองรับ plaintext อยู่ จนกว่า config จะสมบูรณ์แล้ว migrate ผ่านฟอร์ม)
+    """
+    pw = cfg.webui_password
+    if not pw or config_mod.password_is_hash(pw):
+        return
+    import configparser
+    import io
+
+    text = cfg.raw_text()
+    if not text:
+        return
+    parser = configparser.ConfigParser(interpolation=None)
+    try:
+        parser.read_string(text)
+    except configparser.Error:
+        return
+    if not parser.has_section("cloudflare"):
+        return
+    parser.set("cloudflare", "webui_password", config_mod.password_hash(pw, cfg.path))
+    buf = io.StringIO()
+    parser.write(buf)
+    ok, message = cfg.save_text(buf.getvalue())
+    if ok:
+        log.info("ย้าย webui_password เป็น hash แล้ว (config เดิมเก็บ plaintext)")
+    else:
+        log.debug("migrate webui_password -> hash ข้าม (config ยังไม่สมบูรณ์): %s", message)
+
+
 class WebUI:
     def __init__(self, config_path=config_mod.DEFAULT_CONFIG_PATH, port=None, password=None, host=None):
         config_mod.migrate_legacy_data(config_path)
         self.config_path = config_path
         self.cfg = config_mod.Config(config_path)
+        _migrate_password_hash(self.cfg)
         self.port = port or self.cfg.webui_port
         self.host = host or self.cfg.webui_host or "127.0.0.1"
         if password is not None:
-            self.cfg.webui_password = password
+            self.cfg.webui_password = config_mod.password_hash(password, config_path)
         handler = type("Handler", (WebUIHandler,), {})
         try:
             self.server = ThreadingHTTPServer((self.host, self.port), handler)

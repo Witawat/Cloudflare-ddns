@@ -115,9 +115,10 @@ cloudflared_path =                ; เว้นว่าง = ดาวน์�
 - **สแกนพอร์ต**: สแกน host ใน config (resolve IP ปัจจุบัน) แสดงพอร์ตเปิด/ปิด + ชื่อบริการ
 - **ประวัติการอัปเดต**: 50 รายการล่าสุด (เวลา/record/การกระทำ/IP)
 - **Log ล่าสุด**: 200 บรรทัด + ปุ่มโหลดใหม่ + ปุ่มเปิดโฟลเดอร์ข้อมูล (config/state/logs — รันใน service จะคัดลอก path ให้แทน เพราะเปิดหน้าต่างจาก session ของ service ไม่ได้)
-- **ตั้งค่า**: ฟอร์ม (token/interval/password/พอร์ต/**host ที่เปิด**/log/Heartbeat/กัน CF IP/Tunnel/Telegram/records) + โหมด "แก้ไขไฟล์โดยตรง" (textarea + ตรวจ syntax) + auto-backup config (เก็บ 5 อัน) — เปิดจากเครื่องอื่นใน LAN ได้ (`webui_host = 0.0.0.0` + รหัสผ่าน + firewall)
+- **ตั้งค่า**: ฟอร์ม (token/interval/password/พอร์ต/**host ที่เปิด**/log/Heartbeat/กัน CF IP/**ฉันทามติ IP**/Tunnel/Telegram/records) + โหมด "แก้ไขไฟล์โดยตรง" (textarea + ตรวจ syntax) + auto-backup config (เก็บ 5 อัน) + **ดาวน์โหลด/นำเข้า config.ini** (สำรอง/ย้ายเครื่อง) — เปิดจากเครื่องอื่นใน LAN ได้ (`webui_host = 0.0.0.0` + รหัสผ่าน + firewall)
 - **wizard ครั้งแรก** ขึ้นเองอัตโนมัติเมื่อ config ไม่ครบ + wizard Tunnel แยก
-- ตั้ง `webui_password` ได้ในฟอร์ม (ต้อง login หลังตั้ง) · **กันสุ่มรหัสผ่าน** (ผิด 5 ครั้งติด → ล็อก 5 นาที) · responsive มือถือ
+- ตั้ง `webui_password` ได้ในฟอร์ม (ต้อง login หลังตั้ง) · **กันสุ่มรหัสผ่าน** (ผิด 5 ครั้งติด → ล็อก 5 นาที) · **รหัสเก็บเป็น hash** · **กัน CSRF (ตรวจ Origin) + security headers** · **กู้รหัสผ่านได้ 3 ทาง** (ฟอร์ม / `reset-password` / Telegram opt-in) · responsive มือถือ
+- **ปุ่มทดสอบ heartbeat** + **ปุ่มเช็คอัปเดต cloudflared** ในฟอร์มตั้งค่า
 
 ## config.ini
 

@@ -83,11 +83,26 @@ class DDNSEngine:
                     log.warning("บันทึก state หลังลบ zone cache ไม่ได้: %s", exc)
 
     def _save_state(self):
+        if self.dry_run:
+            return
         os.makedirs(os.path.dirname(self._state_path), exist_ok=True)
+        try:
+            text = json.dumps(self._state, indent=2, ensure_ascii=False)
+        except TypeError:
+            log.warning("บันทึก state ไม่ได้ (serialize ไม่ผ่าน)")
+            return
+        # เนื้อหาเหมือนเดิม = ไม่เขียน (กัน backup หมุนสะสมไร้ประโยชน์)
+        try:
+            with open(self._state_path, "r", encoding="utf-8") as handle:
+                if handle.read() == text:
+                    return
+        except OSError:
+            pass
+        config_mod.rotate_backup(self._state_path, keep=3)
         tmp = self._state_path + ".tmp"
         try:
             with open(tmp, "w", encoding="utf-8") as handle:
-                json.dump(self._state, handle, indent=2, ensure_ascii=False)
+                handle.write(text)
             os.replace(tmp, self._state_path)
         except OSError as exc:
             log.warning("บันทึก state ไม่ได้: %s", exc)
@@ -187,6 +202,7 @@ class DDNSEngine:
                 entry = self._sync_family(
                     api, zone_id, rec, fqdn, family, notify,
                     zone_key=rec.zone.lower(), reject_cloudflare_ips=cfg.reject_cloudflare_ips,
+                    consensus=2 if cfg.ip_consensus else 0,
                 )
                 if entry:
                     if entry.get("action") == "skip":
@@ -249,12 +265,12 @@ class DDNSEngine:
             for fam, rtype in RECORD_TYPES.items():
                 errs.pop(f"{rec.name.lower()}|{rtype}", None)
 
-    def _sync_family(self, api, zone_id, rec, fqdn, family, notify, zone_key="", reject_cloudflare_ips=True):
+    def _sync_family(self, api, zone_id, rec, fqdn, family, notify, zone_key="", reject_cloudflare_ips=True, consensus=0):
         rtype = RECORD_TYPES[family]
         key = f"{fqdn.lower()}|{rtype}"
         cached = self._state.get("records", {}).get(key, "")
 
-        public_ip = ip_detect.get_public_ip(family)
+        public_ip = ip_detect.get_public_ip(family, consensus=consensus)
         if not public_ip:
             log.warning("%s: หา IP สาธารณะ (IPv%d) ไม่ได้", fqdn, family)
             notify.notify(
@@ -488,6 +504,13 @@ def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_
         round_count += 1
         interval = max(cfg.interval_seconds, config_mod.MIN_INTERVAL)
         elapsed = time.monotonic() - started
+
+        # กู้รหัสผ่านหน้าเว็บผ่าน Telegram (opt-in) — ฟังคำสั่งในแชท bot ทุกรอบ
+        if not dry_run:
+            try:
+                notifier.check_telegram_reset(cfg, config_path)
+            except Exception as exc:
+                log.debug("telegram reset: ตรวจคำสั่งไม่ได้: %s", exc)
 
         # สรุปผลทุกรอบ (ไม่บังคับ — เปิดด้วย notify_round = true)
         try:

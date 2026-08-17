@@ -120,6 +120,41 @@ def user_agent():
     return f"cloudflare-ddns-updater/{__version__} ({_hostname()})"
 
 
+def password_hash(pw, config_path=None):
+    """hash รหัสผ่านหน้าเว็บ (sha256 + salt จาก path config) — กันเก็บ password ตรงใน config/cookie"""
+    import hashlib
+
+    salt = ("cfddns|" + os.path.abspath(config_path or "")).encode("utf-8")
+    return hashlib.sha256(salt + str(pw).encode("utf-8")).hexdigest()
+
+
+def rotate_backup(path, keep=3):
+    """หมุน backup ของไฟล์ (path.bak, path.2.bak, ..., path.<keep>.bak) — เรียกก่อนเขียนทับไฟล์หลัก.
+
+    คืน True ถ้าสำเร็จ/ไม่มีไฟล์หลัก, False ถ้าพลาด (ยังเขียนทับไฟล์หลักต่อได้)
+    """
+    if not os.path.isfile(path):
+        return True
+    try:
+        for i in range(keep, 2, -1):
+            src = f"{path}.{i - 1}.bak"
+            if os.path.isfile(src):
+                os.replace(src, f"{path}.{i}.bak")
+        src = f"{path}.bak"
+        if os.path.isfile(src):
+            os.replace(src, f"{path}.2.bak")
+        os.replace(path, f"{path}.bak")
+        return True
+    except OSError:
+        return False
+
+
+def password_is_hash(value):
+    """ค่าเป็น hash 64 hex หรือไม่ (config เก่าที่ยังเก็บ plaintext = ไม่ใช่)"""
+    value = str(value or "")
+    return len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+
 RECORD_SECTION_RE = re.compile(r"^record:(.+)$", re.IGNORECASE)
 
 
@@ -171,6 +206,7 @@ class Config:
         self.interval_seconds = DEFAULT_INTERVAL
         self.use_ipv4 = True
         self.use_ipv6 = True
+        self.ip_consensus = False
         self.reject_cloudflare_ips = True
         self.healthchecks_url = ""
         self.uptimekuma_url = ""
@@ -188,6 +224,8 @@ class Config:
         self.notify_round = False
         self.daily_report = True
         self.daily_report_time = "08:00"
+        # อนุญาตกู้รหัสผ่านหน้าเว็บผ่าน Telegram (opt-in — ปิด default)
+        self.telegram_allow_reset = False
         # Cloudflare Tunnel (cloudflared)
         self.tunnel_enabled = False
         self.tunnel_token = ""
@@ -218,6 +256,7 @@ class Config:
         )
         self.use_ipv4 = self._as_bool(section, "use_ipv4", True)
         self.use_ipv6 = self._as_bool(section, "use_ipv6", True)
+        self.ip_consensus = self._as_bool(section, "ip_consensus", False)
         self.reject_cloudflare_ips = self._as_bool(section, "reject_cloudflare_ips", True)
         self.healthchecks_url = section.get("healthchecks_url", "").strip()
         self.uptimekuma_url = section.get("uptimekuma_url", "").strip()
@@ -237,6 +276,7 @@ class Config:
         self.notify_round = self._as_bool(section, "notify_round", False)
         self.daily_report = self._as_bool(section, "daily_report", True)
         self.daily_report_time = section.get("daily_report_time", "08:00").strip() or "08:00"
+        self.telegram_allow_reset = self._as_bool(section, "telegram_allow_reset", False)
         self.tunnel_enabled = self._as_bool(section, "tunnel_enabled", False)
         self.tunnel_token = section.get("tunnel_token", "").strip()
         self.cloudflared_path = section.get("cloudflared_path", "").strip()
@@ -412,6 +452,7 @@ class Config:
         )
         self.use_ipv4 = self._as_bool(section, "use_ipv4", True)
         self.use_ipv6 = self._as_bool(section, "use_ipv6", True)
+        self.ip_consensus = self._as_bool(section, "ip_consensus", False)
         self.reject_cloudflare_ips = self._as_bool(section, "reject_cloudflare_ips", True)
         self.healthchecks_url = section.get("healthchecks_url", "").strip()
         self.uptimekuma_url = section.get("uptimekuma_url", "").strip()
@@ -430,6 +471,7 @@ class Config:
         self.notify_round = self._as_bool(section, "notify_round", False)
         self.daily_report = self._as_bool(section, "daily_report", True)
         self.daily_report_time = section.get("daily_report_time", "08:00").strip() or "08:00"
+        self.telegram_allow_reset = self._as_bool(section, "telegram_allow_reset", False)
         self.tunnel_enabled = self._as_bool(section, "tunnel_enabled", False)
         self.tunnel_token = section.get("tunnel_token", "").strip()
         self.cloudflared_path = section.get("cloudflared_path", "").strip()

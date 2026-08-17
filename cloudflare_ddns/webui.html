@@ -72,7 +72,7 @@ main { max-width: 860px; margin: 0 auto; padding: 24px 28px 80px; }
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
   padding: 18px 20px; margin-bottom: 16px;
 }
-.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .panel-head p { font-size: 0.85rem; color: var(--muted); }
 
 /* records list */
@@ -458,12 +458,15 @@ __LOGIN__
   <section class="panel" id="settings-panel">
     <div class="panel-head">
       <h2>ตั้งค่า</h2>
-      <div style="display:flex;gap:10px;align-items:center">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
         <div class="mode-switch" role="tablist">
           <button id="mode-form" type="button" class="active" role="tab">แบบฟอร์ม</button>
           <button id="mode-file" type="button" role="tab">แก้ไขไฟล์โดยตรง</button>
         </div>
         <button id="saveBtn" class="btn-primary">บันทึกการตั้งค่า</button>
+        <button id="exportCfg" class="btn-secondary" title="ดาวน์โหลด config.ini เก็บสำรอง">ดาวน์โหลด config</button>
+        <button id="importCfg" class="btn-secondary" title="นำเข้า config.ini (ตรวจสอบก่อนบันทึก)">นำเข้า config</button>
+        <input type="file" id="importCfgFile" accept=".ini,.txt" hidden>
       </div>
     </div>
 
@@ -502,11 +505,15 @@ __LOGIN__
     <div class="toggles">
       <label><input id="use_ipv4" type="checkbox"> อัปเดต IPv4 (A record)</label>
       <label><input id="use_ipv6" type="checkbox"> อัปเดต IPv6 (AAAA record)</label>
+      <label title="ต้องมี provider ตรวจ IP อย่างน้อย 2 รายเห็น IP ตัวเดียวกัน ถึงจะอัปเดต record (กัน provider ตัวใดตัวหนึ่งตอบผิด/ล้าสมัย)"><input id="ip_consensus" type="checkbox"> ตรวจฉันทามติ IP (อย่างน้อย 2 provider เห็นตรงกัน)</label>
       <label title="กัน IP ที่เป็นของ Cloudflare เอง (anycast/CDN) ถูกเขียนลง record โดยไม่ตั้งใจ"><input id="reject_cf_ips" type="checkbox"> กัน IP ของ Cloudflare (anycast)</label>
     </div>
 
     <h3>Heartbeat (ไม่บังคับ)</h3>
     <p style="color:var(--muted);font-size:0.85rem;margin-top:0">ส่งสัญญาณ "ยังทำงาน" ทุกรอบให้บริการเฝ้าดู — รู้ว่าเครื่อง/program ตายหรือไม่จากนอกบ้าน (กรอก URL อันใดอันหนึ่งหรือทั้งคู่)</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button id="heartbeatTest" class="btn-secondary" type="button">ทดสอบส่ง heartbeat</button>
+    </div>
     <div class="grid2">
       <label class="field">Healthchecks.io ping URL (ฟรี: healthchecks.io)
         <input id="hc_url" type="text" class="mono" autocomplete="off" placeholder="https://hc-ping.com/xxxxxxxx-xxxx">
@@ -537,10 +544,14 @@ __LOGIN__
       <label><input id="daily_report" type="checkbox"> สรุปรายวันทาง Telegram</label>
       <label>เวลา (HH:MM)<input id="daily_report_time" type="text" placeholder="08:00"></label>
     </div>
+    <div class="toggles">
+      <label title="ลืมรหัสหน้าเว็บ? พิมพ์ 'reset password' ในแชทกับ bot แล้วยืนยัน 'yes' — โปรแกรมจะสุ่มรหัสใหม่ส่งกลับทาง Telegram (เฉพาะ chat ที่ตั้งไว้ กัน 1 ครั้ง/10 นาที)"><input id="tg_allow_reset" type="checkbox"> กู้รหัสผ่านหน้าเว็บผ่าน Telegram (ลืมรหัสแล้วกู้จากมือถือได้)</label>
+    </div>
 
     <h3>Cloudflare Tunnel (ไม่บังคับ)</h3>
     <div class="toggles">
       <label><input id="tunnel_enabled" type="checkbox"> เปิด tunnel อัตโนมัติตอน service เริ่ม</label>
+      <label><button id="tunnelUpdateCheck" class="btn-secondary" type="button">เช็คอัปเดต cloudflared</button></label>
     </div>
     <label class="field">Tunnel Token (ยาว — วางได้เต็มช่อง ไม่ซ่อน)
       <textarea id="tunnel_token" rows="3" class="mono" spellcheck="false" autocomplete="off" placeholder="eyJhIjoi..."></textarea>

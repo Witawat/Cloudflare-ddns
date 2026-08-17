@@ -255,6 +255,47 @@ def cmd_notify_test(args):
     return 1
 
 
+def cmd_reset_password(args):
+    """ตั้งรหัสผ่านหน้าเว็บใหม่ (ใช้เมื่อลืมรหัส) — เขียนเป็น hash ลง config แบบ atomic."""
+    import configparser
+    import io
+
+    from . import webui as webui_mod
+
+    cfg = config_mod.Config(args.config)
+    pw1 = getpass.getpass("รหัสผ่านหน้าเว็บใหม่ (เว้นว่าง = ลบรหัส ไม่ต้อง login): ").strip()
+    if pw1:
+        pw2 = getpass.getpass("พิมพ์รหัสผ่านใหม่อีกครั้ง: ").strip()
+        if pw1 != pw2:
+            print("✗ รหัสไม่ตรงกัน — ยกเลิก (ไม่มีการเปลี่ยนแปลง)")
+            return 1
+    text = cfg.raw_text()
+    if not text:
+        print(f"✗ อ่าน config ไม่ได้: {args.config}")
+        return 1
+    parser = configparser.ConfigParser(interpolation=None)
+    try:
+        parser.read_string(text)
+    except configparser.Error as exc:
+        print(f"✗ config ผิดรูปแบบ: {exc}")
+        return 1
+    if not parser.has_section("cloudflare"):
+        parser.add_section("cloudflare")
+    new_value = config_mod.password_hash(pw1, cfg.path) if pw1 else ""
+    parser.set("cloudflare", "webui_password", new_value)
+    buf = io.StringIO()
+    parser.write(buf)
+    ok, message = cfg.save_text(buf.getvalue())
+    if not ok:
+        print(f"✗ บันทึกไม่ได้: {message}")
+        return 1
+    if pw1:
+        print("✓ ตั้งรหัสผ่านหน้าเว็บใหม่แล้ว (เก็บเป็น hash) — session เก่าหมดอายุ ต้อง login ใหม่")
+    else:
+        print("✓ ลบรหัสผ่านหน้าเว็บแล้ว — เข้าเว็บได้โดยไม่ต้อง login")
+    return 0
+
+
 # ---- service control ----
 
 
@@ -457,7 +498,7 @@ def main(argv=None):
     )
     sub = parser.add_subparsers(dest="command")
 
-    for name in ("setup", "run", "dry-run", "install", "remove", "start", "stop", "restart", "status", "notify-test"):
+    for name in ("setup", "run", "dry-run", "install", "remove", "start", "stop", "restart", "status", "notify-test", "reset-password"):
         sub.add_parser(name, parents=[sub_parent])
     web_parser = sub.add_parser("webui", parents=[sub_parent])
     web_parser.add_argument("--port", type=int, default=None)
@@ -478,6 +519,7 @@ def main(argv=None):
         "restart": cmd_restart,
         "status": cmd_status,
         "notify-test": cmd_notify_test,
+        "reset-password": cmd_reset_password,
         "webui": cmd_webui,
     }
     if args.command is None:

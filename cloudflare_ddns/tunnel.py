@@ -23,6 +23,35 @@ DOWNLOAD_URL = (
 PID_FILE = "tunnel.pid"
 
 _version_cache = {"time": 0.0, "version": ""}
+_latest_cache = {"time": 0.0, "version": ""}
+
+
+def latest_release():
+    """เวอร์ชัน cloudflared ล่าสุดจาก GitHub releases (cache 6 ชม.) — '' ถ้าเช็คไม่ได้"""
+    import json
+
+    now = time.time()
+    if _latest_cache["version"] and now - _latest_cache["time"] < 6 * 3600:
+        return _latest_cache["version"]
+    try:
+        request = urllib.request.Request(
+            "https://api.github.com/repos/cloudflare/cloudflared/releases/latest",
+            headers={
+                "User-Agent": config_mod.user_agent(),
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8", "replace"))
+        tag = str(data.get("tag_name", "")).lstrip("v")
+        if tag:
+            _latest_cache.update(time=now, version=tag)
+            return tag
+    except Exception as exc:
+        if now - _latest_cache["time"] > 600:
+            _latest_cache["time"] = now
+            log.warning("เช็คเวอร์ชัน cloudflared ล่าสุดไม่ได้: %s", exc)
+    return ""
 
 
 def cloudflared_version(cfg=None):

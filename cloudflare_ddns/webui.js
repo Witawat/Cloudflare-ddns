@@ -303,6 +303,7 @@ async function loadConfig() {
     $("interval").value = c.cloudflare.interval_seconds;
     $("use_ipv4").checked = !!c.cloudflare.use_ipv4;
     $("use_ipv6").checked = !!c.cloudflare.use_ipv6;
+    $("ip_consensus").checked = !!c.cloudflare.ip_consensus;
     $("reject_cf_ips").checked = c.cloudflare.reject_cloudflare_ips !== false;
     $("hc_url").value = c.cloudflare.healthchecks_url || "";
     $("kuma_url").value = c.cloudflare.uptimekuma_url || "";
@@ -322,6 +323,7 @@ async function loadConfig() {
     $("notify_round").checked = !!c.telegram.notify_round;
     $("daily_report").checked = !!c.telegram.daily_report;
     $("daily_report_time").value = c.telegram.daily_report_time || "08:00";
+    $("tg_allow_reset").checked = !!c.telegram.allow_reset;
     $("tunnel_enabled").checked = !!c.tunnel.enabled;
     $("tunnel_token").value = c.tunnel.token;
     $("cloudflared_path").value = c.tunnel.cloudflared_path || "";
@@ -410,6 +412,7 @@ async function saveConfig() {
       interval_seconds: Math.max(15, Math.floor(+$("interval").value || 60)),
       use_ipv4: $("use_ipv4").checked,
       use_ipv6: $("use_ipv6").checked,
+      ip_consensus: $("ip_consensus").checked,
       reject_cloudflare_ips: $("reject_cf_ips").checked,
       healthchecks_url: $("hc_url").value.trim(),
       uptimekuma_url: $("kuma_url").value.trim(),
@@ -429,6 +432,7 @@ async function saveConfig() {
       notify_round: $("notify_round").checked,
       daily_report: $("daily_report").checked,
       daily_report_time: $("daily_report_time").value.trim() || "08:00",
+      allow_reset: $("tg_allow_reset").checked,
     },
     tunnel: {
       enabled: $("tunnel_enabled").checked,
@@ -1461,6 +1465,7 @@ function renderWizard() {
           interval_seconds: existing.cloudflare.interval_seconds || 60,
           use_ipv4: existing.cloudflare.use_ipv4 !== false,
           use_ipv6: existing.cloudflare.use_ipv6 !== false,
+          ip_consensus: existing.cloudflare.ip_consensus === true,
           reject_cloudflare_ips: existing.cloudflare.reject_cloudflare_ips !== false,
           healthchecks_url: existing.cloudflare.healthchecks_url || "",
           uptimekuma_url: existing.cloudflare.uptimekuma_url || "",
@@ -1480,6 +1485,7 @@ function renderWizard() {
           notify_round: tgl.notify_round === true,
           daily_report: tgl.daily_report !== false,
           daily_report_time: tgl.daily_report_time || "08:00",
+          allow_reset: tgl.allow_reset === true,
         },
         tunnel: {
           enabled: !!tun.enabled,
@@ -1583,6 +1589,59 @@ $("svcUninstall").addEventListener("click", () => {
 $("ddnsRun").addEventListener("click", ddnsRunNow);
 $("openFolder").addEventListener("click", openDataFolder);
 $("refresh").addEventListener("click", refreshAll);
+$("heartbeatTest").addEventListener("click", heartbeatTest);
+$("tunnelUpdateCheck").addEventListener("click", tunnelUpdateCheck);
+$("exportCfg").addEventListener("click", exportConfig);
+$("importCfg").addEventListener("click", () => $("importCfgFile").click());
+$("importCfgFile").addEventListener("change", importConfigFile);
+
+function heartbeatTest() {
+  fetch("/heartbeat-test", { method: "POST" })
+    .then(r => r.json())
+    .then(j => toast("Heartbeat: " + j.message, j.ok ? "ok" : "err"))
+    .catch(e => toast("ทดสอบ heartbeat ไม่ได้: " + e, "err"));
+}
+
+function tunnelUpdateCheck() {
+  fetch("/tunnel/update-check", { method: "POST" })
+    .then(r => r.json())
+    .then(j => toast(j.message, j.ok ? "ok" : "err"))
+    .catch(e => toast("เช็คอัปเดตไม่ได้: " + e, "err"));
+}
+
+async function exportConfig() {
+  try {
+    const r = await fetch("/config-file");
+    const text = await r.text();
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "config.ini";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    toast("ดาวน์โหลด config ไม่ได้: " + e, "err");
+  }
+}
+
+async function importConfigFile(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = "";
+  if (!file) return;
+  const text = await file.text();
+  try {
+    const r = await fetch("/save-file", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const j = await r.json();
+    toast(j.ok ? "นำเข้า config สำเร็จ — " + j.message : "นำเข้าไม่สำเร็จ: " + j.message, j.ok ? "ok" : "err");
+    if (j.ok) setTimeout(() => location.reload(), 1200);
+  } catch (e) {
+    toast("นำเข้า config ไม่ได้: " + e, "err");
+  }
+}
 
 /* โหลดทุกส่วนใหม่หมด (ปุ่มรีเฟรช) — เหมือนตอนเปิดหน้าแรก */
 function refreshAll() {

@@ -194,18 +194,20 @@ python -m cloudflare_ddns.main setup
 api_token            จำเป็น - สิทธิ์ Zone > DNS > Edit (+ Account > Tunnel > Edit ถ้าใช้ tunnel)
 interval_seconds     60 (ขั้นต่ำ 15)
 use_ipv4/use_ipv6    เปิด-ปิดการอัปเดตแต่ละชนิด
+ip_consensus          ต้องมี provider ตรวจ IP ≥ 2 รายเห็น IP เดียวกัน ถึงจะอัปเดต (false = ปิด)
 reject_cloudflare_ips   กัน IP ของ Cloudflare (anycast) ถูกเขียนลง record (ค่าเริ่มต้น true)
 healthchecks_url     Heartbeat: ping URL ของ Healthchecks.io (ว่าง = ปิด)
 uptimekuma_url       Heartbeat: push URL ของ Uptime Kuma (ว่าง = ปิด)
 webui_port           8123
 webui_host           127.0.0.1 (0.0.0.0 = เข้าจากเครื่องอื่นใน LAN ได้ — ต้องตั้งรหัสผ่าน + เปิด firewall)
-webui_password       ว่าง = ไม่ต้อง login
+webui_password       ว่าง = ไม่ต้อง login (เก็บเป็น hash อัตโนมัติ — ลืม = รัน `reset-password`)
 log_dir              ว่าง = logs\ ข้าง exe
 telegram_bot_token   ว่าง = ไม่แจ้ง
 telegram_chat_id
 notify_start/stop/ip_change/error/created   true/false
 notify_round         ส่งสรุปผลทุกรอบ DDNS ทาง Telegram (false = ปิด)
 daily_report / daily_report_time            สรุปรายวัน (HH:MM)
+telegram_allow_reset กู้รหัสผ่านหน้าเว็บผ่าน Telegram (false = ปิด — เปิดก่อนใช้ ดู "ลืมรหัส" ใน TROUBLESHOOTING)
 tunnel_enabled / tunnel_token / cloudflared_path / tunnel_hosts (JSON — "ซิงค์จาก Cloudflare" เขียนให้)
 
 [record:ชื่อ]

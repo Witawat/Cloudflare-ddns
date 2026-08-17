@@ -51,19 +51,35 @@ def _extract_text(text, url):
     return text
 
 
-def get_public_ip(version=4, timeout=8):
-    """คืน IP สาธารณะ (str) ตาม version ที่ขอ หรือ None ถ้าหาไม่ได้จากทุก provider."""
+def get_public_ip(version=4, timeout=8, consensus=None):
+    """คืน IP สาธารณะ (str) ตาม version ที่ขอ หรือ None ถ้าหาไม่ได้จากทุก provider.
+
+    consensus (int >= 2): ต้องมี provider ตั้งแต่ N รายเห็น IP ตัวเดียวกันถึงจะคืน
+    (กัน provider ตัวใดตัวหนึ่งตอบผิด) — ฉันทามติไม่พอ = คืน None เหมือนหาไม่เจอ
+    """
     if version not in (4, 6):
         raise ValueError("version ต้องเป็น 4 หรือ 6")
+    need = max(int(consensus or 0), 0)
+    votes = {}
+    first_ip = None
     for url in PROVIDERS[version]:
         try:
             text = _http_get(url, timeout)
             ip = ipaddress.ip_address(_extract_text(text, url))
-            if ip.version == version:
-                return str(ip)
+            if ip.version != version:
+                continue
         except Exception:
             continue
-    return None
+        key = str(ip)
+        if first_ip is None:
+            first_ip = key
+        if need > 1:
+            votes[key] = votes.get(key, 0) + 1
+            if votes[key] >= need:
+                return key
+    if need > 1:
+        return None  # ฉันทามติไม่พอ — ข้ามรอบนี้ (กัน IP ผิดถูกเขียนลง record)
+    return first_ip
 
 
 # ---------- กัน IP ของ Cloudflare (anycast) ----------
