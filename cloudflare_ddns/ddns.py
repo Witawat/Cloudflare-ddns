@@ -461,6 +461,29 @@ def _send_daily_report(engine, cfg, notify):
         log.warning("บันทึก daily_report_last ไม่ได้: %s", exc)
 
 
+_periodic_update_at = 0.0
+PERIODIC_UPDATE_INTERVAL = 24 * 3600  # เช็คเวอร์ชันใหม่ทุก 24 ชม. (รันยาว ๆ ก็รู้ว่ามีรุ่นใหม่)
+
+
+def _periodic_update_check(cfg, config_path):
+    """เช็คเวอร์ชันใหม่เป็นระยะ (ทุก 24 ชม.) — import ข้างใน กัน circular (webui import ddns).
+
+    ใช้ logic เดียวกับตอนเริ่มโปรแกรม (_startup_update_check) — cache 6 ชม. + แจ้ง Telegram
+    1 ครั้งต่อเวอร์ชันต่อ process (ไม่สแปม) — GitHub rate limit 60/ชม. ไม่มี token: 1 ครั้ง/24 ชม. ปลอดภัย
+    """
+    global _periodic_update_at
+    now = time.time()
+    if now - _periodic_update_at < PERIODIC_UPDATE_INTERVAL:
+        return
+    _periodic_update_at = now
+    try:
+        from . import webui as webui_mod
+
+        webui_mod._startup_update_check(cfg, config_path)
+    except Exception as exc:
+        log.debug("periodic update check: %s", exc)
+
+
 def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_event=None):
     """ลูปหลัก: รันทุก interval ตาม config (อ่าน config ใหม่ทุกรอบ)."""
     log.info("เริ่ม DDNS loop (dry_run=%s)", dry_run)
@@ -511,6 +534,10 @@ def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_
                 notifier.check_telegram_reset(cfg, config_path)
             except Exception as exc:
                 log.debug("telegram reset: ตรวจคำสั่งไม่ได้: %s", exc)
+
+        # เช็คเวอร์ชันใหม่เป็นระยะ (ทุก 24 ชม.) — service รันยาว ๆ ก็รู้ว่ามีรุ่นใหม่
+        if not dry_run:
+            _periodic_update_check(cfg, config_path)
 
         # สรุปผลทุกรอบ (ไม่บังคับ — เปิดด้วย notify_round = true)
         try:

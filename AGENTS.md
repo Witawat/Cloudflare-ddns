@@ -121,7 +121,7 @@ POST /open-data-folder   เปิดโฟลเดอร์ข้อมูล 
 - Telegram reset (`notifier.check_telegram_reset`): opt-in `telegram_allow_reset = false` — ฟังเฉพาะ `telegram_chat_id`, 2 ขั้น "reset password"→"yes" ภายใน 10 นาที, cooldown 600 วิ (`_last_reset_time`), offset กันรับซ้ำ (`_updates_offset`) — เรียกทุก loop ใน `run_forever` (ไม่ dry-run) — ฟิลด์ config ต้องเพิ่มใน `__init__`/`reload()`/**ทั้ง 2 จุด parse** + `_cfg_to_dict`/`_dict_to_ini` + `webui.html`/`webui.js` + `config.example.ini`
 - `ip_consensus`: ต้อง ≥2 provider เห็น IP เดียวกัน (`get_public_ip(consensus=2)`) — ส่งต่อใน `_sync_family` — ปิด default
 - state/queue `.bak`: `config_mod.rotate_backup(path, keep=3)` ก่อนเขียน **เฉพาะเนื้อหาเปลี่ยน** (เทียบข้อความเดิมก่อนเขียน)
-- `/update-check` เรียก GitHub API — cache 6 ชม. (`_update_cache`) — อย่าเรียกถี่ (rate limit 60/ชม. ไม่มี token) — **เช็คตอนเริ่มด้วย** (`_startup_update_check` ใน WebUI.__init__ spawn thread + รอ 3 วิ) — มีเวอร์ชันใหม่ → log + แจ้ง Telegram 1 ครั้ง/เวอร์ชัน/process (`_update_notified`) — logic กลางคือ `_update_check_data()` (ใช้ทั้ง endpoint กับ startup)
+- `/update-check` เรียก GitHub API — cache 6 ชม. (`_update_cache`) — อย่าเรียกถี่ (rate limit 60/ชม. ไม่มี token) — **เช็คตอนเริ่มด้วย** (`_startup_update_check` ใน WebUI.__init__ spawn thread + รอ 3 วิ) **+ ทุก 24 ชม.** (`ddns._periodic_update_check` ใน run_forever — lazy import webui กัน circular) — มีเวอร์ชันใหม่ → log + แจ้ง Telegram 1 ครั้ง/เวอร์ชัน/process (`_update_notified`) — logic กลางคือ `_update_check_data()` (ใช้ทั้ง endpoint กับ startup/periodic)
 
 ### Service
 - `service.py` ใช้ `SvcDoRun` (ไม่ใช่ SvcRun) + pywin32 306 ใช้ `PrepareToHostSingle` (ไม่มี `PrepareServiceHost` แล้ว)

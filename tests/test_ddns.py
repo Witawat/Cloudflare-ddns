@@ -1,6 +1,7 @@
 """เทสต์ ddns: dry-run ไม่เขียน state, consensus ใน _sync_family, run_once error path"""
 
 import os
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -102,6 +103,42 @@ class RunOnceTest(unittest.TestCase):
             summary = self.engine.run_once()
         self.assertEqual(summary[0]["action"], "error")
         self.assertIn("boom", summary[0]["message"])
+
+
+class PeriodicUpdateCheckTest(unittest.TestCase):
+    """เช็คเวอร์ชันใหม่ทุก 24 ชม. — รันยาว ๆ ก็รู้ว่ามีรุ่นใหม่"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "config.ini")
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write(MINIMAL_INI)
+        self.cfg = config_mod.Config(self.path)
+        ddns._periodic_update_at = 0.0
+        # patch ฟังก์ชันจริง (ไม่ใช้ sys.modules — from . import webui คืน module จริงจาก package attr)
+        self.patcher = mock.patch("cloudflare_ddns.webui._startup_update_check")
+        self.mock_check = self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        self.tmp.cleanup()
+
+    def test_checks_on_first_call(self):
+        ddns._periodic_update_check(self.cfg, self.path)
+        self.mock_check.assert_called_once()
+
+    def test_skips_within_24h(self):
+        ddns._periodic_update_check(self.cfg, self.path)
+        self.mock_check.reset_mock()
+        ddns._periodic_update_check(self.cfg, self.path)
+        self.mock_check.assert_not_called()
+
+    def test_checks_again_after_24h(self):
+        ddns._periodic_update_check(self.cfg, self.path)
+        ddns._periodic_update_at = 0.0  # จำลองผ่านไป 24 ชม. (reset ค้าง)
+        self.mock_check.reset_mock()
+        ddns._periodic_update_check(self.cfg, self.path)
+        self.mock_check.assert_called_once()
 
 
 if __name__ == "__main__":
