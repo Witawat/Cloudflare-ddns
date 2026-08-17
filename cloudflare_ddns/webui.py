@@ -38,9 +38,14 @@ _login_guard = {"fails": 0, "locked_until": 0.0}
 def _version_newer(latest, current):
     """เปรียบเทียบ version แบบตัวเลข (1.2.3 vs 1.2.10) — คืน True ถ้า latest > current"""
     def _parts(v):
-        return [int(x) for x in str(v).strip("v").split(".") if x.isdigit()][:3]
+        return [int(x) for x in str(v).strip("v").split(".") if x.isdigit()]
 
-    return _parts(latest) > _parts(current)
+    a, b = _parts(latest), _parts(current)
+    # เติม 0 ให้ความยาวเท่ากัน (1.7.22 < 1.7.22.1)
+    n = max(len(a), len(b))
+    a += [0] * (n - len(a))
+    b += [0] * (n - len(b))
+    return a > b
 
 
 def _is_admin():
