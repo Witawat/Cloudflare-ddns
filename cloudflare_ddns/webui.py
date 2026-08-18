@@ -361,7 +361,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 return None
 
     def _do_get_inner(self):
-        if self.path == "/ip-check":
+        path = self.path.split("?", 1)[0]
+        if path == "/ip-check":
             from . import ip_detect
 
             import concurrent.futures
@@ -385,12 +386,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 return self._send_json(200, result)
             return self._send_json(200, cached["result"])
 
-        if self.path == "/notify-queue":
+        if path == "/notify-queue":
             if not self._authed():
                 return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
             return self._send_json(200, {"ok": True, "queue": notifier.load_queue(config_mod.queue_path_for(self.server.config_path))})
 
-        if self.path.split("?", 1)[0] == "/log":
+        if path == "/log":
             if not self._authed():
                 return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
             import os
@@ -404,7 +405,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             except OSError as exc:
                 return self._send(200, self._t("log.none", exc=exc), "text/plain; charset=utf-8")
 
-        if self.path == "/status.json":
+        if path == "/status.json":
             if not self._authed():
                 return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
             engine = ddns.DDNSEngine(self.server.config_path)
@@ -451,40 +452,45 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 status["api_stats"] = {"calls": 0, "errors": 0, "rate_limited": 0}
             return self._send_json(200, status)
 
-        if self.path == "/config.json":
+        if path == "/config.json":
             if not self._authed():
                 return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
             return self._send_json(200, _cfg_to_dict(self.cfg))
 
-        if self.path == "/config-file":
+        if path == "/config-file":
             if not self._authed():
                 return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
             return self._send(200, self.cfg.raw_text(), "text/plain; charset=utf-8")
 
-        if self.path == "/setup-state":
+        if path == "/setup-state":
             errors = self.cfg.validate()
             return self._send_json(200, {"needs_setup": bool(errors), "errors": errors})
 
-        if self.path == "/update-check":
+        if path == "/update-check":
             """เช็คเวอร์ชันใหม่จาก GitHub Releases (cache 6 ชม.)"""
             return self._send_json(200, _update_check_data(lang=self._lang()))
 
-        if self.path == "/webui.js":
+        if path == "/webui.js":
             # JavaScript หน้าเว็บ (แยกไฟล์ — static ไม่ต้อง login เพราะไม่มีข้อมูลลับ)
             return self._send(200, PAGE_JS, "application/javascript; charset=utf-8")
 
+        if path in ("", "/"):
+            # หน้าเว็บหลัก — ถ้าไม่ authed เสิร์ฟหน้า login แบบเดี่ยว (ห้ามส่ง PAGE หลัก)
+            if not self._authed():
+                style_start = PAGE.index("<style>") + len("<style>")
+                style_end = PAGE.index("</style>")
+                css = PAGE[style_start:style_end]
+                return self._send(
+                    200,
+                    PAGE_LOGIN.replace("__CSS__", css).replace("__VERSION__", __version__),
+                )
+            return self._send(200, PAGE.replace("__LOGIN__", "").replace("__VERSION__", __version__))
+
+        # path อื่นที่ไม่รู้จัก — คืน 404 JSON (กัน JS เก่าเรียก path เก่าแล้วได้ HTML -> .json() พัง)
+        # (ถ้าไม่ authed ตอบ 401 ให้ชัดว่าต้อง login ก่อน)
         if not self._authed():
-            # หน้า login แบบเดี่ยว (ไฟล์แยก webui_login.html) — ห้ามส่ง PAGE หลัก
-            # (script หลักจะรันแล้วโชว์ error 401 ใต้หน้าล็อกอิน) — CSS ยืมจาก PAGE
-            # (สกัดเฉพาะเนื้อหาใน <style> — หน้า login มี <style> ของตัวเองอยู่แล้ว)
-            style_start = PAGE.index("<style>") + len("<style>")
-            style_end = PAGE.index("</style>")
-            css = PAGE[style_start:style_end]
-            return self._send(
-                200,
-                PAGE_LOGIN.replace("__CSS__", css).replace("__VERSION__", __version__),
-            )
-        return self._send(200, PAGE.replace("__LOGIN__", "").replace("__VERSION__", __version__))
+            return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
+        return self._send_json(404, {"ok": False, "message": self._t("err.not_found")})
 
     # ---- POST ----
 

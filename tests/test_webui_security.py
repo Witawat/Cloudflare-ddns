@@ -43,6 +43,52 @@ def make_handler(config_path, headers=None, cfg=None):
     return handler
 
 
+class UnknownPathTest(unittest.TestCase):
+    """path ไม่รู้จัก -> 404 JSON (ไม่ใช่ HTML) — กัน JS เก่าเรียก path เก่าแล้ว .json() พัง"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "config.ini")
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write(MINIMAL_INI)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_unknown_path_returns_404_json(self):
+        handler = make_handler(self.path)
+        handler.path = "/config"  # path เก่า (ไม่ match /config.json)
+        handler._do_get_inner()
+        handler._send_json.assert_called_once()
+        args = handler._send_json.call_args[0]
+        self.assertEqual(args[0], 404)
+        self.assertFalse(args[1].get("ok"))
+
+    def test_old_status_path_returns_404_json(self):
+        handler = make_handler(self.path)
+        handler.path = "/status"  # path เก่า (ไม่ match /status.json)
+        handler._do_get_inner()
+        args = handler._send_json.call_args[0]
+        self.assertEqual(args[0], 404)
+
+    def test_query_string_still_matches_endpoint(self):
+        handler = make_handler(self.path)
+        handler.path = "/config.json?t=123"  # มี query ยัง match ได้
+        handler._do_get_inner()
+        handler._send_json.assert_called_once()
+        args = handler._send_json.call_args[0]
+        self.assertEqual(args[0], 200)
+
+    def test_root_returns_html_not_json(self):
+        handler = make_handler(self.path)
+        handler.path = "/"
+        handler._send = mock.Mock()
+        handler._do_get_inner()
+        # root ต้องส่ง HTML (ผ่าน _send) ไม่ใช่ _send_json
+        handler._send_json.assert_not_called()
+        handler._send.assert_called_once()
+
+
 class OriginCheckTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

@@ -2,7 +2,22 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
-## [2.1.1] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
+## [2.1.2] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
+
+### แก้บั๊ก (Fixes)
+
+- **JS เห็น `Unexpected token '<' "<!DOCTYPE"... (loadConfig/loadTunnelStatus/loadServiceStatus)**: endpoint ที่ path ไม่ match (เช่น JS เก่าเรียก `/config` `/status` หรือมี query string `/config.json?x`) ตกไปคืนหน้า HTML 200 → `.json()` พัง — แก้ให้
+  - ทุก endpoint JSON รองรับ query string (`path = self.path.split("?", 1)[0]`)
+  - path ที่ไม่รู้จัก → **404 JSON** (แทน HTML) — กัน JS เก่า/ผิด path ได้ HTML
+  - เฉพาะ path `""`/`/` เท่านั้นที่เสิร์ฟหน้า HTML/login
+- (หมายเหตุ) ตรวจพบ webui หลาย instance bind 8123 พร้อมกัน (`allow_reuse_address`) → browser สลับโดน instance ที่ตั้ง password → หน้า login HTML — ควร kill process ค้างก่อน (ไม่ใช่บั๊กโค้ด)
+
+### เพิ่ม (Tests)
+
+- `UnknownPathTest` (test_webui_security): path เก่า → 404 JSON, query string ยัง match, root → HTML ไม่ใช่ JSON (4 เทสต์)
+- รวม: 122 → 126 เทสต์
+
+## [2.1.1] — 2026-08-18 (ยังไม่ปล่อย release)
 
 ### แก้บั๊ก (Fixes)
 
