@@ -2,6 +2,16 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.1.0] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
+
+### เพิ่ม (Features)
+
+- **เฟส 3 i18n: ข้อความ Telegram 2 ภาษา** — เพิ่ม config field `language = th|en` (ฟอร์มตั้งค่า "ภาษา Telegram") กำหนดภาษาของข้อความแจ้งเตือน + คำสั่ง `/status /list /ip /run /update /tunnel /log /notify /restart /start /stop /help` + กู้รหัสผ่าน + reset:
+  - `build_message` (เริ่ม/หยุด/IP เปลี่ยน/สร้าง record/error/รอบเสร็จ) แปลตาม `cfg.language`
+  - detail ทุกจุดที่ส่งเข้า notify (rate limit / หา IP ไม่ได้ / zone ไม่ได้ / Cloudflare anycast / อ่าน record ไม่ได้ / สรุปทุกรอบ / หยุด) แปลตามภาษา
+  - สรุปประจำวัน (daily report) แปลตามภาษา
+  - **log ไฟล์คงไทยเสมอ** (ตามที่ตกลง — log = เครื่องมือ debug ควรภาษาคงที่)
+
 ## [2.0.0] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
 
 ### เพิ่ม (Features)

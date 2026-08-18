@@ -15,6 +15,7 @@ import urllib.request
 from datetime import datetime
 
 from . import config as config_mod
+from . import i18n
 
 log = logging.getLogger("cloudflare-ddns")
 
@@ -39,12 +40,13 @@ API_URL = "https://api.telegram.org/bot{token}/sendMessage"
 
 
 class TelegramNotifier:
-    def __init__(self, bot_token="", chat_id="", events=None, config_path=None, name=""):
+    def __init__(self, bot_token="", chat_id="", events=None, config_path=None, name="", lang="th"):
         self.bot_token = (bot_token or "").strip()
         self.chat_id = str(chat_id or "").strip()
         self.events = events or {}
         self._last_dedupe_key = ""
         self.name = name or ""
+        self.lang = lang if lang in ("th", "en") else "th"
         # คิวอยู่ข้าง config.ini ที่ใช้ (ข้าง exe เมื่อรัน exe) — กันคิวแยกชุด
         self.queue_path = config_mod.queue_path_for(config_path)
 
@@ -67,6 +69,7 @@ class TelegramNotifier:
             },
             config_path=getattr(cfg, "path", None),
             name=_tg_command_name(cfg),
+            lang=getattr(cfg, "language", "th") or "th",
         )
 
     def event_enabled(self, event):
@@ -77,7 +80,7 @@ class TelegramNotifier:
     def send_raw(self, text):
         """ส่งข้อความตรง ๆ คืน (ok, error_message) ไม่ยุ่งกับ queue."""
         if not self.enabled:
-            return False, "ยังไม่ได้ตั้งค่า telegram (bot_token/chat_id)"
+            return False, i18n.t(self.lang, "tg.not_enabled")
         payload = json.dumps(
             {"chat_id": self.chat_id, "text": text}, ensure_ascii=False
         ).encode("utf-8")
@@ -92,7 +95,7 @@ class TelegramNotifier:
                 data = json.loads(response.read().decode("utf-8", "replace"))
             if data.get("ok"):
                 return True, ""
-            return False, data.get("description", "sendMessage คืน ok=false")
+            return False, data.get("description") or "sendMessage failed"
         except urllib.error.HTTPError as exc:
             return False, f"HTTP {exc.code}"
         except Exception as exc:
@@ -106,7 +109,7 @@ class TelegramNotifier:
             return
         if not self.event_enabled(event):
             return
-        message = build_message(event, text, self.name)
+        message = build_message(event, text, self.name, lang=self.lang)
         if not message or not message.strip():
             # กันข้อความว่างเข้าคิว — ส่งให้ Telegram ไม่ได้ (HTTP 400) แล้วจะติดคิวซ้ำไปเรื่อย ๆ
             log.debug("ข้ามการแจ้ง (ข้อความว่าง) event=%s", event)
@@ -272,7 +275,7 @@ def _tg_updates(token, offset, timeout=10):
     return []
 
 
-def _apply_webui_password(cfg, config_path, new_pw):
+def _apply_webui_password(cfg, config_path, new_pw, lang="th"):
     """เขียน webui_password (hash) ใหม่ลง config — atomic + ใช้ได้แม้ config ยังตั้งไม่ครบ.
 
     ตรวจรูปแบบ ini ก่อน (parse ได้) แล้วเขียนตรง (ไม่ใช้ save_text เพราะ validate เต็มจะกีดกัน)
@@ -282,12 +285,12 @@ def _apply_webui_password(cfg, config_path, new_pw):
 
     text = cfg.raw_text()
     if not text:
-        return False, "อ่าน config ไม่ได้"
+        return False, i18n.t(lang, "tg.pw.read_fail")
     parser = configparser.ConfigParser(interpolation=None)
     try:
         parser.read_string(text)
     except configparser.Error as exc:
-        return False, "config ผิดรูปแบบ: {}".format(exc)
+        return False, i18n.t(lang, "tg.pw.bad_format").format(exc)
     if not parser.has_section("cloudflare"):
         parser.add_section("cloudflare")
     parser.set(
@@ -296,29 +299,12 @@ def _apply_webui_password(cfg, config_path, new_pw):
     buf = io.StringIO()
     parser.write(buf)
     if not config_mod.atomic_write_text(config_path, buf.getvalue()):
-        return False, "เขียนไฟล์ไม่ได้"
+        return False, i18n.t(lang, "tg.pw.write_fail")
     cfg.reload()
-    return True, "บันทึกสำเร็จ"
+    return True, i18n.t(lang, "tg.pw.ok")
 
 
 # ---- คำสั่ง Telegram (เปิดด้วย telegram_allow_reset = true — เฉพาะ chat_id ที่ตั้งไว้) ----
-
-TG_HELP_TEXT = (
-    "รายการคำสั่ง (พิมพ์ในแชทนี้):\n"
-    "/status — สถานะ DDNS (IP/รอบล่าสุด/error/เวอร์ชัน/tunnel/สถิติ API)\n"
-    "/list — รายชื่อ DDNS + tunnel ที่ตั้งค่าไว้\n"
-    "/ip — IP สาธารณะปัจจุบัน\n"
-    "/run — รันรอบ DDNS ทันที (ต้องยืนยัน yes)\n"
-    "/update — เช็คเวอร์ชันใหม่\n"
-    "/tunnel [start|stop] — สถานะ/ควบคุม tunnel (stop ต้องยืนยัน yes)\n"
-    "/log — log 30 บรรทัดสุดท้าย\n"
-    "/notify [all|start|stop|ip|error|created|round|daily] [on|off] — ดู/เปิด/ปิดการแจ้งเตือน\n"
-    "/restart /start /stop — ควบคุม Windows Service (restart ต้องยืนยัน yes)\n"
-    "reset password → yes — กู้รหัสผ่านหน้าเว็บ\n"
-    "ใช้ bot กลางหลายเครื่อง? ต่อท้าย @ชื่อเครื่อง "
-    "(เช่น /status @เครื่องA) — เฉพาะเครื่องที่ชื่อตรงตอบ\n"
-    "ทุกคำตอบขึ้นต้นด้วย [ชื่อเครื่อง] — รู้ว่ามาจากเครื่องไหน"
-)
 
 
 def _tg_command_name(cfg):
@@ -327,12 +313,12 @@ def _tg_command_name(cfg):
     return name or _hostname()
 
 
-def _tg_list_text(cfg):
+def _tg_list_text(cfg, lang="th"):
     """รายชื่อ DDNS records + tunnel hostnames ที่ตั้งค่าไว้ สำหรับ /list"""
     lines = []
     records = getattr(cfg, "records", []) or []
     if records:
-        lines.append("📋 DDNS records:")
+        lines.append(i18n.t(lang, "tg.list.records"))
         for rec in records:
             fqdn = config_mod.fqdn_name(rec.name or "", rec.zone or "")
             fam = []
@@ -344,10 +330,10 @@ def _tg_list_text(cfg):
                 "• {} {}{}".format(fqdn or "?", "/".join(fam) or "-", " (proxy)" if rec.proxied else "")
             )
     else:
-        lines.append("📋 DDNS records: (ไม่มี)")
+        lines.append(i18n.t(lang, "tg.list.records_empty"))
     hosts = getattr(cfg, "tunnel_hosts", []) or []
     if hosts:
-        lines.append("🛰 Tunnel hostnames:")
+        lines.append(i18n.t(lang, "tg.list.hosts"))
         for h in hosts:
             lines.append(
                 "• {}{} → {} ({})".format(
@@ -358,11 +344,11 @@ def _tg_list_text(cfg):
                 )
             )
     else:
-        lines.append("🛰 Tunnel hostnames: (ไม่มี)")
+        lines.append(i18n.t(lang, "tg.list.hosts_empty"))
     return "\n".join(lines)
 
 
-def _tg_status_text(config_path):
+def _tg_status_text(config_path, lang="th"):
     """ข้อความสถานะสำหรับ /status (records + รอบล่าสุด + error + เวอร์ชัน + tunnel + สถิติ API)"""
     from . import cloudflare_api, ddns
 
@@ -375,27 +361,27 @@ def _tg_status_text(config_path):
             for key, ip in records.items():
                 lines.append("• {}: {}".format(key, ip))
         else:
-            lines.append("• ยังไม่มีข้อมูล record (รอรอบแรก)")
-        lines.append("รอบล่าสุด: {}".format(st.get("last_run") or "—"))
+            lines.append(i18n.t(lang, "tg.status.no_records"))
+        lines.append(i18n.t(lang, "tg.status.last_run").format(st.get("last_run") or "—"))
         for key, err in list(st.get("record_errors", {}).items())[:3]:
             lines.append("⚠ {}: {}".format(key, str(err)[:80]))
     except Exception as exc:
-        lines.append("อ่านสถานะไม่ได้: {}".format(exc))
+        lines.append(i18n.t(lang, "tg.status.err").format(exc))
     # เวอร์ชันโปรแกรม
     try:
         from . import __version__ as ver
 
-        lines.append("โปรแกรม: v{}".format(ver))
+        lines.append(i18n.t(lang, "tg.status.program").format(ver))
     except Exception:
         pass
     # tunnel hostnames
     hosts = getattr(cfg, "tunnel_hosts", []) or []
     if hosts:
-        lines.append("Tunnel: {}".format(", ".join(h.get("hostname", "?") for h in hosts)))
+        lines.append(i18n.t(lang, "tg.status.tunnel").format(", ".join(h.get("hostname", "?") for h in hosts)))
     # สถิติ Cloudflare API (หน่วยความจำ เริ่มใหม่เมื่อ service restart)
     stats = cloudflare_api.api_stats()
     lines.append(
-        "API: เรียก {} · error {} · rate limit {}".format(
+        i18n.t(lang, "tg.status.api").format(
             stats.get("calls", 0), stats.get("errors", 0), stats.get("rate_limited", 0)
         )
     )
@@ -414,17 +400,17 @@ NOTIFY_FIELDS = {
 }
 
 
-def _tg_notify_text(cfg, parts):
+def _tg_notify_text(cfg, parts, lang="th"):
     """จัดการ /notify — ดู/เปิด/ปิดการแจ้งเตือน (บันทึก config ผ่านเส้นทางเดียวกับฟอร์มเว็บ).
 
     รูปแบบ: /notify · /notify all on|off · /notify <event> [on|off]
     """
     def current():
         toggles = " · ".join(
-            "{}={}".format(key, "เปิด" if getattr(cfg, field) else "ปิด")
+            "{}={}".format(key, i18n.t(lang, "tg.notify.on") if getattr(cfg, field) else i18n.t(lang, "tg.notify.off"))
             for key, field in NOTIFY_FIELDS.items()
         )
-        return "การแจ้งเตือน:\n" + toggles
+        return i18n.t(lang, "tg.notify.current").format(toggles)
 
     if len(parts) < 2:
         return current()
@@ -434,7 +420,7 @@ def _tg_notify_text(cfg, parts):
 
     if target == "all":
         if value not in ("on", "off"):
-            return "ใช้: /notify all on|off (เปิด/ปิดทุกประเภท)"
+            return i18n.t(lang, "tg.notify.usage")
         for field in NOTIFY_FIELDS.values():
             setattr(cfg, field, value == "on")
     elif target in NOTIFY_FIELDS:
@@ -443,9 +429,7 @@ def _tg_notify_text(cfg, parts):
             value = "off" if getattr(cfg, field) else "on"
         setattr(cfg, field, value == "on")
     else:
-        return "ไม่รู้จักประเภท: {} — ใช้: {}".format(
-            target, " / ".join(NOTIFY_FIELDS) + " / all"
-        )
+        return i18n.t(lang, "tg.notify.unknown").format(target, " / ".join(NOTIFY_FIELDS) + " / all")
 
     # บันทึกผ่านเส้นทางเดียวกับฟอร์มเว็บ (validate + เขียน atomic)
     try:
@@ -455,13 +439,13 @@ def _tg_notify_text(cfg, parts):
         text = webui_mod._dict_to_ini(data, cfg.path)
         ok, message = cfg.save_text(text)
     except Exception as exc:
-        return "บันทึก config ไม่สำเร็จ: {}".format(exc)
+        return i18n.t(lang, "tg.notify.save_fail").format(exc)
     if not ok:
-        return "บันทึก config ไม่สำเร็จ: {}".format(message)
+        return i18n.t(lang, "tg.notify.save_fail").format(message)
     return current()
 
 
-def _tg_ip_text():
+def _tg_ip_text(lang="th"):
     """IP สาธารณะสำหรับ /ip"""
     from . import ip_detect
 
@@ -469,30 +453,30 @@ def _tg_ip_text():
     for family in (4, 6):
         try:
             ip = ip_detect.get_public_ip(family, timeout=6)
-            parts.append("IPv{}: {}".format(family, ip or "หาไม่ได้"))
+            parts.append("IPv{}: {}".format(family, ip or i18n.t(lang, "tg.ip.not_found")))
         except Exception:
-            parts.append("IPv{}: error".format(family))
-    return "IP สาธารณะ: " + " · ".join(parts)
+            parts.append("IPv{}: {}".format(family, i18n.t(lang, "tg.ip.error")))
+    return i18n.t(lang, "tg.ip.text").format(" · ".join(parts))
 
 
-def _tg_update_text():
+def _tg_update_text(lang="th"):
     """เช็คเวอร์ชันใหม่สำหรับ /update"""
     try:
         from . import webui as webui_mod
 
         data = webui_mod._update_check_data()
         if not data.get("ok"):
-            return "เช็คเวอร์ชันไม่ได้: " + (data.get("message") or "ลองใหม่ภายหลัง")
+            return i18n.t(lang, "tg.update.fail") + (data.get("message") or "")
         if data.get("has_update"):
-            return "มีเวอร์ชันใหม่ v{} (ปัจจุบัน v{}) — {}".format(
+            return i18n.t(lang, "tg.update.has").format(
                 data["latest"], webui_mod.__version__, data.get("url")
             )
-        return "ใช้เวอร์ชันล่าสุดแล้ว (v{})".format(webui_mod.__version__)
+        return i18n.t(lang, "tg.update.latest").format(webui_mod.__version__)
     except Exception as exc:
-        return "เช็คเวอร์ชันไม่ได้: {}".format(exc)
+        return i18n.t(lang, "tg.update.fail") + str(exc)
 
 
-def _tg_run_now(cfg, config_path, reply):
+def _tg_run_now(cfg, config_path, reply, lang="th"):
     """รันรอบ DDNS ทันที (thread แยก — กันบล็อก loop) แล้วตอบผลสรุป"""
     from . import ddns
 
@@ -500,42 +484,42 @@ def _tg_run_now(cfg, config_path, reply):
         try:
             summary = ddns.DDNSEngine(config_path, dry_run=False).run_once()
             if not summary:
-                reply("ตรวจเสร็จ: ทุก record ตรง ไม่มีการเปลี่ยน")
+                reply(i18n.t(lang, "tg.run.done"))
                 return
             changed = sum(1 for e in summary if e.get("action") in ("updated", "created"))
             problems = sum(1 for e in summary if e.get("action") in ("error", "no-ip", "skip"))
-            lines = ["ตรวจ {} รายการ · เปลี่ยน {} · มีปัญหา {}".format(len(summary), changed, problems)]
+            lines = [i18n.t(lang, "tg.run.summary").format(len(summary), changed, problems)]
             for e in summary[:8]:
                 lines.append("• {}: {}".format(e.get("record") or "-", e.get("message") or e.get("action")))
             reply("\n".join(lines))
         except Exception as exc:
-            reply("รันรอบไม่ได้: {}".format(exc))
+            reply(i18n.t(lang, "tg.run.fail").format(exc))
 
     threading.Thread(target=work, daemon=True).start()
-    reply("กำลังรันรอบ DDNS — ผลจะตามมาในไม่กี่วิ")
+    reply(i18n.t(lang, "tg.run.busy"))
 
 
-def _tg_tunnel_text(cfg, action):
+def _tg_tunnel_text(cfg, action, lang="th"):
     """สถานะ/ควบคุม tunnel สำหรับ /tunnel [start|stop]"""
     try:
         from . import tunnel as tunnel_mod
 
         mgr = tunnel_mod.TunnelManager(config_path=cfg.path)
         if action == "start":
-            return "เริ่ม tunnel: " + mgr.start(cfg)
+            return i18n.t(lang, "tg.tunnel.start").format(mgr.start(cfg))
         if action == "stop":
-            return "หยุด tunnel: " + mgr.stop()
+            return i18n.t(lang, "tg.tunnel.stop").format(mgr.stop())
         st = mgr.status(cfg)
-        return "Tunnel: {} · cloudflared {} · รันอยู่: {}".format(
-            "เปิด" if st.get("enabled") else "ปิด",
-            st.get("version") or "ยังไม่ติดตั้ง",
-            "ใช่" if st.get("running") else "ไม่",
+        return i18n.t(lang, "tg.tunnel.status").format(
+            i18n.t(lang, "tg.tunnel.on") if st.get("enabled") else i18n.t(lang, "tg.tunnel.off"),
+            st.get("version") or i18n.t(lang, "tg.tunnel.not_installed"),
+            i18n.t(lang, "tg.tunnel.yes") if st.get("running") else i18n.t(lang, "tg.tunnel.no"),
         )
     except Exception as exc:
-        return "tunnel: {}".format(exc)
+        return i18n.t(lang, "tg.tunnel.err").format(exc)
 
 
-def _tg_service_action(action):
+def _tg_service_action(action, lang="th"):
     """ควบคุม Windows Service สำหรับ /restart /start /stop"""
     try:
         from . import service as service_mod
@@ -543,19 +527,19 @@ def _tg_service_action(action):
 
         if _in_service():
             if action == "stop":
-                return "รันใน service เอง — หยุดตัวเองไม่ได้ (ใช้ /restart ได้)"
+                return i18n.t(lang, "tg.svc.in_service_stop")
             if action == "start":
-                return "service กำลังรันอยู่แล้ว"
+                return i18n.t(lang, "tg.svc.in_service_start")
         if action == "restart":
             return service_mod.restart_service()
         if action == "stop":
             return service_mod.stop_service()
         return service_mod.start_service()
     except Exception as exc:
-        return "ทำไม่ได้: {}".format(exc)
+        return i18n.t(lang, "tg.svc.fail").format(exc)
 
 
-def _tg_log_tail(cfg, limit=30):
+def _tg_log_tail(cfg, limit=30, lang="th"):
     """log 30 บรรทัดสุดท้ายสำหรับ /log"""
     import os
 
@@ -565,9 +549,9 @@ def _tg_log_tail(cfg, limit=30):
             tail = "".join(handle.readlines()[-limit:])
         if len(tail) > 3500:
             tail = "…" + tail[-3500:]
-        return tail or "(log ว่าง)"
+        return tail or i18n.t(lang, "tg.log.empty")
     except OSError as exc:
-        return "อ่าน log ไม่ได้: {}".format(exc)
+        return i18n.t(lang, "tg.log.read_fail").format(exc)
 
 
 def check_telegram_commands(cfg, config_path=""):
@@ -598,6 +582,8 @@ def check_telegram_commands(cfg, config_path=""):
         return
 
     notify = TelegramNotifier.from_config(cfg)
+
+    lang = getattr(notify, "lang", "th") or "th"
 
     def reply(text):
         # ขึ้นต้นด้วย [ชื่อเครื่อง] — รู้ว่าคำตอบมาจากเครื่องไหน (ใช้ bot กลางหลายเครื่อง)
@@ -674,6 +660,8 @@ def _dispatch_tg_command(lower, text, uid, token, cfg, config_path, reply, confi
     """
     import secrets
 
+    lang = getattr(cfg, "language", "th") or "th"
+
     log.info("Telegram: คำสั่งจาก chat_id=%s: %r", cfg.telegram_chat_id, text[:60])
 
     # ยืนยันคำสั่งอันตราย (/run /restart /tunnel stop) — พิมพ์ yes ภายใน 2 นาที
@@ -692,46 +680,43 @@ def _dispatch_tg_command(lower, text, uid, token, cfg, config_path, reply, confi
                 return
             if lower == "no":
                 _danger_state["command"] = ""
-                reply("ยกเลิก: {}".format(pending))
+                reply(i18n.t(lang, "tg.danger.cancel").format(pending))
                 return
             # ข้อความอื่นที่ยังไม่ยืนยัน — คืนสถานะรอยืนยันให้
-            reply("มีคำสั่งรอยืนยัน: {} — พิมพ์ 'yes' เพื่อยืนยัน หรือ 'no' เพื่อยกเลิก".format(pending))
+            reply(i18n.t(lang, "tg.danger.pending").format(pending))
             return
         # หมดเวลายืนยันแล้ว — ล้าง state แล้วประมวลผลคำสั่งใหม่ที่พิมพ์มา (ไม่กลืน)
         _danger_state["command"] = ""
         log.info("Telegram: ยกเลิกคำสั่งอันตรายที่หมดเวลา: %s", pending)
         if lower in ("yes", "no"):
-            reply("หมดเวลายืนยันแล้ว: {} — พิมพ์คำสั่งใหม่เพื่อเริ่ม".format(pending))
+            reply(i18n.t(lang, "tg.danger.expired").format(pending))
             return
 
     # กู้รหัสผ่านหน้าเว็บ (2 ขั้น)
     if lower == "reset password":
         _reset_state["awaiting_confirm"] = True
         _reset_state["last_ask"] = time.time()
-        reply("รหัสผ่านหน้าเว็บจะถูกสุ่มใหม่ — พิมพ์ 'yes' เพื่อยืนยัน (ภายใน 10 นาที)")
+        reply(i18n.t(lang, "tg.reset.ask"))
         return
     if lower == "yes" and _reset_state["awaiting_confirm"]:
         _reset_state["awaiting_confirm"] = False
         if time.time() - _reset_state["last_ask"] > 600:
             log.warning("Telegram: คำสั่ง reset หมดเวลา (เกิน 10 นาที)")
-            reply("คำสั่ง reset หมดเวลาแล้ว — พิมพ์ 'reset password' ใหม่เพื่อเริ่ม")
+            reply(i18n.t(lang, "tg.reset.expired"))
             return
         if time.time() - _last_reset_time.get(token, 0) < _reset_cooldown:
             log.warning("Telegram: ข้าม reset (เพิ่งทำไปไม่นาน)")
-            reply("ข้าม: เพิ่ง reset ไปเมื่อไม่นาน — รอ 10 นาทีแล้วลองใหม่")
+            reply(i18n.t(lang, "tg.reset.cooldown"))
             return
         _last_reset_time[token] = time.time()
         new_pw = secrets.token_urlsafe(9)  # 12 ตัวอักษร
-        ok, message = _apply_webui_password(cfg, config_path, new_pw)
+        ok, message = _apply_webui_password(cfg, config_path, new_pw, lang)
         if ok:
             log.warning("Telegram: reset รหัสผ่านหน้าเว็บสำเร็จ (ส่งรหัสใหม่ทาง Telegram)")
-            reply(
-                "รหัสผ่านหน้าเว็บใหม่: {}\n"
-                "เข้าหน้าเว็บแล้วเปลี่ยนเป็นรหัสที่จำง่ายได้ในฟอร์มตั้งค่า".format(new_pw)
-            )
+            reply(i18n.t(lang, "tg.reset.done").format(new_pw))
         else:
             log.warning("Telegram: reset รหัสผ่านไม่สำเร็จ: %s", message)
-            reply("reset ไม่สำเร็จ: {}".format(message))
+            reply(i18n.t(lang, "tg.reset.fail").format(message))
         return
 
     # คำสั่งควบคุม (ต้องมาจาก chat_id ที่ตั้งไว้เท่านั้น — กรองไว้แล้วด้านบน)
@@ -752,35 +737,31 @@ def _dispatch_tg_command(lower, text, uid, token, cfg, config_path, reply, confi
         _danger_state["expires"] = time.time() + _danger_confirm_seconds
         # ตั้งคำสั่งอันตรายใหม่ = ยกเลิก reset รหัสที่ค้างอยู่ (กัน yes ซ้ำไป reset โดยไม่ตั้งใจ)
         _reset_state["awaiting_confirm"] = False
-        reply(
-            "{} เป็นคำสั่งอันตราย — พิมพ์ 'yes' เพื่อยืนยัน หรือ 'no' เพื่อยกเลิก (ภายใน 2 นาที)".format(
-                danger_cmd
-            )
-        )
+        reply(i18n.t(lang, "tg.danger.ask").format(danger_cmd))
         return
 
     if cmd == "/help":
-        reply(TG_HELP_TEXT)
+        reply(i18n.t(lang, "tg.help"))
     elif cmd == "/status":
-        reply(_tg_status_text(config_path))
+        reply(_tg_status_text(config_path, lang))
     elif cmd == "/list":
-        reply(_tg_list_text(cfg))
+        reply(_tg_list_text(cfg, lang))
     elif cmd == "/ip":
-        reply(_tg_ip_text())
+        reply(_tg_ip_text(lang))
     elif cmd == "/run":
-        _tg_run_now(cfg, config_path, reply)
+        _tg_run_now(cfg, config_path, reply, lang)
     elif cmd == "/update":
-        reply(_tg_update_text())
+        reply(_tg_update_text(lang))
     elif cmd == "/tunnel":
         parts = lower.split()
         action = parts[1] if len(parts) > 1 else ""
-        reply(_tg_tunnel_text(cfg, action))
+        reply(_tg_tunnel_text(cfg, action, lang))
     elif cmd == "/notify":
-        reply(_tg_notify_text(cfg, lower.split()))
+        reply(_tg_notify_text(cfg, lower.split(), lang))
     elif cmd in ("/restart", "/start", "/stop"):
-        reply(_tg_service_action(cmd[1:]))
+        reply(_tg_service_action(cmd[1:], lang))
     elif cmd == "/log":
-        reply(_tg_log_tail(cfg))
+        reply(_tg_log_tail(cfg, lang=lang))
     else:
         log.info("Telegram: คำสั่งไม่รู้จัก: %r", text[:60])
 
@@ -792,7 +773,7 @@ def _tg_api(bot_token, method, timeout=10):
         return json.loads(response.read().decode("utf-8", "replace"))
 
 
-def get_chat_id(bot_token, timeout=10):
+def get_chat_id(bot_token, timeout=10, lang="th"):
     """หา chat_id ล่าสุดผ่าน getUpdates (ผู้ใช้ต้องเคยส่ง /start หรือข้อความให้ bot).
 
     - ถ้าเจอ error 409 (มี webhook ค้าง) จะลบ webhook ให้อัตโนมัติแล้วลองใหม่
@@ -800,7 +781,7 @@ def get_chat_id(bot_token, timeout=10):
     """
     token = bot_token.strip()
     if not token:
-        return "", "ไม่พบ bot token"
+        return "", i18n.t(lang, "tg.chatid.no_token")
 
     def fetch():
         return _tg_api(token, "getUpdates", timeout=timeout)
@@ -815,35 +796,32 @@ def get_chat_id(bot_token, timeout=10):
                 _tg_api(token, "deleteWebhook", timeout=timeout)
                 data = fetch()
             except urllib.error.HTTPError as exc2:
-                return "", (
-                    f"ลบ webhook แล้วก็ยังติด error {exc2.code}: {exc2} "
-                    "— ถ้า bot นี้กำลังรันกับโปรแกรมอื่นอยู่ ให้ปิดตัวนั้นก่อนแล้วลองใหม่"
-                )
+                return "", i18n.t(lang, "tg.chatid.webhook_err", code=exc2.code, exc=exc2)
             except Exception as exc2:
-                return "", f"ลบ webhook ไม่ได้: {exc2}"
+                return "", i18n.t(lang, "tg.chatid.webhook_del_fail").format(exc2)
         else:
-            return "", f"เรียก getUpdates ไม่ได้: {exc}"
+            return "", i18n.t(lang, "tg.chatid.updates_fail").format(exc)
     except Exception as exc:
-        return "", f"เรียก getUpdates ไม่ได้: {exc}"
+        return "", i18n.t(lang, "tg.chatid.updates_fail").format(exc)
     if not data.get("ok"):
-        return "", data.get("description", "getUpdates คืน ok=false")
+        return "", data.get("description") or "getUpdates failed"
     updates = data.get("result", [])
     for update in reversed(updates):
         message = update.get("message") or update.get("channel_post") or update.get("my_chat_member", {})
         chat = (message or {}).get("chat")
         if chat and chat.get("id") is not None:
             return str(chat["id"]), ""
-    return "", "ยังไม่มีข้อความจาก bot — เปิดแชทกับ bot แล้วกด /start ก่อนลองใหม่"
+    return "", i18n.t(lang, "tg.chatid.not_found")
 
 
 # ---- ข้อความแจ้งเตือน ----
 
 
-def short_error(text, limit=110):
+def short_error(text, limit=110, lang="th"):
     """ย่อข้อความ error ให้อ่านง่าย (ตัด JSON/รายละเอียดยาว ๆ ทิ้ง)."""
     text = str(text or "").strip()
     if not text:
-        return "ไม่ทราบสาเหตุ"
+        return i18n.t(lang, "tg.err_unknown")
     # ตัด JSON (เช่น HTTP 400: {"success":false,...}) ทิ้ง เหลือเฉพาะข้อความหลัก
     if "{" in text:
         text = text.split("{", 1)[0].strip()
@@ -873,20 +851,20 @@ def _now_ts():
     return datetime.now().strftime("[%d/%m %H:%M]")
 
 
-def build_message(event, detail=None, name=None):
-    """สร้างข้อความแจ้งเตือนรูปแบบอ่านง่าย (ภาษาไทย สั้น กระชับ + เวลาเกิด + ชื่อเครื่อง)."""
+def build_message(event, detail=None, name=None, lang="th"):
+    """สร้างข้อความแจ้งเตือนรูปแบบอ่านง่าย (ตามภาษา + เวลาเกิด + ชื่อเครื่อง)."""
     ts = _now_ts()
     host = name or _hostname()
     if event == EVENT_START:
-        return f"🟢 DDNS เริ่มทำงาน {ts} · {host}\n" + (detail or "")
+        return i18n.t(lang, "tg.event.start", ts=ts, host=host) + "\n" + (detail or "")
     if event == EVENT_STOP:
-        return f"🔴 DDNS หยุดทำงาน {ts} · {host}" + (f"\n{detail}" if detail else "")
+        return i18n.t(lang, "tg.event.stop", ts=ts, host=host) + (f"\n{detail}" if detail else "")
     if event == EVENT_IP_CHANGE:
-        return f"🔄 IP เปลี่ยน {ts} · {host}\n" + (detail or "")
+        return i18n.t(lang, "tg.event.ip_change", ts=ts, host=host) + "\n" + (detail or "")
     if event == EVENT_CREATED:
-        return f"🆕 สร้าง record ใหม่ {ts} · {host}\n" + (detail or "")
+        return i18n.t(lang, "tg.event.created", ts=ts, host=host) + "\n" + (detail or "")
     if event == EVENT_ERROR:
-        return f"⚠️ มีปัญหา {ts} · {host}\n" + short_error(detail)
+        return i18n.t(lang, "tg.event.error", ts=ts, host=host) + "\n" + short_error(detail, lang=lang)
     if event == EVENT_ROUND:
-        return f"✅ ตรวจรอบเสร็จ {ts} · {host}\n" + (detail or "")
+        return i18n.t(lang, "tg.event.round", ts=ts, host=host) + "\n" + (detail or "")
     return detail or ""

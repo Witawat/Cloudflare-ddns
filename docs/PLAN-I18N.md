@@ -1,6 +1,6 @@
 # แผน/สถานะ: i18n ภาษาอังกฤษ + ปุ่มสลับภาษา
 
-> สถานะ: **เฟส 1 + 2 เสร็จ + rebuild + bump v2.0.0 (ยังไม่ปล่อย release)** · อัปเดตล่าสุด: 18/08/2026
+> สถานะ: **เฟส 1 + 2 + 3 เสร็จ (bump v2.1.0 — ยังไม่ปล่อย release)** · อัปเดตล่าสุด: 18/08/2026
 > บริบท: โปรเจกต์จะใช้สาธารณะ → ทำ i18n เต็มรูปแบบ (2 ภาษา: ไทย/อังกฤษ)
 
 ## 1. เป้าหมาย
@@ -37,7 +37,7 @@
 |---|---|---|
 | **1. UI หน้าเว็บ** | webui.js + webui.html + wizard 2 ตัว + toast + ตาราง | ✅ เสร็จ (354 keys th/en + 115 html.*) |
 | **2. Server message** | response `message` ทุก endpoint webui.py + login | ✅ เสร็จ (89 keys th/en) |
-| **3. log + Telegram** | ข้อความ log ไฟล์ + notifier/ddns/tunnel/heartbeat | ⏳ ยังไม่เริ่ม (แผนเดิม: เฟสหลัง) |
+| **3. Telegram (notify + คำสั่ง)** | config field `language` + build_message + _tg_* + daily + ddns detail | ✅ เสร็จ (~100 keys tg.* + ddns.*) · log ไฟล์คงไทยเสมอ |
 
 ## 4. งานที่ทำแล้ว
 
@@ -57,15 +57,16 @@
 - **`navigator.language` fallback**: `LANG` อ่าน localStorage ก่อน → cookie (ผู้ใช้เลือกแล้วชนะ auto-detect)
 - **server vs client ภาษา**: server อ่าน cookie `cfddns_lang` เท่านั้น — ปุ่มสลับต้องตั้งทั้ง localStorage + cookie ให้ตรงกัน
 
-## 6. เหลือทำ (ก่อน release v2.0.0)
+## 6. เหลือทำ (ก่อน release)
 
 1. ✅ **เทสต์ responsive** (ui-verify.mjs + ตรวจ i18n 2 ภาษา) 360–1920px — ผ่าน (ปุ่มภาษาไม่เบียด)
-2. ✅ **rebuild exe** (build.bat) — ตรวจแล้ว exe เสิร์ฟ 2 ภาษา (webui.js 117KB + HTML data-i18n + server message en/th ตาม Accept-Language)
-3. ✅ **bump v2.0.0** `__init__.py` + CHANGELOG + docs — **ยังไม่ปล่อย release** (ผู้ใช้สั่งไม่ release)
-4. (เฟส 3 — แยกได้) log ไฟล์ + Telegram notify ยังคงไทย
+2. ✅ **rebuild exe** (build.bat) — ตรวจแล้ว exe เสิร์ฟ 2 ภาษา
+3. ✅ **bump v2.1.0** `__init__.py` + CHANGELOG + docs — **ยังไม่ปล่อย release** (ผู้ใช้สั่งไม่ release)
+4. ⏳ **release v2.1.0** — GitHub release (รอคำสั่งผู้ใช้)
 
 ## 7. ทางเลือกที่ตัดสินใจไว้แล้ว
 
-- log ไฟล์ + ข้อความ Telegram: **คงไทย** (เฟส 3 ยังไม่ทำ) — log เป็นเครื่องมือ debug ควรภาษาคงที่, Telegram ใช้ notify ตาม config ภาษา
+- **log ไฟล์: คงไทยเสมอ** — log = เครื่องมือ debug ควรภาษาคงที่ ไม่งั้น grep error ยุ่ง (ไม่แปลตาม config)
+- **Telegram: ใช้ config field `language = th|en`** (default th) — ฟอร์มตั้งค่า + config.ini กำหนดภาษาข้อความ notify + คำสั่ง
 - เอกสาร (README/docs): แปลเป็นเฟสแยก (หลัง i18n โค้ดเสร็จ)
 - default ภาษา: `navigator.language` (ต่างชาติได้ eng อัตโนมัติ) — fallback ไทย

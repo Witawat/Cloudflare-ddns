@@ -177,6 +177,7 @@ def _cfg_to_dict(cfg):
             "daily_report_time": cfg.daily_report_time,
             "allow_reset": cfg.telegram_allow_reset,
             "command_name": cfg.telegram_command_name,
+            "language": cfg.language,
         },
         "tunnel": {
             "enabled": cfg.tunnel_enabled,
@@ -243,6 +244,8 @@ def _dict_to_ini(data, config_path=""):
     kv("daily_report_time", str(tg.get("daily_report_time", "08:00")).strip() or "08:00")
     kv("telegram_allow_reset", str(bool(tg.get("allow_reset", False))).lower())
     kv("telegram_command_name", str(tg.get("command_name", "")).strip())
+    lang = str(tg.get("language", "th") or "th").strip().lower()
+    kv("language", lang if lang in ("th", "en") else "th")
     tu = data.get("tunnel", {})
     kv("tunnel_enabled", str(bool(tu.get("enabled", False))).lower())
     kv("tunnel_token", str(tu.get("token", "")).strip())
@@ -615,7 +618,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             token = str(data.get("bot_token", "")).strip()
             if not token:
                 return self._send_json(400, {"ok": False, "message": self._t("token.missing_bot")})
-            chat_id, error = notifier.get_chat_id(token)
+            chat_id, error = notifier.get_chat_id(token, lang=self._lang())
             if not chat_id:
                 return self._send_json(400, {"ok": False, "message": error})
             return self._send_json(200, {"ok": True, "chat_id": chat_id})

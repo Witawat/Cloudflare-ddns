@@ -360,6 +360,8 @@ const I18N = {
     "html.113": "ตั้งค่า Cloudflare Tunnel",
     "html.114": "ให้บริการเว็บผ่าน Tunnel โดยไม่ต้องเปิดพอร์ต — 4 ขั้นตอน",
     "html.115": "ปิด",
+
+    "html.116": "ภาษา Telegram (notify + คำสั่ง)",
   },
   en: {
 
@@ -478,6 +480,8 @@ const I18N = {
     "html.113": "Set up Cloudflare Tunnel",
     "html.114": "Serve web through a Tunnel without opening ports — 4 steps",
     "html.115": "Close",
+
+    "html.116": "Telegram language (notify + commands)",
     "lang.name": "English",
     "toast.timeout": "timeout — server did not respond within {s}s (try again or check the log)",
     "toast.network": "Cannot connect to server (network error) — try again or check the log",
@@ -1091,6 +1095,7 @@ async function loadConfig() {
     $("daily_report_time").value = c.telegram.daily_report_time || "08:00";
     $("tg_allow_reset").checked = !!c.telegram.allow_reset;
     $("tg_cmd_name").value = c.telegram.command_name || "";
+    $("tg_language").value = c.telegram.language || "th";
     $("tunnel_enabled").checked = !!c.tunnel.enabled;
     $("tunnel_token").value = c.tunnel.token;
     $("cloudflared_path").value = c.tunnel.cloudflared_path || "";
@@ -1203,6 +1208,7 @@ async function saveConfig() {
       daily_report_time: $("daily_report_time").value.trim() || "08:00",
       allow_reset: $("tg_allow_reset").checked,
       command_name: $("tg_cmd_name").value.trim(),
+      language: $("tg_language").value || "th",
     },
     tunnel: {
       enabled: $("tunnel_enabled").checked,
@@ -2250,6 +2256,7 @@ function renderWizard() {
           daily_report_time: tgl.daily_report_time || "08:00",
           allow_reset: tgl.allow_reset === true,
           command_name: tgl.command_name || "",
+          language: tgl.language || "th",
         },
         tunnel: {
           enabled: !!tun.enabled,

@@ -47,8 +47,8 @@ class _DefaultDict(dict):
         return "{" + key + "}"
 
 
-def t(lang, key, **vars):
-    """คืนข้อความตามภาษา + แทนที่ {var}.
+def t(lang, key, *args, **vars):
+    """คืนข้อความตามภาษา + แทนที่ {var} (named) หรือ {} (positional).
 
     - ไม่เจอ key -> คืน key (ช่วย debug ว่าลืมเพิ่ม)
     - missing var -> คง {var} ไว้ในข้อความ (ไม่ crash)
@@ -58,8 +58,8 @@ def t(lang, key, **vars):
     if text is None:
         return key
     try:
-        return string.Formatter().vformat(text, (), _DefaultDict(vars))
-    except (ValueError, KeyError):
+        return string.Formatter().vformat(text, args, _DefaultDict(vars))
+    except (ValueError, KeyError, IndexError):
         return text
 
 

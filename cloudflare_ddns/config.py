@@ -244,6 +244,8 @@ class Config:
         self.telegram_allow_reset = False
         # ชื่อเครื่องสำหรับรับคำสั่ง Telegram (เว้นว่าง = ชื่อเครื่องของระบบ — ใช้ bot กลางหลายเครื่อง: /status @ชื่อ)
         self.telegram_command_name = ""
+        # ภาษาสำหรับข้อความ Telegram (notify + คำสั่ง) — th | en (default th; log ไฟล์คงไทยเสมอ)
+        self.language = "th"
         # Cloudflare Tunnel (cloudflared)
         self.tunnel_enabled = False
         self.tunnel_token = ""
@@ -296,6 +298,9 @@ class Config:
         self.daily_report_time = section.get("daily_report_time", "08:00").strip() or "08:00"
         self.telegram_allow_reset = self._as_bool(section, "telegram_allow_reset", False)
         self.telegram_command_name = section.get("telegram_command_name", "").strip()
+        self.language = (section.get("language", "th").strip().lower() or "th")
+        if self.language not in ("th", "en"):
+            self.language = "th"
         self.tunnel_enabled = self._as_bool(section, "tunnel_enabled", False)
         self.tunnel_token = section.get("tunnel_token", "").strip()
         self.cloudflared_path = section.get("cloudflared_path", "").strip()
@@ -494,6 +499,9 @@ class Config:
         self.daily_report_time = section.get("daily_report_time", "08:00").strip() or "08:00"
         self.telegram_allow_reset = self._as_bool(section, "telegram_allow_reset", False)
         self.telegram_command_name = section.get("telegram_command_name", "").strip()
+        self.language = (section.get("language", "th").strip().lower() or "th")
+        if self.language not in ("th", "en"):
+            self.language = "th"
         self.tunnel_enabled = self._as_bool(section, "tunnel_enabled", False)
         self.tunnel_token = section.get("tunnel_token", "").strip()
         self.cloudflared_path = section.get("cloudflared_path", "").strip()
