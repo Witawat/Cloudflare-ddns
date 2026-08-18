@@ -2,6 +2,22 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.1.9] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
+
+### แก้บั๊ก (Fixes)
+
+- **ฟอร์ม "+ เพิ่ม hostname" ไม่ reset ค่า**: หลังกด "แก้ไข" แล้วไม่บันทึก พอกด "เพิ่ม" ค่าจาก hostname เดิมค้างในฟอร์ม (เผลอผูกผิด/ทับ) — แก้ให้ปุ่ม "เพิ่ม" reset ฟอร์มเป็นค่าเริ่มต้นทุกครั้ง
+- **noTLSVerify/noChunkedEncoding ถูกส่งกับ tcp/udp**: ย้ายไปเฉพาะ http/https (เหมือน http2Origin/noHappyEyeballs) — กัน Cloudflare reject
+
+### เพิ่ม (Features)
+
+- **wizard Tunnel เพิ่มช่อง options**: "ข้ามตรวจ SSL" + "Host header" (ขั้นตอนผูก hostname) — ไม่ต้องออก wizard ไปฟอร์มหลัก
+- **ลบ tunnel.log เก่าก่อนเริ่ม tunnel** — กันดู log รอบก่อนเข้าใจผิดว่าเป็นรอบนี้ (cloudflared append ต่อไฟล์)
+
+### เพิ่ม (Tests)
+
+- `test_tcp_protocol_omits_http_only_options` ขยาย: noTLSVerify/noChunkedEncoding ไม่ส่งกับ tcp ด้วย (137 เทสต์)
+
 ## [2.1.8] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
 
 ### เพิ่ม (Features)

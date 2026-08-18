@@ -189,6 +189,8 @@ class TunnelBindNoTlsTest(unittest.TestCase):
             "hostname": "app.x.com",
             "token": "eyJhIjoxLCJ0IjoyfQ",
             "protocol": "tcp",
+            "no_tls_verify": "true",
+            "no_chunked_encoding": "true",
             "http2_origin": "true",
             "no_happy_eyeballs": "true",
         }
@@ -205,6 +207,8 @@ class TunnelBindNoTlsTest(unittest.TestCase):
                 api._request.side_effect = lambda method, path, body=None, **k: sent.update(body=body) or {}
                 handler._do_post_inner()
         rule = sent["body"]["config"]["ingress"][0]
+        self.assertNotIn("noTLSVerify", rule.get("originRequest", {}))
+        self.assertNotIn("noChunkedEncoding", rule.get("originRequest", {}))
         self.assertNotIn("http2Origin", rule.get("originRequest", {}))
         self.assertNotIn("noHappyEyeballs", rule.get("originRequest", {}))
 

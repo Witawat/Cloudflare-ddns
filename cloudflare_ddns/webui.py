@@ -111,18 +111,14 @@ def _tunnel_api_error(exc, lang="th"):
 
 
 def _build_origin_request(data):
-    """สร้าง originRequest dict จาก option ที่ client ส่ง (เฉพาะที่มีค่า) — http2Origin/noHappyEyeballs ใช้กับ http/https เท่านั้น."""
+    """สร้าง originRequest dict จาก option ที่ client ส่ง (เฉพาะที่มีค่า) — noTLSVerify/http2Origin/noHappyEyeballs ใช้กับ http/https เท่านั้น."""
     origin = {}
-    if str(data.get("no_tls_verify") or "").lower() in ("1", "true", "yes", "on"):
-        origin["noTLSVerify"] = True
     host_header = str(data.get("http_host_header") or "").strip()
     if host_header:
         origin["httpHostHeader"] = host_header
     origin_server = str(data.get("origin_server_name") or "").strip()
     if origin_server:
         origin["originServerName"] = origin_server
-    if str(data.get("no_chunked_encoding") or "").lower() in ("1", "true", "yes", "on"):
-        origin["noChunkedEncoding"] = True
     try:
         ct = float(data.get("connect_timeout") or 0)
         if ct > 0:
@@ -149,6 +145,10 @@ def _build_origin_request(data):
         pass
     protocol = str(data.get("protocol") or "http").strip().lower()
     if protocol in ("http", "https"):
+        if str(data.get("no_tls_verify") or "").lower() in ("1", "true", "yes", "on"):
+            origin["noTLSVerify"] = True
+        if str(data.get("no_chunked_encoding") or "").lower() in ("1", "true", "yes", "on"):
+            origin["noChunkedEncoding"] = True
         if str(data.get("http2_origin") or "").lower() in ("1", "true", "yes", "on"):
             origin["http2Origin"] = True
         if str(data.get("no_happy_eyeballs") or "").lower() in ("1", "true", "yes", "on"):

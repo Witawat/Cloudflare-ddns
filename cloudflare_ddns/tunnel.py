@@ -255,6 +255,12 @@ class TunnelManager:
         ok, message = ensure_installed(cfg)
         if not ok:
             return False, message
+        # ลบ log เก่าของรอบก่อน (cloudflared append ต่อไฟล์) — กันดู log เก่าเข้าใจผิดว่าเป็นรอบนี้
+        try:
+            if os.path.isfile(_log_path(self.config_path)):
+                os.remove(_log_path(self.config_path))
+        except OSError:
+            pass
         if not was_installed:
             self._notify(
                 cfg,

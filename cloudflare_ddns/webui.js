@@ -1607,6 +1607,21 @@ async function tunnelAddHost() {
   const form = $("tunnel-add-form");
   form.hidden = !form.hidden;
   if (form.hidden) return;
+  // reset ฟอร์มเป็นค่าเริ่มต้น — กันค่าจาก "แก้ไข" ที่ค้างอยู่เผลอผูกผิด
+  $("th-sub").value = "";
+  $("th-path").value = "";
+  $("th-protocol").value = "http";
+  $("th-service").value = "http://localhost:8080";
+  $("th-notls").checked = false;
+  $("th-hostheader").value = "";
+  $("th-originserver").value = "";
+  $("th-nochunk").checked = false;
+  $("th-connecttimeout").value = "";
+  $("th-tlstimeout").value = "";
+  $("th-keepalive").value = "";
+  $("th-keepaliveconn").value = "";
+  $("th-http2").checked = false;
+  $("th-happy").checked = false;
   const msg = $("th-msg");
   msg.innerHTML = "";
   await ensureTunnelDomainLoaded();
@@ -1857,6 +1872,11 @@ function renderTunnelWizard() {
       "</select></label>" +
       '<label class="field">' + t("twz.service_label") + '<input id="twz-service" type="text" class="mono" value="http://localhost:8080"></label></div>' +
       '<p style="margin:2px 0 10px;font-size:0.8rem;color:var(--muted);line-height:1.5">' + t("twz.service_hint") + "</p>" +
+      '<label style="font-size:0.85rem;display:flex;align-items:center;gap:6px;margin:2px 0 2px"><input id="twz-notls" type="checkbox"> ' + t("tunnel.no_tls_verify") + "</label>" +
+      '<p class="hint" style="margin:0 0 8px">' + t("tunnel.no_tls_verify_hint") + "</p>" +
+      '<label class="field" style="font-size:0.85rem">' + t("tunnel.host_header") +
+      '<input id="twz-hostheader" type="text" class="mono" placeholder="192.168.10.152:443">' +
+      '<span class="hint">' + t("tunnel.host_header_hint") + "</span></label>" +
       '<div style="margin:8px 0">' +
       '<button class="btn-secondary" type="button" id="twz-load-records">' + t("twz.load_records") + "</button> " +
       '<select id="twz-record-pick" class="wz-zone-select" style="margin-top:6px" hidden></select></div>' +
@@ -1904,7 +1924,10 @@ function renderTunnelWizard() {
         const r = await fetch("/tunnel/bind", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: twzData.token, hostname, path, protocol, service }),
+          body: JSON.stringify({ token: twzData.token, hostname, path, protocol, service,
+            no_tls_verify: $("twz-notls").checked ? "true" : "false",
+            http_host_header: $("twz-hostheader").value.trim(),
+          }),
         });
         const j = await r.json();
         msg.innerHTML = j.ok ? wzMsg("ok", "✓ " + j.message) : wzMsg("err", j.message);
