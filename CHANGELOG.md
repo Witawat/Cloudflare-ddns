@@ -2,6 +2,19 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.1.4] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
+
+### เพิ่ม (Features)
+
+- **ผูก https ไป origin self-signed ได้** (private hostname ใน LAN): เพิ่ม option **"ข้ามตรวจ SSL"** ในฟอร์มผูก hostname (และฟอร์มแก้ไข) — เมื่อเปิด จะใส่ `originRequest: {"noTLSVerify": true}` ใน ingress rule → cloudflared ไม่ตรวจ cert ของ origin (เช่น `https://192.168.1.50:443` ที่ cert ตรง IP/self-signed)
+  - ตาราง hostname แสดง badge `noTLS` สำหรับ rule ที่เปิดไว้
+  - `/tunnel/sync` + `/tunnel/hostnames` เก็บ/คืน field `no_tls_verify` (กันหายตอนซิงค์/แก้ไข)
+
+### เพิ่ม (Tests)
+
+- `TunnelBindNoTlsTest` (test_webui_security): เปิด no_tls_verify → rule มี `originRequest.noTLSVerify: true`, ปิด → ไม่มี (2 เทสต์)
+- รวม: 133 → 135 เทสต์
+
 ## [2.1.3] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
 
 ### เพิ่ม (Features)

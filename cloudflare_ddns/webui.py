@@ -892,6 +892,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 rule = {"hostname": hostname, "service": service}
                 if path:
                     rule["path"] = path
+                if str(data.get("no_tls_verify") or "").lower() in ("1", "true", "yes", "on"):
+                    # https ไป origin self-signed (private hostname ใน LAN) — ข้ามตรวจ cert
+                    rule["originRequest"] = {"noTLSVerify": True}
                 ingress.append(rule)
                 ingress.append({"service": "http_status:404"})
                 api._request(
@@ -959,6 +962,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         "path": r.get("path", ""),
                         "service": svc,
                         "protocol": protocol,
+                        "no_tls_verify": bool((r.get("originRequest") or {}).get("noTLSVerify")),
                     }
                 )
             return self._send_json(200, {"ok": True, "hostnames": hostnames})
@@ -1048,6 +1052,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         "path": r.get("path", ""),
                         "protocol": svc.split("://")[0] if "://" in svc else "http",
                         "service": svc,
+                        "no_tls_verify": bool((r.get("originRequest") or {}).get("noTLSVerify")),
                     }
                 )
             payload = _cfg_to_dict(self.cfg)

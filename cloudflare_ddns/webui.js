@@ -116,6 +116,7 @@ const I18N = {
     "tunnel.action_download": "ดาวน์โหลด",
     "tunnel.show_log": "ดู log tunnel",
     "tunnel.log_title": "Log ของ cloudflared (tunnel.log)",
+    "tunnel.no_tls_verify": "ข้ามตรวจ SSL (self-signed — ใช้กับ https ไป IP ใน LAN)",
     "tg.test_ok": "ส่งข้อความทดสอบสำเร็จ — ตรวจใน Telegram",
     "tg.test_fail": "ส่งไม่สำเร็จ: {msg}",
     "tg.queue_empty": "คิวว่าง — ไม่มีข้อความค้างส่ง",
@@ -596,6 +597,7 @@ const I18N = {
     "tunnel.action_download": "Download",
     "tunnel.show_log": "View tunnel log",
     "tunnel.log_title": "cloudflared log (tunnel.log)",
+    "tunnel.no_tls_verify": "Skip SSL verification (self-signed — for https to a LAN IP)",
     "tg.test_ok": "Test message sent — check Telegram",
     "tg.test_fail": "Could not send: {msg}",
     "tg.queue_empty": "Queue is empty — no pending messages",
@@ -1465,11 +1467,11 @@ async function tunnelHosts() {
     box.innerHTML = '<div style="border:1px solid var(--border);border-radius:8px;overflow-x:auto"><table class="tbl-w480" style="font-size:0.85rem;width:100%">' +
       '<tr style="background:var(--surface-2)"><th style="padding:5px 10px;text-align:left">' + t("tunnel.header_hostname") + '</th><th style="padding:5px 10px;text-align:left">' + t("tunnel.header_type") + '</th><th style="padding:5px 10px;text-align:left">' + t("tunnel.header_service") + '</th><th style="padding:5px 10px"></th></tr>' +
       j.hostnames.map(h =>
-        '<tr><td class="mono" style="padding:5px 10px">' + escapeHtml(h.hostname) + escapeHtml(h.path || "") + '</td>' +
+        '<tr><td class="mono" style="padding:5px 10px">' + escapeHtml(h.hostname) + escapeHtml(h.path || "") + (h.no_tls_verify ? ' <span class="pill" style="font-size:0.65rem;padding:1px 6px;color:var(--warn);background:var(--warn-soft)">noTLS</span>' : "") + '</td>' +
         '<td style="padding:5px 10px">' + escapeHtml(h.protocol || "http") + "</td>" +
         '<td class="mono" style="padding:5px 10px;color:var(--muted)">' + escapeHtml(h.service) + "</td>" +
         '<td style="padding:2px 6px;white-space:nowrap">' +
-        '<button class="btn-secondary" style="padding:3px 8px;font-size:0.75rem" type="button" data-edit-host="' + escapeHtml(h.hostname) + '" data-edit-path="' + escapeHtml(h.path || "") + '" data-edit-protocol="' + escapeHtml(h.protocol || "http") + '" data-edit-service="' + escapeHtml(h.service || "") + '" title="' + t("tunnel.edit_title") + '">' + t("tunnel.edit") + "</button> " +
+        '<button class="btn-secondary" style="padding:3px 8px;font-size:0.75rem" type="button" data-edit-host="' + escapeHtml(h.hostname) + '" data-edit-path="' + escapeHtml(h.path || "") + '" data-edit-protocol="' + escapeHtml(h.protocol || "http") + '" data-edit-service="' + escapeHtml(h.service || "") + '" data-edit-notls="' + (h.no_tls_verify ? "1" : "0") + '" title="' + t("tunnel.edit_title") + '">' + t("tunnel.edit") + "</button> " +
         '<button class="btn-del" type="button" data-host="' + escapeHtml(h.hostname) + '" data-path="' + escapeHtml(h.path || "") + '" title="' + t("tunnel.unbind_title") + '">×</button></td></tr>'
       ).join("") + "</table></div>" +
       '<p style="margin-top:6px;font-size:0.8rem;color:var(--muted)">' + t("tunnel.hint") + "</p>";
@@ -1532,6 +1534,7 @@ async function editTunnelHost(btn) {
   $("th-path").value = path;
   $("th-protocol").value = protocol;
   $("th-service").value = service;
+  $("th-notls").checked = btn.dataset.editNotls === "1";
   const msg = $("th-msg");
   msg.innerHTML = '<p style="color:var(--ok)">' + t("tunnel.edit_msg", { host: escapeHtml(hostname), path: escapeHtml(path || "") }) + "</p>";
   $("tunnel-add-form").scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1588,6 +1591,7 @@ async function thBind() {
         path: $("th-path").value.trim(),
         protocol: $("th-protocol").value,
         service: $("th-service").value.trim(),
+        no_tls_verify: $("th-notls").checked ? "true" : "false",
       }),
     });
     const j = await r.json();

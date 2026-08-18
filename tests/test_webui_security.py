@@ -123,6 +123,53 @@ class TunnelBindValidateTest(unittest.TestCase):
             self.assertNotIn("must start with", payload.get("message", "").lower())
 
 
+class TunnelBindNoTlsTest(unittest.TestCase):
+    """/tunnel/bind ใส่ originRequest noTLSVerify เมื่อเปิด option"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "config.ini")
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write(MINIMAL_INI)
+        webui._login_guard["locked_until"] = 0.0
+        webui._login_guard["fails"] = 0
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _bind(self, no_tls):
+        handler = make_handler(self.path)
+        handler.path = "/tunnel/bind"
+        handler._read_body = mock.Mock(return_value=json.dumps({
+            "service": "https://192.168.1.50:443",
+            "hostname": "app.x.com",
+            "token": "eyJhIjoxLCJ0IjoyfQ",
+            "no_tls_verify": "true" if no_tls else "false",
+        }).encode())
+        sent = {}
+        with mock.patch("cloudflare_ddns.webui._decode_tunnel_token",
+                        return_value=({"account_id": "a1", "tunnel_id": "t1"}, "")):
+            with mock.patch("cloudflare_ddns.cloudflare_api.CloudflareAPI") as api_cls:
+                api = api_cls.return_value
+                api.get_zone_id.return_value = "z1"
+                api.get_record.return_value = None
+                api._request.side_effect = lambda method, path, body=None, **k: sent.update(body=body) or {}
+                handler._do_post_inner()
+        return handler._send_json.call_args[0], sent
+
+    def test_no_tls_verify_adds_origin_request(self):
+        (code, payload), sent = self._bind(True)
+        self.assertEqual(code, 200)
+        rule = sent["body"]["config"]["ingress"][0]
+        self.assertEqual(rule["originRequest"], {"noTLSVerify": True})
+
+    def test_no_tls_verify_off_omits_origin_request(self):
+        (code, payload), sent = self._bind(False)
+        self.assertEqual(code, 200)
+        rule = sent["body"]["config"]["ingress"][0]
+        self.assertNotIn("originRequest", rule)
+
+
 class OriginCheckTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
