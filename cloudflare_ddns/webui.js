@@ -808,6 +808,8 @@ window.fetch = (url, opts) => {
 function logClientError(context, err) {
   try {
     const message = String(err && err.message ? err.message : err).slice(0, 500);
+    // กรอง warning ของเบราว์เซอร์ที่ไม่ใช่ error จริง (ไม่ spam log)
+    if (message.indexOf("ResizeObserver loop") !== -1) return;
     fetch("/log-event", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
