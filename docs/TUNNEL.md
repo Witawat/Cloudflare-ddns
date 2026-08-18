@@ -48,6 +48,7 @@
 | **HTTPS** | พอร์ต SSL เช่น 443/8443 | `https://localhost:443` |
 | **TCP** | SSH / RDP / game server | `tcp://localhost:22` |
 | **UDP** | game / VPN (เช่น WireGuard) | `udp://localhost:51820` |
+| **Private hostname (LAN)** | บริการในเครื่อง/เน็ตเวิร์ก — ต้อง cloudflared อยู่ใน LAN เดียวกับ service | `https://192.168.1.50:443` |
 
 > ⚠️ **พอร์ต SSL (443/8443) ต้องเลือก HTTPS + `https://localhost:443`** — ถ้าเลือก HTTP จะเจอ:
 > ```
@@ -57,6 +58,25 @@
 > (cloudflared ส่ง plain HTTP เข้าไปที่พอร์ต TLS → เซิร์ฟเวอร์ปฏิเสธ)
 
 **หลายพอร์ตต่อชื่อเดียว** — ใช้ Path: `app.โดเมน.com` → 8080 และ `app.โดเมน.com/api` → 3000 (ผูก 2 รายการ ชื่อเดียวกัน path ต่างกัน)
+
+## 4.5 Options ต่อ hostname (ฟอร์มผูก/แก้ไข — มีคำแนะนำใต้ช่องทุกตัว)
+
+เปิดฟอร์ม "+ เพิ่ม hostname" (หรือกด **แก้ไข** ในตาราง) จะเห็นช่อง options:
+
+| Option | ใช้เมื่อ | ตัวอย่าง |
+|---|---|---|
+| **ข้ามตรวจ SSL** (`noTLSVerify`) | origin เป็น https cert **self-signed** หรือออกให้ชื่ออื่น (เช่น IP ใน LAN) — cloudflared จะไม่ตรวจ cert ⚠️ ลดความปลอดภัย | ติ๊ก → `https://192.168.10.152:443` เข้าได้ |
+| **Host header** (`httpHostHeader`) | origin **ตรวจชื่อ (vhost/SNI)** — เปิดตรง IP ได้แต่ผ่าน domain ไม่ได้ | `192.168.10.152:443` |
+| **Origin server name** (`originServerName`) | cert ของ origin ออกให้ชื่ออื่น (CN ไม่ตรง IP) | `nas.local` |
+| **เชื่อมต่อ timeout** (`connectTimeout`) | origin ช้า/หลุดบ่อย — เพิ่มค่า (วิ, 0 = default) | `30` |
+| **TLS timeout** (`tlsTimeout`) | TLS handshake ช้า (https) — เพิ่มค่า | `10` |
+| **Keep-alive timeout/connections** | origin จำกัด connection — ลดค่า | `90` / `100` |
+| **ปิด chunked** (`noChunkedEncoding`) | origin เป็น WSGI (Flask/Django dev) แล้วหน้าเว็บค้าง/โหลดไม่ขึ้น | ติ๊ก |
+| **HTTP/2 ไป origin** (`http2Origin`) | origin รองรับ HTTP/2 (nginx h2) — ลด latency · เฉพาะ http/https | ติ๊ก |
+| **ปิด Happy Eyeballs** (`noHappyEyeballs`) | origin IPv6 ค้าง/ไม่ตอบ — บังคับ IPv4 · เฉพาะ http/https | ติ๊ก |
+
+> แก้ไขภายหลังได้: กด **แก้ไข** ในตาราง → เปลี่ยนค่า → "ผูกกับ tunnel" (แทนที่ของเดิม)
+> wizard Tunnel มีช่อง "ข้ามตรวจ SSL" + "Host header" ด้วย (ขั้นตอนผูก hostname)
 
 ## 5. จัดการ hostname หลังผูกแล้ว
 
@@ -76,8 +96,9 @@
 ## 6. การทำงานประจำวัน
 
 - **tunnel รันตาม service** — เปิด `tunnel_enabled = true` ในฟอร์ม → service เริ่ม = tunnel เริ่ม (เริ่มเองตอน boot)
-- **สถานะ**: การ์ด Tunnel — ปิด/เปิดใช้งาน · cloudflared ติดตั้งไหม (เวอร์ชัน) · รันอยู่ (pid)
-- **ปุ่ม**: เริ่ม / หยุด / ดาวน์โหลด cloudflared (ถ้าหาย) / **เช็คอัปเดต cloudflared** (เทียบเวอร์ชัน exe กับเวอร์ชันล่าสุดจาก GitHub — cache 6 ชม.; ถ้ามีเวอร์ชันใหม่ กดดาวน์โหลดเพื่ออัปเดต)
+- **สถานะ**: การ์ด Tunnel — ปิด/เปิดใช้งาน · cloudflared ติดตั้งไหม (เวอร์ชัน) · รันอยู่ (pid) · **ถ้าเปิดแต่ไม่รัน + มี error → แสดง ⚠ error ใต้สถานะ**
+- **ปุ่ม**: เริ่ม / หยุด / ดาวน์โหลด cloudflared (ถ้าหาย) / **เช็คอัปเดต cloudflared** (เทียบเวอร์ชัน exe กับเวอร์ชันล่าสุดจาก GitHub — cache 6 ชม.; ถ้ามีเวอร์ชันใหม่ กดดาวน์โหลดเพื่ออัปเดต) — **ปุ่มเริ่ม/หยุด disabled ตามสถานะ** (เริ่มปิดเมื่อรันอยู่, หยุดปิดเมื่อไม่รัน)
+- **ดู log tunnel**: ปุ่ม "ดู log tunnel" → tail 30 บรรทัด (ไฟล์ `tunnel.log` ข้าง exe — **กันบวมอัตโนมัติ** ตัดเหลือท้ายเมื่อเกิน 5MB) · **ติ๊ก "เฉพาะ error"** → กรองเฉพาะ error/warn — ดูปัญหาเร็ว
 - **แจ้งเตือน Telegram**: เริ่ม tunnel (พร้อมรายชื่อ hostname) / หยุด / ดาวน์โหลด cloudflared — ส่งอัตโนมัติ
 - **log**: ดูในหน้าเว็บ (Log ล่าสุด) — ค้นหา `Cloudflare Tunnel` / `cloudflared`
 
@@ -98,12 +119,14 @@
 |---|---|
 | token ตรวจไม่ผ่าน (cloudflared ตายทันที) | token ผิด/คัดลอกไม่ครบ · เน็ต/ไฟร์วอลล์ต้องออก `region1.v2.argotunnel.com:7844` ได้ · กด "ดาวน์โหลด cloudflared" ใหม่ |
 | ผูกแล้วเข้าเว็บไม่ได้ | บริการ (localhost:port) ต้องรันอยู่ · tunnel กำลังรัน (การ์ด) · DNS propagate 1-2 นาที · ตรวจ "ดู hostname ที่ผูกแล้ว" ว่าชนิด/บริการถูกต้อง |
+| https ไป IP ใน LAN เข้าไม่ได้ (cert self-signed) | ติ๊ก **"ข้ามตรวจ SSL"** + ใส่ **Host header** = IP ที่ origin รู้จัก (เช่น `192.168.10.152:443`) — ดูข้อ 4.5 |
 | Bad Request (SSL port) | เปลี่ยนชนิดเป็น **HTTPS** + `https://localhost:443` (ดูข้อ 4) |
 | error "tunnel token ผิดรูปแบบ" | อัปเดต exe เป็นเวอร์ชันล่าสุด (โปรแกรมรองรับ token รูปแบบใหม่ 1 ส่วน) — หรือ token คัดลอกไม่ครบ |
 | error สิทธิ์ (403) ตอนผูก | เพิ่มสิทธิ์ **Account → Cloudflare Tunnel → Edit** ให้ API token (ข้อ 2) |
 | error "ชื่อนี้มี record A อยู่แล้ว" | ชื่อเดียวใช้ได้อย่างใดอย่างหนึ่ง — ใช้คนละชื่อหรือลบ record เดิม |
 | ผูกซ้ำแล้ว error 1056 | อัปเดต exe เป็น v1.7.11+ (แก้ rule 404 ซ้ำ) |
 | tunnel ไม่เริ่มตอน boot | `tunnel_enabled = true` + token ไม่ว่าง + ดู log |
+| ดูว่า tunnel มีปัญหาอะไร | ปุ่ม **"ดู log tunnel"** + ติ๊ก **"เฉพาะ error"** — บอกสาเหตุ (token ผิด/เชื่อมต่อไม่ได้/ฯลฯ) |
 
 ## 9. หมายเหตุความปลอดภัย
 
@@ -113,4 +136,4 @@
 
 ---
 
-*อัปเดต: v1.7.12 — ดูประวัติเต็มใน [CHANGELOG](../CHANGELOG.md)*
+*อัปเดต: v2.2.0 — ดูประวัติเต็มใน [CHANGELOG](../CHANGELOG.md)*

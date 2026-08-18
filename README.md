@@ -11,12 +11,13 @@
 | **DDNS อัตโนมัติ** | ตรวจ IP IPv4/IPv6 (หลาย provider สำรอง) → อัปเดต A/AAAA เฉพาะเมื่อ IP เปลี่ยน + สร้าง record ให้อัตโนมัติถ้ายังไม่มี |
 | **Windows Service** | รันจริงตอน boot, log รายวัน, หยุด/เริ่มเร็ว, แก้ config ได้ระหว่างรัน (มีผลรอบถัดไป) + **ควบคุม/ติดตั้ง/ถอนจาก Web UI** ได้ (ต้อง admin) |
 | **Web UI** | สถานะสด, wizard ตั้งค่าครั้งแรก 5 ขั้น, ฟอร์มตั้งค่า + โหมดแก้ไฟล์ตรง, ประวัติ, ดู log, สแกนพอร์ต, ปุ่มควบคุม Telegram/Tunnel — ใช้บนมือถือได้ |
+| **i18n ไทย/อังกฤษ** | ปุ่มสลับภาษา TH/EN ที่หัวหน้าเว็บ (จำภาษาด้วย localStorage+cookie) · auto-detect จากเบราว์เซอร์ · วันที่/เวลา locale ตามภาษา · **ข้อความ Telegram** แปลตาม config `language` (log ไฟล์คงไทย) |
 | **แจ้งเตือน Telegram** | ทุกข้อความระบุชื่อเครื่อง + เวลา · IP เปลี่ยนรวมเป็นข้อความเดียว · tunnel เริ่ม/หยุด/ดาวน์โหลด · กันสแปม error 10 นาที · สรุปทุกรอบ (ไม่บังคับ) + สรุปรายวัน — คิว retry + จัดการในเว็บ · **ควบคุมผ่านแชท**: `/status` `/ip` `/run` `/update` `/tunnel` `/log` `/restart` + กู้รหัสผ่าน |
 | **Heartbeat monitoring** | ส่งสัญญาณ "ยังทำงาน" ทุกรอบให้ Healthchecks.io / Uptime Kuma — รู้ว่าเครื่อง/โปรแกรมตายจากนอกบ้าน (รอบมีปัญหา = สัญญาณ fail) |
 | **กัน Cloudflare anycast IP** | ตรวจว่า IP ที่ตรวจได้ไม่อยู่ในช่วงของ Cloudflare เองก่อนเขียน record (กัน record ชี้ผิดทั้งบ้าน) |
 | **ตรวจฉันทามติ IP** | เลือกได้ว่าให้อัปเดตเฉพาะเมื่อ provider ตรวจ IP ≥ 2 รายเห็น IP เดียวกัน (กัน provider ตอบผิด/ล้าสมัย) |
 | **ความปลอดภัย Web UI** | รหัสผ่านหน้าเว็บเก็บเป็น **hash** (ไม่มีรหัสจริงใน config/cookie) + กันสุ่มรหัส (5 ครั้ง → ล็อก) + กัน CSRF (ตรวจ Origin) + security headers — **กู้รหัสได้ 3 ทาง** (ฟอร์ม / `reset-password` / Telegram opt-in) |
-| **Cloudflare Tunnel** | เปิด cloudflared ตาม service, wizard 4 ขั้น, ผูก hostname อัตโนมัติ (ตั้ง DNS + config ให้) — ดู/**แก้ไข**/ลบ hostname ได้ในเว็บ + คู่มือละเอียด ([docs/TUNNEL.md](docs/TUNNEL.md)) |
+| **Cloudflare Tunnel** | เปิด cloudflared ตาม service, wizard 4 ขั้น, ผูก hostname อัตโนมัติ (ตั้ง DNS + config ให้) — ดู/**แก้ไข**/ลบ hostname ได้ในเว็บ + **options ครบชุด** (ข้ามตรวจ SSL / host header / timeout / keep-alive / HTTP2 / Happy Eyeballs) + **ดู log tunnel + กรองเฉพาะ error** + **private hostname** (บริการใน LAN) — คู่มือละเอียด ([docs/TUNNEL.md](docs/TUNNEL.md)) |
 | **ตรวจ NAT** | รู้ว่า IP อยู่หลัง CGNAT หรือไม่ (STUN) — เตือนถ้า DDNS ใช้ไม่ได้ |
 | **EXE ไฟล์เดียว** | build ด้วย PyInstaller — ไม่ต้องติดตั้ง Python |
 
@@ -91,8 +92,21 @@ cloudflared_path =                ; เว้นว่าง = ดาวน์�
 | **TCP** (SSH/game/RDP) | ชนิด TCP + `tcp://localhost:พอร์ต` | `ssh.โดเมน` → `tcp://localhost:22` |
 | **UDP** (game/VPN) | ชนิด UDP + `udp://localhost:พอร์ต` | `vpn.โดเมน` → `udp://localhost:51820` |
 | **HTTPS ภายใน** | ชนิด HTTPS + `https://localhost:พอร์ต` — **พอร์ต SSL (443/8443) ต้องใช้ชนิดนี้** ไม่งั้นเจอ "Bad Request" | `app.โดเมน` → `https://localhost:8443` |
+| **Private hostname (LAN)** | ใส่ IP ในเครื่อง/เน็ตเวิร์กเป็นบริการ — ต้อง cloudflared อยู่ใน LAN เดียวกับ service | `nas.โดเมน` → `https://192.168.1.50:443` |
 
-จัดการทั้งหมดใน **การ์ด Cloudflare Tunnel**: ตาราง "ดู hostname ที่ผูกแล้ว" (hostname+path / ชนิด / บริการ + **ปุ่มแก้ไข** = เปลี่ยนบริการ/ชนิดแล้วผูกซ้ำแทนที่ + ปุ่มลบ) · ปุ่ม "+ เพิ่ม hostname" (ผูกด่วน) · ปุ่ม "ซิงค์จาก Cloudflare" (ดึงจาก API → บันทึกลง config)
+### Options ต่อ hostname (ฟอร์มผูก/แก้ไข — มีคำแนะนำใต้ช่องทุกตัว)
+
+| Option | ใช้เมื่อ |
+|---|---|
+| **ข้ามตรวจ SSL** (`noTLSVerify`) | origin เป็น https cert self-signed/ชื่อไม่ตรง (เช่น IP ใน LAN) |
+| **Host header** (`httpHostHeader`) | origin ตรวจชื่อ (vhost/SNI) — "เปิดตรง IP ได้แต่ผ่าน domain ไม่ได้" |
+| **Origin server name** (`originServerName`) | cert ออกให้ชื่ออื่น (CN ไม่ตรง IP) — ใส่ชื่อบน cert |
+| **เชื่อมต่อ/TLS timeout** | origin ช้า/หลุดบ่อย — เพิ่มค่า |
+| **Keep-alive timeout/connections** | origin จำกัด connection — ลดค่า |
+| **ปิด chunked** (`noChunkedEncoding`) | origin เป็น WSGI (Flask/Django dev) แล้วโหลดไม่ขึ้น |
+| **HTTP/2 ไป origin** / **ปิด Happy Eyeballs** | origin รองรับ h2 / IPv6 ค้าง — เฉพาะ http/https |
+
+จัดการทั้งหมดใน **การ์ด Cloudflare Tunnel**: ตาราง "ดู hostname ที่ผูกแล้ว" (hostname+path / ชนิด / บริการ + **ปุ่มแก้ไข** = เปลี่ยนบริการ/ชนิดแล้วผูกซ้ำแทนที่ + ปุ่มลบ) · ปุ่ม "+ เพิ่ม hostname" (ผูกด่วน) · ปุ่ม "ซิงค์จาก Cloudflare" (ดึงจาก API → บันทึกลง config) · **ปุ่มเริ่ม/หยุด disabled ตามสถานะ** (กันกดซ้ำไร้ประโยชน์) · **"ดู log tunnel"** — ดู log ของ cloudflared 30 บรรทัด + **ติ๊ก "เฉพาะ error"** กรอง error/warn (ไฟล์ log กันบวมอัตโนมัติ 5MB) · ถ้า tunnel เปิดแต่ไม่รัน + มี error → แสดง ⚠ error ใต้สถานะ
 
 ### ข้อควรรู้ (Tunnel)
 
@@ -116,7 +130,8 @@ cloudflared_path =                ; เว้นว่าง = ดาวน์�
 - **Windows Service**: สถานะ service + เริ่ม/หยุด/Restart/ติดตั้ง/ถอนการติดตั้ง (ต้อง admin — หยุด/ติดตั้ง/ถอนทำไม่ได้ถ้าเว็บรันใน service)
 - **สถานะ IP**: ปุ่ม "ตรวจ DDNS ตอนนี้" — รันรอบ DDNS ทันที (ไม่รอรอบถัดไป)
 - **Telegram**: สถานะ + คิว + ส่งข้อความทดสอบ + ดูคิว/ลองส่งใหม่/ล้างคิว
-- **Cloudflare Tunnel**: สถานะ (รวมเวอร์ชัน cloudflared) + wizard ตั้งค่า + ดู hostname ที่ผูกแล้ว (**แก้ไข**/ลบ) + เริ่ม/หยุด/ดาวน์โหลด cloudflared + เพิ่ม hostname ด่วน + ซิงค์จาก Cloudflare
+- **Cloudflare Tunnel**: สถานะ (รวมเวอร์ชัน cloudflared) + wizard ตั้งค่า + ดู hostname ที่ผูกแล้ว (**แก้ไข**/ลบ) + เริ่ม/หยุด/ดาวน์โหลด cloudflared + เพิ่ม hostname ด่วน + ซิงค์จาก Cloudflare + **ดู log tunnel (เฉพาะ error ได้)** + **ปุ่มเริ่ม/หยุด disabled ตามสถานะ**
+- **สลับภาษา**: ปุ่ม **TH/EN** ที่หัวหน้าเว็บ — สลับทันที + จำได้ (auto-detect จากเบราว์เซอร์ครั้งแรก)
 - **สแกนพอร์ต**: สแกน host ใน config (resolve IP ปัจจุบัน) แสดงพอร์ตเปิด/ปิด + ชื่อบริการ
 - **ประวัติการอัปเดต**: 50 รายการล่าสุด (เวลา/record/การกระทำ/IP)
 - **Log ล่าสุด**: 200 บรรทัด + ปุ่มโหลดใหม่ + ปุ่มเปิดโฟลเดอร์ข้อมูล (config/state/logs — รันใน service จะคัดลอก path ให้แทน เพราะเปิดหน้าต่างจาก session ของ service ไม่ได้)
@@ -161,6 +176,8 @@ daily_report = true
 daily_report_time = 08:00
 ; กู้รหัสผ่านหน้าเว็บผ่าน Telegram (ลืมรหัส -> พิมพ์ "reset password" ในแชทกับ bot — opt-in ปิด default)
 telegram_allow_reset = false
+; ภาษาข้อความ Telegram (notify + คำสั่ง /status /list ฯลฯ) — th | en (log ไฟล์คงไทยเสมอ)
+language = th
 
 tunnel_enabled = false
 tunnel_token =
@@ -182,6 +199,7 @@ ipv6 = true
 
 - log รายวัน: `logs\cloudflare-ddns.log` (ข้าง exe, เก็บ 14 วัน) — ดูในเว็บได้ (Log ล่าสุด)
 - state/คิว/pid: `state.json`, `notify_queue.json`, `tunnel.pid` — ข้าง exe เช่นกัน
+- log ของ tunnel: `tunnel.log` (ข้าง exe — กันบวมอัตโนมัติ ตัดเหลือท้ายเมื่อเกิน 5MB) — ดูในเว็บได้ (ปุ่ม "ดู log tunnel" + "เฉพาะ error")
 
 ## การทำงาน
 
