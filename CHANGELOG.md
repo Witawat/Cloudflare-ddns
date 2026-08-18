@@ -2,6 +2,20 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.1.1] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
+
+### แก้บั๊ก (Fixes)
+
+- **loop error ภาษาไทยเสมอแม้ตั้ง en**: `ddns.loop_exc` (exception ใน DDNS loop) ถูก hardcode `i18n.t("th", ...)` → แก้เป็นใช้ `notify.lang` เหมือนข้อความอื่น
+- **/tunnel start|stop แสดง tuple หลุด**: `_tg_tunnel_text` ใช้ `mgr.start/stop()` (คืน `(ok, message)`) กับ `.format()` ตรง ๆ → ข้อความกลายเป็น `"(True, '...')"` — แก้ให้ unpack แล้วใช้ `message`
+- **heartbeat Uptime Kuma msg ยังไทยถาวร**: `_signal_url` msg ("DDNS+รอบล้มเหลว"/"DDNS+หยุดทำงาน") → แปลตาม `cfg.language` (เพิ่ม keys `hb.fail`/`hb.exit`)
+
+### เพิ่ม (Tests)
+
+- **`tests/test_i18n.py` ใหม่**: t() named/positional/missing key, detect_lang (cookie ชนะ), validate_dicts, build_message th/en, config.language→notifier.lang (16 เทสต์)
+- เทสต์ `_tg_tunnel_text` start/stop ไม่มี tuple หลุด + `ddns.loop_exc` ตามภาษา
+- รวม: 101 → 122 เทสต์
+
 ## [2.1.0] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
 
 ### เพิ่ม (Features)

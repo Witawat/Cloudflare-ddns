@@ -238,4 +238,6 @@ EN = {
     "ddns.stop_msg": "Reason: stopped by command (service stop/shutdown)\nRan for: {}h {}m · {} rounds",
     "ddns.zone_err": "Could not find zone ({})",
     "ddns.zone_notify": "{}: could not find zone ({})",
+    "hb.fail": "DDNS+round failed",
+    "hb.exit": "DDNS+stopped",
 }

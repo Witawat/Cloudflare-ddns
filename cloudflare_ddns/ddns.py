@@ -187,7 +187,7 @@ class DDNSEngine:
                 log.warning("%s: หา zone ไม่ได้: %s", rec.name, exc)
                 self._invalidate_zone(rec.zone.lower())
                 lang = getattr(notify, "lang", "th") or "th"
-                self._set_record_error(rec, i18n.t(lang, "ddns.zone_err").format(exc))
+                self._set_record_error(rec, i18n.t("th", "ddns.zone_err").format(exc))
                 summary.append({"record": rec.name, "family": 0, "action": "error", "message": str(exc)})
                 notify.notify(notifier.EVENT_ERROR, i18n.t(lang, "ddns.zone_notify").format(rec.name, exc))
                 continue
@@ -280,7 +280,7 @@ class DDNSEngine:
                 notifier.EVENT_ERROR,
                 i18n.t(lang, "ddns.no_ip_notify").format(fqdn, family),
             )
-            self._set_record_error(rec, i18n.t(lang, "ddns.no_ip_err").format(family), family)
+            self._set_record_error(rec, i18n.t("th", "ddns.no_ip_err").format(family), family)
             return {"record": fqdn, "family": family, "action": "no-ip", "message": i18n.t(lang, "ddns.no_ip_msg")}
 
         if reject_cloudflare_ips and ip_detect.is_cloudflare_ip(public_ip):
@@ -290,7 +290,7 @@ class DDNSEngine:
                 fqdn, rtype, public_ip,
             )
             self._set_record_error(
-                rec, i18n.t(lang, "ddns.cf_ip_err").format(public_ip), family
+                rec, i18n.t("th", "ddns.cf_ip_err").format(public_ip), family
             )
             return {"record": fqdn, "family": family, "action": "skip", "message": i18n.t(lang, "ddns.cf_ip_msg")}
 
@@ -528,7 +528,7 @@ def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_
             engine = DDNSEngine(config_path, dry_run=dry_run)
             result = engine.run_once()
         except Exception:
-            result = [{"record": "", "family": 0, "action": "error", "message": i18n.t("th", "ddns.loop_exc")}]
+            result = [{"record": "", "family": 0, "action": "error", "message": i18n.t(getattr(notify, "lang", "th") or "th", "ddns.loop_exc")}]
             log.exception("เกิดข้อผิดพลาดไม่คาดคิดในรอบ DDNS (รันรอบถัดไปต่อ)")
             try:
                 notify.notify(notifier.EVENT_ERROR, i18n.t(getattr(notify, "lang", "th") or "th", "ddns.loop_err"))

@@ -506,9 +506,11 @@ def _tg_tunnel_text(cfg, action, lang="th"):
 
         mgr = tunnel_mod.TunnelManager(config_path=cfg.path)
         if action == "start":
-            return i18n.t(lang, "tg.tunnel.start").format(mgr.start(cfg))
+            ok, message = mgr.start(cfg)
+            return i18n.t(lang, "tg.tunnel.start").format(message)
         if action == "stop":
-            return i18n.t(lang, "tg.tunnel.stop").format(mgr.stop())
+            ok, message = mgr.stop()
+            return i18n.t(lang, "tg.tunnel.stop").format(message)
         st = mgr.status(cfg)
         return i18n.t(lang, "tg.tunnel.status").format(
             i18n.t(lang, "tg.tunnel.on") if st.get("enabled") else i18n.t(lang, "tg.tunnel.off"),

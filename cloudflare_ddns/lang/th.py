@@ -238,4 +238,6 @@ TH = {
     "ddns.stop_msg": "สาเหตุ: หยุดตามคำสั่ง (service stop/ปิดเครื่อง)\nรันต่อเนื่อง: {} ชม. {} นาที · ผ่าน {} รอบ",
     "ddns.zone_err": "หา zone ไม่ได้ ({})",
     "ddns.zone_notify": "{}: หา zone ไม่ได้ ({})",
+    "hb.fail": "DDNS+รอบล้มเหลว",
+    "hb.exit": "DDNS+หยุดทำงาน",
 }

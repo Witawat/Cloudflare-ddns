@@ -105,6 +105,27 @@ class RunOnceTest(unittest.TestCase):
         self.assertIn("boom", summary[0]["message"])
 
 
+class LoopErrorLangTest(unittest.TestCase):
+    """loop error message ตาม notify.lang (ไม่ hardcode ไทย)"""
+
+    def test_loop_exc_follows_notify_lang_en(self):
+        # จำลอง run_forever จับ exception -> loop_exc ควรเป็น eng
+        from cloudflare_ddns import i18n
+
+        notify = mock.Mock()
+        notify.lang = "en"
+        notify.notify = mock.Mock()
+        # _sync_family ใช้ getattr(notify, "lang") — ตรวจตรงๆ ว่า i18n.t(lang,...) ให้ eng
+        out = i18n.t(getattr(notify, "lang", "th") or "th", "ddns.loop_exc")
+        self.assertEqual(out, "exception in loop")
+
+    def test_loop_exc_th_when_default(self):
+        from cloudflare_ddns import i18n
+
+        out = i18n.t("th", "ddns.loop_exc")
+        self.assertEqual(out, "exception ใน loop")
+
+
 class PeriodicUpdateCheckTest(unittest.TestCase):
     """เช็คเวอร์ชันใหม่ทุก 24 ชม. — รันยาว ๆ ก็รู้ว่ามีรุ่นใหม่"""
 

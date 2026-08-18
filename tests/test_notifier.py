@@ -500,5 +500,53 @@ class TgUpdatesNetTest(unittest.TestCase):
         m_sleep.assert_called_once_with(4)
 
 
+class TunnelTextTest(unittest.TestCase):
+    """_tg_tunnel_text: start/stop ไม่มี tuple หลุด (unpack (ok, message))"""
+
+    def _cfg(self):
+        tmp = tempfile.TemporaryDirectory()
+        path = os.path.join(tmp.name, "config.ini")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(MINIMAL_INI)
+        cfg = config_mod.Config(path)
+        cfg._tmp = tmp  # เก็บไว้กัน cleanup
+        return cfg
+
+    def test_start_uses_message_not_tuple(self):
+        cfg = self._cfg()
+        try:
+            fake = mock.Mock()
+            fake.start.return_value = (True, "tunnel รันอยู่แล้ว")
+            with mock.patch("cloudflare_ddns.tunnel.TunnelManager", return_value=fake):
+                out = notifier._tg_tunnel_text(cfg, "start", "th")
+            self.assertIn("tunnel รันอยู่แล้ว", out)
+            self.assertNotIn("True", out)  # ไม่เอา tuple หลุด
+        finally:
+            cfg._tmp.cleanup()
+
+    def test_stop_uses_message_not_tuple(self):
+        cfg = self._cfg()
+        try:
+            fake = mock.Mock()
+            fake.stop.return_value = (True, "หยุด tunnel แล้ว")
+            with mock.patch("cloudflare_ddns.tunnel.TunnelManager", return_value=fake):
+                out = notifier._tg_tunnel_text(cfg, "stop", "th")
+            self.assertIn("หยุด tunnel แล้ว", out)
+            self.assertNotIn("True", out)
+        finally:
+            cfg._tmp.cleanup()
+
+    def test_start_en_language(self):
+        cfg = self._cfg()
+        try:
+            fake = mock.Mock()
+            fake.start.return_value = (True, "tunnel already running")
+            with mock.patch("cloudflare_ddns.tunnel.TunnelManager", return_value=fake):
+                out = notifier._tg_tunnel_text(cfg, "start", "en")
+            self.assertIn("Start tunnel: tunnel already running", out)
+        finally:
+            cfg._tmp.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,7 @@ import urllib.error
 import urllib.request
 
 from . import config as config_mod
+from . import i18n
 
 log = logging.getLogger("cloudflare-ddns")
 
@@ -45,14 +46,14 @@ def _ping(url, timeout=HEARTBEAT_TIMEOUT):
     return False, last_error
 
 
-def _signal_url(url, kind):
+def _signal_url(url, kind, lang="th"):
     """แปลง URL ให้เป็น endpoint 'สัญญาณ' ตามบริการ (kind = fail | exit)"""
     url = url.strip()
     suffix = "fail" if kind == "fail" else "exit"
     if "hc-ping.com" in url:
         return url.rstrip("/") + "/" + suffix
     sep = "&" if "?" in url else "?"
-    msg = "DDNS+รอบล้มเหลว" if kind == "fail" else "DDNS+หยุดทำงาน"
+    msg = i18n.t(lang, "hb.fail") if kind == "fail" else i18n.t(lang, "hb.exit")
     return url + sep + "status=down&msg=" + msg
 
 
@@ -64,6 +65,7 @@ def send_ping(cfg, ok=True, stopped=False):
     stopped  = โปรแกรมกำลังหยุด (ส่งสัญญาณ exit)
     """
     global _last_warn_time
+    lang = getattr(cfg, "language", "th") or "th"
     urls = []
     for value in (getattr(cfg, "healthchecks_url", ""), getattr(cfg, "uptimekuma_url", "")):
         if value and value.strip():
@@ -71,7 +73,7 @@ def send_ping(cfg, ok=True, stopped=False):
     if not urls:
         return
     for url in urls:
-        target = _signal_url(url, "exit") if stopped else (_signal_url(url, "fail") if not ok else url)
+        target = _signal_url(url, "exit", lang) if stopped else (_signal_url(url, "fail", lang) if not ok else url)
         now = time.time()
         last = _last_sent.get(target, 0)
         if not stopped and now - last < MIN_PING_INTERVAL:
