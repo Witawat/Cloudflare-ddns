@@ -2,6 +2,20 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.1.5] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
+
+### เพิ่ม (Features)
+
+- **Tunnel origin options ครบชุดที่ใช้บ่อย** (ฟอร์มผูก hostname + แก้ไข — นอกเหนือจาก "ข้ามตรวจ SSL" จาก v2.1.4):
+  - **Host header** (`httpHostHeader`) — บังคับชื่อที่ส่งไป origin (แก้เคส origin ใช้ vhost/SNI เช่น เข้าไม่ได้เพราะ Host ผิด)
+  - **เชื่อมต่อ timeout** (`connectTimeout`) / **TLS timeout** (`tlsTimeout`) — วิ, 0 = ค่าเริ่มต้น
+  - **HTTP/2 ไป origin** (`http2Origin`) + **ปิด Happy Eyeballs** (`noHappyEyeballs`) — เฉพาะ http/https (tcp/udp ไม่ใส่)
+  - ตาราง hostname เก็บ/แสดง options ครบ (sync + hostnames คืนทุก field)
+
+### เพิ่ม (Tests)
+
+- `TunnelBindNoTlsTest` ขยาย: options ทั้งหมด → rule originRequest ครบ, tcp protocol ไม่ใส่ http2Origin/noHappyEyeballs (รวม 136 เทสต์)
+
 ## [2.1.4] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
 
 ### เพิ่ม (Features)

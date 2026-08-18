@@ -399,6 +399,23 @@ __LOGIN__
       </div>
       <label class="field"><span data-i18n="html.032">บริการ/พอร์ต</span><input id="th-service" type="text" class="mono" value="http://localhost:8080" placeholder="http://localhost:8080 · http://192.168.1.50:3000 · tcp://10.0.0.5:22"></label>
       <label style="font-size:0.85rem;display:flex;align-items:center;gap:6px;margin:2px 0 8px"><input id="th-notls" type="checkbox"> <span data-i18n="tunnel.no_tls_verify">ข้ามตรวจ SSL (self-signed — ใช้กับ https ไป IP ใน LAN)</span></label>
+      <div class="grid2" style="margin-bottom:8px">
+        <label class="field" style="font-size:0.85rem"><span data-i18n="tunnel.host_header">Host header (บังคับชื่อที่ส่งไป origin — เช่น 192.168.10.152:443)</span>
+          <input id="th-hostheader" type="text" class="mono" placeholder="">
+        </label>
+        <label class="field" style="font-size:0.85rem"><span data-i18n="tunnel.connect_timeout">เชื่อมต่อ timeout (วิ, 0 = ค่าเริ่มต้น)</span>
+          <input id="th-connecttimeout" type="number" min="0" step="1" placeholder="30">
+        </label>
+      </div>
+      <div class="grid2" style="margin-bottom:8px">
+        <label class="field" style="font-size:0.85rem"><span data-i18n="tunnel.tls_timeout">TLS timeout (วิ, 0 = ค่าเริ่มต้น)</span>
+          <input id="th-tlstimeout" type="number" min="0" step="1" placeholder="10">
+        </label>
+        <div class="toggles" style="font-size:0.85rem">
+          <label><input id="th-http2" type="checkbox"> <span data-i18n="tunnel.http2_origin">HTTP/2 ไป origin</span></label>
+          <label><input id="th-happy" type="checkbox"> <span data-i18n="tunnel.no_happy_eyeballs">ปิด Happy Eyeballs (origin IPv6 ค้าง)</span></label>
+        </div>
+      </div>
       <p style="margin:0 0 10px;font-size:0.8rem;color:var(--muted);line-height:1.5"><span data-i18n="html.033">💡 เลือกชนิดให้ตรงกับบริการ:</span> <b>HTTP</b> <span data-i18n="html.034">= เว็บธรรมดา (เช่น</span> <span class="mono">http://localhost:8080</span>) · <b>HTTPS</b> <span data-i18n="html.035">= พอร์ต SSL เช่น 443/8443 (ต้องเป็น</span> <span class="mono">https://localhost:443</span> <span data-i18n="html.036">— ถ้าผูกเป็น http จะเจอ "Bad Request") ·</span> <b>TCP/UDP</b> <span data-i18n="html.037">= SSH/game/VPN (เช่น</span> <span class="mono">tcp://localhost:22</span>)</p>
       <button id="th-bind" class="btn-primary" type="button"><span data-i18n="html.038">ผูกกับ tunnel</span></button>
       <button id="th-cancel" class="btn-secondary" type="button"><span data-i18n="html.039">ยกเลิก</span></button>

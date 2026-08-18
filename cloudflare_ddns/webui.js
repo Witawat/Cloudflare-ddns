@@ -117,6 +117,11 @@ const I18N = {
     "tunnel.show_log": "ดู log tunnel",
     "tunnel.log_title": "Log ของ cloudflared (tunnel.log)",
     "tunnel.no_tls_verify": "ข้ามตรวจ SSL (self-signed — ใช้กับ https ไป IP ใน LAN)",
+    "tunnel.host_header": "Host header (บังคับชื่อที่ส่งไป origin — เช่น 192.168.10.152:443)",
+    "tunnel.connect_timeout": "เชื่อมต่อ timeout (วิ, 0 = ค่าเริ่มต้น)",
+    "tunnel.tls_timeout": "TLS timeout (วิ, 0 = ค่าเริ่มต้น)",
+    "tunnel.http2_origin": "HTTP/2 ไป origin",
+    "tunnel.no_happy_eyeballs": "ปิด Happy Eyeballs (origin IPv6 ค้าง)",
     "tg.test_ok": "ส่งข้อความทดสอบสำเร็จ — ตรวจใน Telegram",
     "tg.test_fail": "ส่งไม่สำเร็จ: {msg}",
     "tg.queue_empty": "คิวว่าง — ไม่มีข้อความค้างส่ง",
@@ -598,6 +603,11 @@ const I18N = {
     "tunnel.show_log": "View tunnel log",
     "tunnel.log_title": "cloudflared log (tunnel.log)",
     "tunnel.no_tls_verify": "Skip SSL verification (self-signed — for https to a LAN IP)",
+    "tunnel.host_header": "Host header (force the name sent to origin — e.g. 192.168.10.152:443)",
+    "tunnel.connect_timeout": "Connect timeout (s, 0 = default)",
+    "tunnel.tls_timeout": "TLS timeout (s, 0 = default)",
+    "tunnel.http2_origin": "HTTP/2 to origin",
+    "tunnel.no_happy_eyeballs": "Disable Happy Eyeballs (stuck IPv6 origin)",
     "tg.test_ok": "Test message sent — check Telegram",
     "tg.test_fail": "Could not send: {msg}",
     "tg.queue_empty": "Queue is empty — no pending messages",
@@ -1471,7 +1481,7 @@ async function tunnelHosts() {
         '<td style="padding:5px 10px">' + escapeHtml(h.protocol || "http") + "</td>" +
         '<td class="mono" style="padding:5px 10px;color:var(--muted)">' + escapeHtml(h.service) + "</td>" +
         '<td style="padding:2px 6px;white-space:nowrap">' +
-        '<button class="btn-secondary" style="padding:3px 8px;font-size:0.75rem" type="button" data-edit-host="' + escapeHtml(h.hostname) + '" data-edit-path="' + escapeHtml(h.path || "") + '" data-edit-protocol="' + escapeHtml(h.protocol || "http") + '" data-edit-service="' + escapeHtml(h.service || "") + '" data-edit-notls="' + (h.no_tls_verify ? "1" : "0") + '" title="' + t("tunnel.edit_title") + '">' + t("tunnel.edit") + "</button> " +
+        '<button class="btn-secondary" style="padding:3px 8px;font-size:0.75rem" type="button" data-edit-host="' + escapeHtml(h.hostname) + '" data-edit-path="' + escapeHtml(h.path || "") + '" data-edit-protocol="' + escapeHtml(h.protocol || "http") + '" data-edit-service="' + escapeHtml(h.service || "") + '" data-edit-notls="' + (h.no_tls_verify ? "1" : "0") + '" data-edit-hostheader="' + escapeHtml(h.http_host_header || "") + '" data-edit-connecttimeout="' + (h.connect_timeout || 0) + '" data-edit-tlstimeout="' + (h.tls_timeout || 0) + '" data-edit-http2="' + (h.http2_origin ? "1" : "0") + '" data-edit-happy="' + (h.no_happy_eyeballs ? "1" : "0") + '" title="' + t("tunnel.edit_title") + '">' + t("tunnel.edit") + "</button> " +
         '<button class="btn-del" type="button" data-host="' + escapeHtml(h.hostname) + '" data-path="' + escapeHtml(h.path || "") + '" title="' + t("tunnel.unbind_title") + '">×</button></td></tr>'
       ).join("") + "</table></div>" +
       '<p style="margin-top:6px;font-size:0.8rem;color:var(--muted)">' + t("tunnel.hint") + "</p>";
@@ -1535,6 +1545,11 @@ async function editTunnelHost(btn) {
   $("th-protocol").value = protocol;
   $("th-service").value = service;
   $("th-notls").checked = btn.dataset.editNotls === "1";
+  $("th-hostheader").value = btn.dataset.editHostheader || "";
+  $("th-connecttimeout").value = btn.dataset.editConnecttimeout || "";
+  $("th-tlstimeout").value = btn.dataset.editTlstimeout || "";
+  $("th-http2").checked = btn.dataset.editHttp2 === "1";
+  $("th-happy").checked = btn.dataset.editHappy === "1";
   const msg = $("th-msg");
   msg.innerHTML = '<p style="color:var(--ok)">' + t("tunnel.edit_msg", { host: escapeHtml(hostname), path: escapeHtml(path || "") }) + "</p>";
   $("tunnel-add-form").scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1592,6 +1607,11 @@ async function thBind() {
         protocol: $("th-protocol").value,
         service: $("th-service").value.trim(),
         no_tls_verify: $("th-notls").checked ? "true" : "false",
+        http_host_header: $("th-hostheader").value.trim(),
+        connect_timeout: $("th-connecttimeout").value.trim(),
+        tls_timeout: $("th-tlstimeout").value.trim(),
+        http2_origin: $("th-http2").checked ? "true" : "false",
+        no_happy_eyeballs: $("th-happy").checked ? "true" : "false",
       }),
     });
     const j = await r.json();

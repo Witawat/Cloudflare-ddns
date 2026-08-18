@@ -110,6 +110,48 @@ def _tunnel_api_error(exc, lang="th"):
     return text
 
 
+def _build_origin_request(data):
+    """สร้าง originRequest dict จาก option ที่ client ส่ง (เฉพาะที่มีค่า) — http2Origin/noHappyEyeballs ใช้กับ http/https เท่านั้น."""
+    origin = {}
+    if str(data.get("no_tls_verify") or "").lower() in ("1", "true", "yes", "on"):
+        origin["noTLSVerify"] = True
+    host_header = str(data.get("http_host_header") or "").strip()
+    if host_header:
+        origin["httpHostHeader"] = host_header
+    try:
+        ct = float(data.get("connect_timeout") or 0)
+        if ct > 0:
+            origin["connectTimeout"] = ct
+    except (TypeError, ValueError):
+        pass
+    try:
+        tt = float(data.get("tls_timeout") or 0)
+        if tt > 0:
+            origin["tlsTimeout"] = tt
+    except (TypeError, ValueError):
+        pass
+    protocol = str(data.get("protocol") or "http").strip().lower()
+    if protocol in ("http", "https"):
+        if str(data.get("http2_origin") or "").lower() in ("1", "true", "yes", "on"):
+            origin["http2Origin"] = True
+        if str(data.get("no_happy_eyeballs") or "").lower() in ("1", "true", "yes", "on"):
+            origin["noHappyEyeballs"] = True
+    return origin or None
+
+
+def _origin_request_to_dict(orq):
+    """แปลง originRequest (จาก Cloudflare API) → dict option ที่หน้าเว็บใช้"""
+    orq = orq or {}
+    return {
+        "no_tls_verify": bool(orq.get("noTLSVerify")),
+        "http_host_header": orq.get("httpHostHeader", ""),
+        "connect_timeout": orq.get("connectTimeout", 0),
+        "tls_timeout": orq.get("tlsTimeout", 0),
+        "http2_origin": bool(orq.get("http2Origin")),
+        "no_happy_eyeballs": bool(orq.get("noHappyEyeballs")),
+    }
+
+
 # ชื่อบริการสำหรับพอร์ตที่พบบ่อย
 PORT_SERVICES = {    20: "ftp-data", 21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns",
     80: "http", 110: "pop3", 143: "imap", 443: "https", 445: "smb", 465: "smtps",
@@ -892,9 +934,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 rule = {"hostname": hostname, "service": service}
                 if path:
                     rule["path"] = path
-                if str(data.get("no_tls_verify") or "").lower() in ("1", "true", "yes", "on"):
-                    # https ไป origin self-signed (private hostname ใน LAN) — ข้ามตรวจ cert
-                    rule["originRequest"] = {"noTLSVerify": True}
+                origin = _build_origin_request(data)
+                if origin:
+                    rule["originRequest"] = origin
                 ingress.append(rule)
                 ingress.append({"service": "http_status:404"})
                 api._request(
@@ -962,7 +1004,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         "path": r.get("path", ""),
                         "service": svc,
                         "protocol": protocol,
-                        "no_tls_verify": bool((r.get("originRequest") or {}).get("noTLSVerify")),
+                        **_origin_request_to_dict(r.get("originRequest")),
                     }
                 )
             return self._send_json(200, {"ok": True, "hostnames": hostnames})
@@ -1052,7 +1094,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         "path": r.get("path", ""),
                         "protocol": svc.split("://")[0] if "://" in svc else "http",
                         "service": svc,
-                        "no_tls_verify": bool((r.get("originRequest") or {}).get("noTLSVerify")),
+                        **_origin_request_to_dict(r.get("originRequest")),
                     }
                 )
             payload = _cfg_to_dict(self.cfg)

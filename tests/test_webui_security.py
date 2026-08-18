@@ -137,15 +137,18 @@ class TunnelBindNoTlsTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def _bind(self, no_tls):
-        handler = make_handler(self.path)
-        handler.path = "/tunnel/bind"
-        handler._read_body = mock.Mock(return_value=json.dumps({
+    def _bind(self, extra=None):
+        payload = {
             "service": "https://192.168.1.50:443",
             "hostname": "app.x.com",
             "token": "eyJhIjoxLCJ0IjoyfQ",
-            "no_tls_verify": "true" if no_tls else "false",
-        }).encode())
+            "protocol": "https",
+            "no_tls_verify": "true",
+            **({"http_host_header": "192.168.1.50:443", "connect_timeout": "5", "tls_timeout": "3", "http2_origin": "true", "no_happy_eyeballs": "true"} if extra else {}),
+        }
+        handler = make_handler(self.path)
+        handler.path = "/tunnel/bind"
+        handler._read_body = mock.Mock(return_value=json.dumps(payload).encode())
         sent = {}
         with mock.patch("cloudflare_ddns.webui._decode_tunnel_token",
                         return_value=({"account_id": "a1", "tunnel_id": "t1"}, "")):
@@ -158,16 +161,48 @@ class TunnelBindNoTlsTest(unittest.TestCase):
         return handler._send_json.call_args[0], sent
 
     def test_no_tls_verify_adds_origin_request(self):
-        (code, payload), sent = self._bind(True)
+        (code, payload), sent = self._bind()
         self.assertEqual(code, 200)
         rule = sent["body"]["config"]["ingress"][0]
         self.assertEqual(rule["originRequest"], {"noTLSVerify": True})
 
-    def test_no_tls_verify_off_omits_origin_request(self):
-        (code, payload), sent = self._bind(False)
+    def test_all_options_built(self):
+        (code, payload), sent = self._bind(extra=True)
         self.assertEqual(code, 200)
         rule = sent["body"]["config"]["ingress"][0]
-        self.assertNotIn("originRequest", rule)
+        self.assertEqual(rule["originRequest"], {
+            "noTLSVerify": True,
+            "httpHostHeader": "192.168.1.50:443",
+            "connectTimeout": 5.0,
+            "tlsTimeout": 3.0,
+            "http2Origin": True,
+            "noHappyEyeballs": True,
+        })
+
+    def test_tcp_protocol_omits_http_only_options(self):
+        payload = {
+            "service": "tcp://10.0.0.5:22",
+            "hostname": "app.x.com",
+            "token": "eyJhIjoxLCJ0IjoyfQ",
+            "protocol": "tcp",
+            "http2_origin": "true",
+            "no_happy_eyeballs": "true",
+        }
+        handler = make_handler(self.path)
+        handler.path = "/tunnel/bind"
+        handler._read_body = mock.Mock(return_value=json.dumps(payload).encode())
+        sent = {}
+        with mock.patch("cloudflare_ddns.webui._decode_tunnel_token",
+                        return_value=({"account_id": "a1", "tunnel_id": "t1"}, "")):
+            with mock.patch("cloudflare_ddns.cloudflare_api.CloudflareAPI") as api_cls:
+                api = api_cls.return_value
+                api.get_zone_id.return_value = "z1"
+                api.get_record.return_value = None
+                api._request.side_effect = lambda method, path, body=None, **k: sent.update(body=body) or {}
+                handler._do_post_inner()
+        rule = sent["body"]["config"]["ingress"][0]
+        self.assertNotIn("http2Origin", rule.get("originRequest", {}))
+        self.assertNotIn("noHappyEyeballs", rule.get("originRequest", {}))
 
 
 class OriginCheckTest(unittest.TestCase):
