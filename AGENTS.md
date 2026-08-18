@@ -142,12 +142,39 @@ POST /open-data-folder   เปิดโฟลเดอร์ข้อมูล 
 2. แก้โค้ด → `python -m compileall -q cloudflare_ddns`
 3. ถ้าแตะ JS: สกัด `<script>` จาก PAGE → `node --check`
  4. เทสต์ logic ผ่าน `python` (ใช้ state/temp แยก อย่าแตะของจริง) — `dry-run` เสมอถ้าเป็น DDNS flow
- 5. รัน unit tests: `python -m unittest discover -s tests -v` (tests/ — unittest stdlib ล้วน ไม่มี CI; ใช้ tempfile + unittest.mock เท่านั้น ห้ามพึ่งเน็ต)
+ 5. รัน unit tests: `python -m unittest discover -s tests -v` — และ **เพิ่ม/อัปเดตเทสต์ใน `tests/` ทุกครั้งที่แก้ logic** (ดูข้อ 6.5 ด้านล่าง)
  6. เทสต์ Web UI ผ่าน playwright (`ui-check.mjs`/`ui-verify.mjs` — ต้อง `npm i playwright` ในโฟลเดอร์ temp แยก เพราะไม่ควรมี node_modules ในโปรเจกต์) — เทสต์ทุกขนาดจอ 360-1920
  7. **rebuild + reinstall service** (svc-stop → PyInstaller → svc-reinstall) — ตรวจ `sc query CloudflareDDNS` = RUNNING + `curl http://127.0.0.1:8123/` = 200
  8. อัปเดต docs (README/CHANGELOG) ถ้าฟีเจอร์/behavior เปลี่ยน
  9. **แจ้งผู้ใช้**: version ปัจจุบัน + สรุปงานสั้น ๆ (ตามข้อ 9)
  10. commit: `feat:` / `fix:` / `docs:` / `ui:` / `chore:` + คำอธิบายไทยสั้นกระชับ (ดู `git log --oneline`)
+
+## 6.5 เทสต์ (tests/)
+
+**โครงสร้างไฟล์ `tests/` (unittest stdlib ล้วน — ไม่มี pytest/CI):**
+
+| ไฟล์ | ครอบคลุม |
+|---|---|
+| `test_config.py` | Config: password_hash / rotate_backup / field ใหม่ / validate |
+| `test_ddns.py` | DDNSEngine: state, sync family, run_once, dry-run ต้องไม่แตะ state |
+| `test_ip_detect.py` | get_public_ip / is_cgnat / is_private / nat_report |
+| `test_main.py` | คำสั่ง console (setup/status/dry-run ฯลฯ) |
+| `test_notifier.py` | queue (save/load/rotate) + build_message + Telegram command/reset |
+| `test_webui_security.py` | login / CSRF (Origin) / password hash / update-check / security headers |
+
+**กติกา (บังคับ):**
+- **ห้ามพึ่งเน็ต** — ใช้ `tempfile` + `unittest.mock` เท่านั้น (mock `urllib.request`/`subprocess`/API call)
+- ข้อมูลชั่วคราวผ่าน `tempfile.TemporaryDirectory()` / `mkdtemp()` — **ห้ามแตะ config/state/queue ของจริง** (ข้าง exe หรือในโปรเจกต์)
+- ข้อความไทยในเทสต์ได้ (อ่านง่าย) — แต่การ assert ควรเช็คค่าที่ไม่ขึ้นกับ locale ถ้าเป็นไปได้
+- i18n: ถ้าเทสต์ build_message/notify ต้องส่ง `lang` ชัดเจน (th/en) — อย่า rely default
+- ทุก test class ใช้ `unittest.TestCase` — ชื่อ method ขึ้นต้น `test_` บรรยายพฤติกรรมไทยสั้น
+
+**เมื่อไหร่ต้องเพิ่ม/แก้เทสต์:**
+- แก้ logic/เพิ่ม field config → อัปเดตเทสต์ที่เกี่ยวข้อง + เพิ่มกรณีใหม่
+- เจอบั๊ก → เขียนเทสต์ครอบก่อนแก้ (กัน regress)
+- เพิ่มฟังก์ชันใหม่ → เพิ่มเทสต์ในไฟล์ที่ตรงกับโมดูล
+
+**รัน:** `python -m unittest discover -s tests -v` — ต้องผ่านทั้งหมดก่อน build/commit (ปัจจุบัน 101 ตัว)
 
 ## 7. แนวทางโค้ด
 
