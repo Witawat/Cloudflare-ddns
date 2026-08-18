@@ -11,14 +11,19 @@ __CSS__
 <body>
 <div style="display:flex;min-height:100vh;align-items:center;justify-content:center;flex-direction:column;gap:16px">
 <div class="panel" style="width:320px;margin:0">
-  <h2 style="margin-bottom:14px">เข้าสู่ระบบ</h2>
+  <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+    <span class="lang-switch">
+      <button class="lang-btn" data-lang="th">TH</button><button class="lang-btn" data-lang="en">EN</button>
+    </span>
+  </div>
+  <h2 style="margin-bottom:14px" data-i18n="login.title">เข้าสู่ระบบ</h2>
   <form onsubmit="doLogin(event)">
     <span class="eye-wrap">
       <input id="pw" type="password" placeholder="รหัสผ่าน webui_password" autocomplete="current-password" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg)">
       <button type="button" class="eye-toggle" aria-label="แสดง/ซ่อนรหัส" onclick="togglePw(this)">👁</button>
     </span>
-    <p id="login-err" style="margin:8px 0 0;font-size:0.85rem;color:var(--danger)" hidden>รหัสผ่านไม่ถูกต้อง</p>
-    <p style="margin-top:12px"><button class="btn-primary" type="submit" style="width:100%">เข้าสู่ระบบ</button></p>
+    <p id="login-err" style="margin:8px 0 0;font-size:0.85rem;color:var(--danger)" hidden data-i18n="login.wrong">รหัสผ่านไม่ถูกต้อง</p>
+    <p style="margin-top:12px"><button class="btn-primary" type="submit" style="width:100%" data-i18n="login.submit">เข้าสู่ระบบ</button></p>
   </form>
 </div>
 <footer style="text-align:center;color:var(--muted);font-size:0.8rem;max-width:320px">
@@ -27,6 +32,28 @@ __CSS__
 </footer>
 </div>
 <script>
+const LANG_DATA = {
+  th: { "login.title": "เข้าสู่ระบบ", "login.submit": "เข้าสู่ระบบ", "login.wrong": "รหัสผ่านไม่ถูกต้อง", "login.pw_ph": "รหัสผ่าน webui_password" },
+  en: { "login.title": "Sign in", "login.submit": "Sign in", "login.wrong": "Incorrect password", "login.pw_ph": "webui_password" }
+};
+const LOGIN_LANG = (() => {
+  const m = /(?:^|;\s*)cfddns_lang=(th|en)/.exec(document.cookie);
+  return m ? m[1] : (navigator.language || "th").toLowerCase().startsWith("en") ? "en" : "th";
+})();
+document.documentElement.lang = LOGIN_LANG;
+document.querySelectorAll("[data-i18n]").forEach(el => {
+  const v = (LANG_DATA[LOGIN_LANG] && LANG_DATA[LOGIN_LANG][el.dataset.i18n]);
+  if (v) el.textContent = v;
+});
+if (LOGIN_LANG === "en") document.getElementById("pw").placeholder = LANG_DATA.en["login.pw_ph"];
+document.querySelectorAll(".lang-btn").forEach(btn => {
+  btn.classList.toggle("active", btn.dataset.lang === LOGIN_LANG);
+  btn.addEventListener("click", () => {
+    if (btn.dataset.lang === LOGIN_LANG) return;
+    document.cookie = "cfddns_lang=" + btn.dataset.lang + "; path=/; max-age=31536000; SameSite=Lax";
+    location.reload();
+  });
+});
 async function doLogin(ev) {
   ev.preventDefault();
   const r = await fetch("/login", { method: "POST", body: new URLSearchParams({ pw: document.getElementById("pw").value }) });

@@ -146,7 +146,8 @@ POST /open-data-folder   เปิดโฟลเดอร์ข้อมูล 
  6. เทสต์ Web UI ผ่าน playwright (`ui-check.mjs`/`ui-verify.mjs` — ต้อง `npm i playwright` ในโฟลเดอร์ temp แยก เพราะไม่ควรมี node_modules ในโปรเจกต์) — เทสต์ทุกขนาดจอ 360-1920
  7. **rebuild + reinstall service** (svc-stop → PyInstaller → svc-reinstall) — ตรวจ `sc query CloudflareDDNS` = RUNNING + `curl http://127.0.0.1:8123/` = 200
  8. อัปเดต docs (README/CHANGELOG) ถ้าฟีเจอร์/behavior เปลี่ยน
- 9. commit: `feat:` / `fix:` / `docs:` / `ui:` / `chore:` + คำอธิบายไทยสั้นกระชับ (ดู `git log --oneline`)
+ 9. **แจ้งผู้ใช้**: version ปัจจุบัน + สรุปงานสั้น ๆ (ตามข้อ 9)
+ 10. commit: `feat:` / `fix:` / `docs:` / `ui:` / `chore:` + คำอธิบายไทยสั้นกระชับ (ดู `git log --oneline`)
 
 ## 7. แนวทางโค้ด
 
@@ -185,6 +186,10 @@ powershell -File <temp>\svc-reinstall.cmd # remove+install+start
 
 ## 9. อย่าลืม
 
+- **หลังแก้โค้ด/พัฒนาเสร็จ ทุกครั้ง ต้องครบ 3 อย่าง:**
+  1. **Build ใหม่** — รัน `build.bat` (ตรวจ exe ไม่ล็อก: `taskkill /F /IM cloudflare-ddns.exe` ก่อนถ้าค้าง) → ยืนยัน `dist\cloudflare-ddns.exe` build สำเร็จ
+  2. **แจ้งเลข version + สรุป** — ตรวจ `cloudflare_ddns/__init__.py` (bump ถ้าฟีเจอร์/แก้สำคัญ: minor ใหม่ → bump ทันที) แล้วรายงานให้ผู้ใช้ทราบ: version ปัจจุบัน + สรุปสั้น ๆ ว่าทำอะไรไป/ผลเป็นยังไง (เหมือนข้อความ commit)
+  3. **Commit** — commit งานที่เสร็จด้วยข้อความไทยตามรูปแบบ (ข้อ 6 ข้อ 9) — อย่ารอผู้ใช้สั่ง commit เมื่องานเสร็จสมบูรณ์แล้ว (ยกเว้นผู้ใช้ยังติดตามงานอยู่ งานไม่จบ)
 - อย่า commit: `config.ini`, `state.json`, `notify_queue.json`, `logs/`, `cloudflared.exe`, `tunnel.pid`, `*.png` (gitignore มีแล้ว)
 - ไม่ push โดยไม่ได้รับคำสั่ง
 - **ห้ามสร้าง GitHub release จนกว่าผู้ใช้จะสั่งโดยตรง** (เคยสั่งลบ release ไปแล้ว — อยากปล่อยเมื่อไหร่ต้องถามก่อน)

@@ -56,6 +56,16 @@ p { margin: 0; }
 }
 .brand .sub { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
 .top-right { display: flex; align-items: center; gap: 10px; }
+.lang-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; flex: none; }
+.lang-btn {
+  border: 0; background: var(--surface); color: var(--ink-2); cursor: pointer;
+  font-size: 0.75rem; font-weight: 600; padding: 4px 10px; line-height: 1.2;
+}
+.lang-btn:hover { background: var(--surface-2); }
+.lang-btn.active { background: var(--accent); color: var(--accent-ink); }
+@media (max-width: 560px) {
+  .lang-switch { order: -1; }
+}
 .pill {
   font-size: 0.85rem; font-weight: 600; padding: 5px 12px; border-radius: 999px;
   border: 1px solid var(--border); background: var(--surface); color: var(--ink-2);
@@ -313,88 +323,91 @@ __LOGIN__
     <div class="brand-dot" aria-hidden="true"></div>
     <div>
       <h1>Cloudflare DDNS</h1>
-      <p class="sub">อัปเดต IP อัตโนมัติ · รอบล่าสุด <span id="lastrun" class="mono">-</span></p>
+      <p class="sub"><span data-i18n="html.001">อัปเดต IP อัตโนมัติ · รอบล่าสุด</span> <span id="lastrun" class="mono">-</span></p>
       <p id="cfg-err" class="sub" style="color:var(--danger);margin-top:2px" hidden></p>
     </div>
   </div>
   <div class="top-right">
-    <span id="pill" class="pill">กำลังโหลด…</span>
+    <span id="pill" class="pill"><span data-i18n="html.002">กำลังโหลด…</span></span>
     <span id="verpill" class="pill" style="font-size:0.75rem;padding:3px 10px">v…</span>
-    <a id="update-pill" class="pill" href="#" target="_blank" rel="noopener" style="display:none;font-size:0.75rem;padding:3px 10px;text-decoration:none;color:var(--warn);background:var(--warn-soft);border-color:color-mix(in oklch, var(--warn) 30%, transparent)">มีเวอร์ชันใหม่</a>
-    <button id="refresh" class="btn-secondary">รีเฟรช</button>
+    <a id="update-pill" class="pill" href="#" target="_blank" rel="noopener" style="display:none;font-size:0.75rem;padding:3px 10px;text-decoration:none;color:var(--warn);background:var(--warn-soft);border-color:color-mix(in oklch, var(--warn) 30%, transparent)"><span data-i18n="html.003">มีเวอร์ชันใหม่</span></a>
+    <span id="lang-switch" class="lang-switch">
+      <button class="lang-btn" data-lang="th">TH</button><button class="lang-btn" data-lang="en">EN</button>
+    </span>
+    <button id="refresh" class="btn-secondary"><span data-i18n="html.004">รีเฟรช</span></button>
   </div>
 </header>
 
 <main>
   <section class="panel">
     <div class="panel-head">
-      <h2>สถานะ IP</h2>
-      <p>กดที่ชื่อหรือ IP เพื่อคัดลอก</p>
+      <h2><span data-i18n="html.005">สถานะ IP</span></h2>
+      <p><span data-i18n="html.006">กดที่ชื่อหรือ IP เพื่อคัดลอก</span></p>
     </div>
     <div id="public-ip" class="tg-row" style="margin-bottom:12px;padding:10px 12px;background:var(--surface-2);border-radius:8px">
-      <span class="tg-status"><b>IP สาธารณะปัจจุบัน</b> <span class="mono" id="pub-ipv4" style="color:var(--ink-2)">ตรวจ…</span><span class="muted" style="color:var(--muted)"> · IPv6: </span><span class="mono" id="pub-ipv6" style="color:var(--muted)">ตรวจ…</span><br><span id="nat-status" style="font-size:0.85rem;color:var(--muted)"></span></span>
-      <button id="recheckIp" class="btn-secondary">ตรวจใหม่</button>
-      <button id="ddnsRun" class="btn-primary">ตรวจ DDNS ตอนนี้</button>
+      <span class="tg-status"><b><span data-i18n="html.007">IP สาธารณะปัจจุบัน</span></b> <span class="mono" id="pub-ipv4" style="color:var(--ink-2)"><span data-i18n="html.008">ตรวจ…</span></span><span class="muted" style="color:var(--muted)"> · IPv6: </span><span class="mono" id="pub-ipv6" style="color:var(--muted)"><span data-i18n="html.009">ตรวจ…</span></span><br><span id="nat-status" style="font-size:0.85rem;color:var(--muted)"></span></span>
+      <button id="recheckIp" class="btn-secondary"><span data-i18n="html.010">ตรวจใหม่</span></button>
+      <button id="ddnsRun" class="btn-primary"><span data-i18n="html.011">ตรวจ DDNS ตอนนี้</span></button>
     </div>
     <p id="api-stats" style="font-size:0.85rem;color:var(--muted);margin-top:8px"></p>
-    <div id="records" class="records"><p style="color:var(--muted)">กำลังโหลด…</p></div>
+    <div id="records" class="records"><p style="color:var(--muted)"><span data-i18n="html.012">กำลังโหลด…</span></p></div>
   </section>
 
   <section class="panel">
-    <div class="panel-head"><h2>แจ้งเตือน Telegram</h2></div>
+    <div class="panel-head"><h2><span data-i18n="html.013">แจ้งเตือน Telegram</span></h2></div>
     <div class="tg-row">
-      <span id="tgstatus" class="tg-status">กำลังโหลด…</span>
-      <button id="tgTest" class="btn-secondary">ส่งข้อความทดสอบ</button>
-      <button id="tgQueueBtn" class="btn-secondary">ดูคิว</button>
-      <button id="tgFlushBtn" class="btn-secondary">ลองส่งใหม่</button>
-      <button id="tgClearBtn" class="btn-secondary">ล้างคิว</button>
+      <span id="tgstatus" class="tg-status"><span data-i18n="html.014">กำลังโหลด…</span></span>
+      <button id="tgTest" class="btn-secondary"><span data-i18n="html.015">ส่งข้อความทดสอบ</span></button>
+      <button id="tgQueueBtn" class="btn-secondary"><span data-i18n="html.016">ดูคิว</span></button>
+      <button id="tgFlushBtn" class="btn-secondary"><span data-i18n="html.017">ลองส่งใหม่</span></button>
+      <button id="tgClearBtn" class="btn-secondary"><span data-i18n="html.018">ล้างคิว</span></button>
     </div>
     <div id="tg-queue" hidden style="margin-top:10px"></div>
   </section>
 
   <section class="panel">
-    <div class="panel-head"><h2>Cloudflare Tunnel</h2><p>ให้บริการผ่าน Tunnel แทนการเปิดพอร์ต (เหมาะกับ CGNAT / ไม่เปิดพอร์ต)</p></div>
+    <div class="panel-head"><h2>Cloudflare Tunnel</h2><p><span data-i18n="html.019">ให้บริการผ่าน Tunnel แทนการเปิดพอร์ต (เหมาะกับ CGNAT / ไม่เปิดพอร์ต)</span></p></div>
     <div class="tg-row">
-      <span id="tunnel-status" class="tg-status">กำลังโหลด…</span>
-      <button id="tunnelWizard" class="btn-primary">ตั้งค่า Tunnel (wizard)</button>
-      <button id="tunnelHostsBtn" class="btn-secondary">ดู hostname ที่ผูกแล้ว</button>
-      <button id="tunnelAddHost" class="btn-secondary">+ เพิ่ม hostname</button>
-      <button id="tunnelSync" class="btn-secondary">ซิงค์จาก Cloudflare</button>
-      <button id="tunnelStart" class="btn-secondary">เริ่ม tunnel</button>
-      <button id="tunnelStop" class="btn-secondary">หยุด tunnel</button>
-      <button id="tunnelDownload" class="btn-secondary">ดาวน์โหลด cloudflared</button>
+      <span id="tunnel-status" class="tg-status"><span data-i18n="html.020">กำลังโหลด…</span></span>
+      <button id="tunnelWizard" class="btn-primary"><span data-i18n="html.021">ตั้งค่า Tunnel (wizard)</span></button>
+      <button id="tunnelHostsBtn" class="btn-secondary"><span data-i18n="html.022">ดู hostname ที่ผูกแล้ว</span></button>
+      <button id="tunnelAddHost" class="btn-secondary"><span data-i18n="html.023">+ เพิ่ม hostname</span></button>
+      <button id="tunnelSync" class="btn-secondary"><span data-i18n="html.024">ซิงค์จาก Cloudflare</span></button>
+      <button id="tunnelStart" class="btn-secondary"><span data-i18n="html.025">เริ่ม tunnel</span></button>
+      <button id="tunnelStop" class="btn-secondary"><span data-i18n="html.026">หยุด tunnel</span></button>
+      <button id="tunnelDownload" class="btn-secondary"><span data-i18n="html.027">ดาวน์โหลด cloudflared</span></button>
     </div>
     <div id="tunnel-add-form" hidden style="margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--surface)">
       <div class="grid2">
-        <label class="field">ชื่อ (subdomain)
+        <label class="field"><span data-i18n="html.028">ชื่อ (subdomain)</span>
           <input id="th-sub" type="text" class="mono" placeholder="app" list="th-sub-list">
           <datalist id="th-sub-list"></datalist>
         </label>
-        <label class="field">โดเมน
+        <label class="field"><span data-i18n="html.029">โดเมน</span>
           <select id="th-domain" class="wz-zone-select"></select>
         </label>
       </div>
       <div class="grid2">
-        <label class="field">Path (ไม่บังคับ)<input id="th-path" type="text" class="mono" placeholder="/api"></label>
-        <label class="field">ชนิด<select id="th-protocol" class="wz-zone-select" onchange="adaptServiceToProtocol(this, document.getElementById('th-service'))"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="udp">UDP</option></select></label>
+        <label class="field"><span data-i18n="html.030">Path (ไม่บังคับ)</span><input id="th-path" type="text" class="mono" placeholder="/api"></label>
+        <label class="field"><span data-i18n="html.031">ชนิด</span><select id="th-protocol" class="wz-zone-select" onchange="adaptServiceToProtocol(this, document.getElementById('th-service'))"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="udp">UDP</option></select></label>
       </div>
-      <label class="field">บริการ/พอร์ต<input id="th-service" type="text" class="mono" value="http://localhost:8080" placeholder="http://localhost:8080 หรือ tcp://localhost:22"></label>
-      <p style="margin:0 0 10px;font-size:0.8rem;color:var(--muted);line-height:1.5">💡 เลือกชนิดให้ตรงกับบริการ: <b>HTTP</b> = เว็บธรรมดา (เช่น <span class="mono">http://localhost:8080</span>) · <b>HTTPS</b> = พอร์ต SSL เช่น 443/8443 (ต้องเป็น <span class="mono">https://localhost:443</span> — ถ้าผูกเป็น http จะเจอ "Bad Request") · <b>TCP/UDP</b> = SSH/game/VPN (เช่น <span class="mono">tcp://localhost:22</span>)</p>
-      <button id="th-bind" class="btn-primary" type="button">ผูกกับ tunnel</button>
-      <button id="th-cancel" class="btn-secondary" type="button">ยกเลิก</button>
+      <label class="field"><span data-i18n="html.032">บริการ/พอร์ต</span><input id="th-service" type="text" class="mono" value="http://localhost:8080" placeholder="http://localhost:8080 หรือ tcp://localhost:22"></label>
+      <p style="margin:0 0 10px;font-size:0.8rem;color:var(--muted);line-height:1.5"><span data-i18n="html.033">💡 เลือกชนิดให้ตรงกับบริการ:</span> <b>HTTP</b> <span data-i18n="html.034">= เว็บธรรมดา (เช่น</span> <span class="mono">http://localhost:8080</span>) · <b>HTTPS</b> <span data-i18n="html.035">= พอร์ต SSL เช่น 443/8443 (ต้องเป็น</span> <span class="mono">https://localhost:443</span> <span data-i18n="html.036">— ถ้าผูกเป็น http จะเจอ "Bad Request") ·</span> <b>TCP/UDP</b> <span data-i18n="html.037">= SSH/game/VPN (เช่น</span> <span class="mono">tcp://localhost:22</span>)</p>
+      <button id="th-bind" class="btn-primary" type="button"><span data-i18n="html.038">ผูกกับ tunnel</span></button>
+      <button id="th-cancel" class="btn-secondary" type="button"><span data-i18n="html.039">ยกเลิก</span></button>
       <div id="th-msg"></div>
     </div>
     <div id="tunnel-hosts" hidden style="margin-top:10px"></div>
     <details class="wz-help" style="margin-top:12px">
-      <summary style="cursor:pointer;font-weight:600">ข้อควรรู้</summary>
+      <summary style="cursor:pointer;font-weight:600"><span data-i18n="html.040">ข้อควรรู้</span></summary>
       <ul style="margin:8px 0 0;padding-left:20px">
-        <li>ชื่อเดียวใช้ได้อย่างใดอย่างหนึ่ง: A/AAAA (DDNS) หรือ CNAME (tunnel) — Cloudflare ห้ามซ้ำชื่อกัน ต้องใช้คนละชื่อ (เช่น DDNS = home.โดเมน, tunnel = app.โดเมน)</li>
-        <li>Tunnel ไม่ต้องเปิดพอร์ต / ไม่พึ่ง IP — เหมาะกับ CGNAT หรือไม่อยากแตะเราเตอร์</li>
-        <li>DDNS เหมาะกับบริการที่ต้องรับ connection ตรง (SSH, game server)</li>
-        <li>บริการที่ผูก (เช่น localhost:8080) ต้องรันอยู่ ถึงจะเข้าเว็บได้</li>
-        <li>ผูก hostname ต้องใช้ API token ที่มีสิทธิ์ Account &gt; Cloudflare Tunnel &gt; Edit</li>
-        <li>tunnel รันตาม service — หยุด service = tunnel หยุด</li>
-        <li>tunnel token ใช้ได้จนกว่าจะ revoke ที่ Zero Trust</li>
+        <li><span data-i18n="html.041">ชื่อเดียวใช้ได้อย่างใดอย่างหนึ่ง: A/AAAA (DDNS) หรือ CNAME (tunnel) — Cloudflare ห้ามซ้ำชื่อกัน ต้องใช้คนละชื่อ (เช่น DDNS = home.โดเมน, tunnel = app.โดเมน)</span></li>
+        <li><span data-i18n="html.042">Tunnel ไม่ต้องเปิดพอร์ต / ไม่พึ่ง IP — เหมาะกับ CGNAT หรือไม่อยากแตะเราเตอร์</span></li>
+        <li><span data-i18n="html.043">DDNS เหมาะกับบริการที่ต้องรับ connection ตรง (SSH, game server)</span></li>
+        <li><span data-i18n="html.044">บริการที่ผูก (เช่น localhost:8080) ต้องรันอยู่ ถึงจะเข้าเว็บได้</span></li>
+        <li><span data-i18n="html.045">ผูก hostname ต้องใช้ API token ที่มีสิทธิ์ Account &gt; Cloudflare Tunnel &gt; Edit</span></li>
+        <li><span data-i18n="html.046">tunnel รันตาม service — หยุด service = tunnel หยุด</span></li>
+        <li><span data-i18n="html.047">tunnel token ใช้ได้จนกว่าจะ revoke ที่ Zero Trust</span></li>
       </ul>
     </details>
   </section>
@@ -405,51 +418,51 @@ __LOGIN__
       <p id="svc-ctx">…</p>
     </div>
     <div class="tg-row">
-      <span id="svc-status" class="tg-status">กำลังโหลด…</span>
-      <button id="svcStart" class="btn-secondary">เริ่ม service</button>
-      <button id="svcStop" class="btn-secondary">หยุด service</button>
+      <span id="svc-status" class="tg-status"><span data-i18n="html.048">กำลังโหลด…</span></span>
+      <button id="svcStart" class="btn-secondary"><span data-i18n="html.049">เริ่ม service</span></button>
+      <button id="svcStop" class="btn-secondary"><span data-i18n="html.050">หยุด service</span></button>
       <button id="svcRestart" class="btn-secondary">Restart service</button>
-      <button id="svcInstall" class="btn-secondary">ติดตั้ง service</button>
-      <button id="svcUninstall" class="btn-secondary">ถอนการติดตั้ง</button>
+      <button id="svcInstall" class="btn-secondary"><span data-i18n="html.051">ติดตั้ง service</span></button>
+      <button id="svcUninstall" class="btn-secondary"><span data-i18n="html.052">ถอนการติดตั้ง</span></button>
     </div>
     <details class="wz-help" style="margin-top:12px">
-      <summary style="cursor:pointer;font-weight:600">ข้อควรรู้</summary>
+      <summary style="cursor:pointer;font-weight:600"><span data-i18n="html.053">ข้อควรรู้</span></summary>
       <ul style="margin:8px 0 0;padding-left:20px">
-        <li>ต้องมีสิทธิ์ admin — ถ้าหน้าเว็บนี้รันเป็น service อยู่แล้ว (เปิดเองหลัง boot) การติดตั้ง/ถอน/หยุดทำไม่ได้จากเว็บ (จะตัดการเชื่อมต่อตัวเอง) — ใช้ install.bat / uninstall.bat แทน ส่วน Restart ใช้ได้เสมอ (เว็บหลุด ~10-15 วิ แล้วกลับมา)</li>
-        <li>รันแบบ standalone (คำสั่ง webui / เปิด exe เปล่า ๆ) ต้องเปิดด้วยสิทธิ์ admin ถึงจะติดตั้ง/ควบคุม service ได้</li>
-        <li>ถอนการติดตั้งไม่ลบ config/state/ข้อมูล — แค่เอา service ออกจาก Windows</li>
+        <li><span data-i18n="html.054">ต้องมีสิทธิ์ admin — ถ้าหน้าเว็บนี้รันเป็น service อยู่แล้ว (เปิดเองหลัง boot) การติดตั้ง/ถอน/หยุดทำไม่ได้จากเว็บ (จะตัดการเชื่อมต่อตัวเอง) — ใช้ install.bat / uninstall.bat แทน ส่วน Restart ใช้ได้เสมอ (เว็บหลุด ~10-15 วิ แล้วกลับมา)</span></li>
+        <li><span data-i18n="html.055">รันแบบ standalone (คำสั่ง webui / เปิด exe เปล่า ๆ) ต้องเปิดด้วยสิทธิ์ admin ถึงจะติดตั้ง/ควบคุม service ได้</span></li>
+        <li><span data-i18n="html.056">ถอนการติดตั้งไม่ลบ config/state/ข้อมูล — แค่เอา service ออกจาก Windows</span></li>
       </ul>
     </details>
   </section>
 
   <section class="panel">
     <div class="panel-head">
-      <h2>สแกนพอร์ต</h2>
-      <p>ตรวจบริการที่เปิดอยู่บน host ที่ตั้งไว้ (resolve IP ปัจจุบันให้อัตโนมัติ)</p>
+      <h2><span data-i18n="html.057">สแกนพอร์ต</span></h2>
+      <p><span data-i18n="html.058">ตรวจบริการที่เปิดอยู่บน host ที่ตั้งไว้ (resolve IP ปัจจุบันให้อัตโนมัติ)</span></p>
     </div>
     <div class="tg-row">
       <select id="scan-host" class="wz-zone-select" style="max-width:280px"></select>
       <input id="scan-ports" class="mono" style="flex:1;min-width:200px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--ink);font-size:0.9rem" value="21,22,23,25,53,80,110,143,443,445,993,995,1433,3306,3389,5900,6379,8080,8443,27017">
-      <button id="scanBtn" class="btn-primary">สแกน</button>
+      <button id="scanBtn" class="btn-primary"><span data-i18n="html.059">สแกน</span></button>
     </div>
     <div id="scan-result" style="margin-top:12px"></div>
   </section>
 
   <section class="panel">
     <div class="panel-head">
-      <h2>ประวัติการอัปเดต</h2>
-      <p>50 รายการล่าสุด</p>
+      <h2><span data-i18n="html.060">ประวัติการอัปเดต</span></h2>
+      <p><span data-i18n="html.061">50 รายการล่าสุด</span></p>
     </div>
-    <div id="history"><p style="color:var(--muted)">กำลังโหลด…</p></div>
+    <div id="history"><p style="color:var(--muted)"><span data-i18n="html.062">กำลังโหลด…</span></p></div>
   </section>
 
   <section class="panel">
     <div class="panel-head">
-      <h2>Log ล่าสุด</h2>
+      <h2><span data-i18n="html.063">Log ล่าสุด</span></h2>
       <div style="display:flex;gap:10px;align-items:center">
-        <button id="openFolder" class="btn-secondary">เปิดโฟลเดอร์ข้อมูล</button>
-        <button id="logReload" class="btn-secondary">โหลดใหม่</button>
-        <button id="logClear" class="btn-secondary" title="ล้างไฟล์ log (ไม่กระทบการทำงาน)">ล้าง log</button>
+        <button id="openFolder" class="btn-secondary"><span data-i18n="html.064">เปิดโฟลเดอร์ข้อมูล</span></button>
+        <button id="logReload" class="btn-secondary"><span data-i18n="html.065">โหลดใหม่</span></button>
+        <button id="logClear" class="btn-secondary" title="ล้างไฟล์ log (ไม่กระทบการทำงาน)"><span data-i18n="html.066">ล้าง log</span></button>
       </div>
     </div>
     <pre id="logview" style="margin:0;padding:10px 12px;background:var(--surface-2);border-radius:8px;font-family:'Cascadia Code',Consolas,monospace;font-size:0.8rem;color:var(--ink-2);max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-all">กำลังโหลด…</pre>
@@ -457,15 +470,15 @@ __LOGIN__
 
   <section class="panel" id="settings-panel">
     <div class="panel-head">
-      <h2>ตั้งค่า</h2>
+      <h2><span data-i18n="html.067">ตั้งค่า</span></h2>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
         <div class="mode-switch" role="tablist">
-          <button id="mode-form" type="button" class="active" role="tab">แบบฟอร์ม</button>
-          <button id="mode-file" type="button" role="tab">แก้ไขไฟล์โดยตรง</button>
+          <button id="mode-form" type="button" class="active" role="tab"><span data-i18n="html.068">แบบฟอร์ม</span></button>
+          <button id="mode-file" type="button" role="tab"><span data-i18n="html.069">แก้ไขไฟล์โดยตรง</span></button>
         </div>
-        <button id="saveBtn" class="btn-primary">บันทึกการตั้งค่า</button>
-        <button id="exportCfg" class="btn-secondary" title="ดาวน์โหลด config.ini เก็บสำรอง">ดาวน์โหลด config</button>
-        <button id="importCfg" class="btn-secondary" title="นำเข้า config.ini (ตรวจสอบก่อนบันทึก)">นำเข้า config</button>
+        <button id="saveBtn" class="btn-primary"><span data-i18n="html.070">บันทึกการตั้งค่า</span></button>
+        <button id="exportCfg" class="btn-secondary" title="ดาวน์โหลด config.ini เก็บสำรอง"><span data-i18n="html.071">ดาวน์โหลด config</span></button>
+        <button id="importCfg" class="btn-secondary" title="นำเข้า config.ini (ตรวจสอบก่อนบันทึก)"><span data-i18n="html.072">นำเข้า config</span></button>
         <input type="file" id="importCfgFile" accept=".ini,.txt" hidden>
       </div>
     </div>
@@ -476,49 +489,49 @@ __LOGIN__
       <label class="field">API Token
         <input id="api_token" type="password" autocomplete="off" placeholder="cfut_... หรือ token รูปแบบอื่น">
       </label>
-      <label class="field">ตรวจ IP ทุก (วินาที, ขั้นต่ำ 15)
+      <label class="field"><span data-i18n="html.073">ตรวจ IP ทุก (วินาที, ขั้นต่ำ 15)</span>
         <input id="interval" type="number" min="15" step="5">
       </label>
     </div>
     <div class="grid2">
-      <label class="field">รหัสผ่านหน้าเว็บ (เว้นว่าง = ไม่เปลี่ยน · พิมพ์ใหม่ = เปลี่ยน)
+      <label class="field"><span data-i18n="html.074">รหัสผ่านหน้าเว็บ (เว้นว่าง = ไม่เปลี่ยน · พิมพ์ใหม่ = เปลี่ยน)</span>
         <div style="display:flex;gap:8px;align-items:center">
           <input id="webui_password" type="password" autocomplete="off" placeholder="ตั้งไว้แล้ว" style="flex:1">
-          <button id="pwClear" class="btn-secondary" type="button" style="display:none;white-space:nowrap" title="ลบรหัสผ่าน — เข้าเว็บได้โดยไม่ต้อง login">ลบรหัส</button>
+          <button id="pwClear" class="btn-secondary" type="button" style="display:none;white-space:nowrap" title="ลบรหัสผ่าน — เข้าเว็บได้โดยไม่ต้อง login"><span data-i18n="html.075">ลบรหัส</span></button>
         </div>
       </label>
-      <label class="field">พอร์ตหน้าเว็บ
+      <label class="field"><span data-i18n="html.076">พอร์ตหน้าเว็บ</span>
         <input id="webui_port" type="number" min="1" max="65535" placeholder="8123">
       </label>
     </div>
     <div class="grid2">
-      <label class="field">หน้าเว็บเปิดที่ (host)
+      <label class="field"><span data-i18n="html.077">หน้าเว็บเปิดที่ (host)</span>
         <input id="webui_host" type="text" class="mono" autocomplete="off" placeholder="127.0.0.1" title="127.0.0.1 = เฉพาะเครื่องนี้ · 0.0.0.0 = เข้าจากเครื่องอื่นในเน็ตเวิร์กได้ (ต้องตั้งรหัสผ่าน + เปิดพอร์ต firewall)">
       </label>
-      <label class="field" title="ต้องตั้ง webui_password ก่อนเปิด 0.0.0.0">คำเตือน: 0.0.0.0 = ใครในวง LAN เข้าได้ — ตั้งรหัสผ่านด้านบนเสมอ</label>
+      <label class="field" title="ต้องตั้ง webui_password ก่อนเปิด 0.0.0.0"><span data-i18n="html.078">คำเตือน: 0.0.0.0 = ใครในวง LAN เข้าได้ — ตั้งรหัสผ่านด้านบนเสมอ</span></label>
     </div>
     <div class="grid2">
-      <label class="field">ที่เก็บ log (เว้นว่าง = โฟลเดอร์เดียวกับ exe)
+      <label class="field"><span data-i18n="html.079">ที่เก็บ log (เว้นว่าง = โฟลเดอร์เดียวกับ exe)</span>
         <input id="log_dir" type="text" class="mono" autocomplete="off" placeholder="เช่น D:\CloudflareDDNS\logs">
       </label>
-      <label class="field">ที่เก็บข้อมูล (state, คิว) — เว้นว่าง = โฟลเดอร์เดียวกับ exe
+      <label class="field"><span data-i18n="html.080">ที่เก็บข้อมูล (state, คิว) — เว้นว่าง = โฟลเดอร์เดียวกับ exe</span>
         <input id="data_dir" type="text" class="mono" autocomplete="off" placeholder="(คงที่: โฟลเดอร์เดียวกับ exe)" disabled>
       </label>
     </div>
     <div class="toggles">
-      <label><input id="use_ipv4" type="checkbox"> อัปเดต IPv4 (A record)</label>
-      <label><input id="use_ipv6" type="checkbox"> อัปเดต IPv6 (AAAA record)</label>
-      <label title="ต้องมี provider ตรวจ IP อย่างน้อย 2 รายเห็น IP ตัวเดียวกัน ถึงจะอัปเดต record (กัน provider ตัวใดตัวหนึ่งตอบผิด/ล้าสมัย)"><input id="ip_consensus" type="checkbox"> ตรวจฉันทามติ IP (อย่างน้อย 2 provider เห็นตรงกัน)</label>
-      <label title="กัน IP ที่เป็นของ Cloudflare เอง (anycast/CDN) ถูกเขียนลง record โดยไม่ตั้งใจ"><input id="reject_cf_ips" type="checkbox"> กัน IP ของ Cloudflare (anycast)</label>
+      <label><input id="use_ipv4" type="checkbox"> <span data-i18n="html.081">อัปเดต IPv4 (A record)</span></label>
+      <label><input id="use_ipv6" type="checkbox"> <span data-i18n="html.082">อัปเดต IPv6 (AAAA record)</span></label>
+      <label title="ต้องมี provider ตรวจ IP อย่างน้อย 2 รายเห็น IP ตัวเดียวกัน ถึงจะอัปเดต record (กัน provider ตัวใดตัวหนึ่งตอบผิด/ล้าสมัย)"><input id="ip_consensus" type="checkbox"> <span data-i18n="html.083">ตรวจฉันทามติ IP (อย่างน้อย 2 provider เห็นตรงกัน)</span></label>
+      <label title="กัน IP ที่เป็นของ Cloudflare เอง (anycast/CDN) ถูกเขียนลง record โดยไม่ตั้งใจ"><input id="reject_cf_ips" type="checkbox"> <span data-i18n="html.084">กัน IP ของ Cloudflare (anycast)</span></label>
     </div>
 
-    <h3>Heartbeat (ไม่บังคับ)</h3>
-    <p style="color:var(--muted);font-size:0.85rem;margin-top:0">ส่งสัญญาณ "ยังทำงาน" ทุกรอบให้บริการเฝ้าดู — รู้ว่าเครื่อง/program ตายหรือไม่จากนอกบ้าน (กรอก URL อันใดอันหนึ่งหรือทั้งคู่)</p>
+    <h3><span data-i18n="html.085">Heartbeat (ไม่บังคับ)</span></h3>
+    <p style="color:var(--muted);font-size:0.85rem;margin-top:0"><span data-i18n="html.086">ส่งสัญญาณ "ยังทำงาน" ทุกรอบให้บริการเฝ้าดู — รู้ว่าเครื่อง/program ตายหรือไม่จากนอกบ้าน (กรอก URL อันใดอันหนึ่งหรือทั้งคู่)</span></p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-      <button id="heartbeatTest" class="btn-secondary" type="button">ทดสอบส่ง heartbeat</button>
+      <button id="heartbeatTest" class="btn-secondary" type="button"><span data-i18n="html.087">ทดสอบส่ง heartbeat</span></button>
     </div>
     <div class="grid2">
-      <label class="field">Healthchecks.io ping URL (ฟรี: healthchecks.io)
+      <label class="field"><span data-i18n="html.088">Healthchecks.io ping URL (ฟรี: healthchecks.io)</span>
         <input id="hc_url" type="text" class="mono" autocomplete="off" placeholder="https://hc-ping.com/xxxxxxxx-xxxx">
       </label>
       <label class="field">Uptime Kuma push URL (self-host)
@@ -526,46 +539,46 @@ __LOGIN__
       </label>
     </div>
 
-    <h3>แจ้งเตือน Telegram</h3>
+    <h3><span data-i18n="html.089">แจ้งเตือน Telegram</span></h3>
     <div class="grid2">
-      <label class="field">Bot token (จาก @BotFather)
+      <label class="field"><span data-i18n="html.090">Bot token (จาก @BotFather)</span>
         <input id="tg_token" type="password" autocomplete="off" placeholder="123456789:AAHxxx...">
       </label>
-      <label class="field">Chat ID (เว้น = wizard/notify-test หาให้)
+      <label class="field"><span data-i18n="html.091">Chat ID (เว้น = wizard/notify-test หาให้)</span>
         <input id="tg_chat" type="text" class="mono" autocomplete="off" placeholder="123456789">
       </label>
     </div>
     <div class="toggles">
-      <label><input id="notify_start" type="checkbox"> เริ่มทำงาน</label>
-      <label><input id="notify_stop" type="checkbox"> หยุดทำงาน</label>
-      <label><input id="notify_ip_change" type="checkbox"> IP เปลี่ยน</label>
+      <label><input id="notify_start" type="checkbox"> <span data-i18n="html.092">เริ่มทำงาน</span></label>
+      <label><input id="notify_stop" type="checkbox"> <span data-i18n="html.093">หยุดทำงาน</span></label>
+      <label><input id="notify_ip_change" type="checkbox"> <span data-i18n="html.094">IP เปลี่ยน</span></label>
       <label><input id="notify_error" type="checkbox"> Error</label>
-      <label><input id="notify_created" type="checkbox"> สร้าง record ใหม่</label>
-      <label title="ส่งสรุปสั้นทุกครั้งที่ตรวจรอบ (ระวัง: รอบสั้น = ข้อความเยอะ)"><input id="notify_round" type="checkbox"> สรุปทุกรอบ</label>
+      <label><input id="notify_created" type="checkbox"> <span data-i18n="html.095">สร้าง record ใหม่</span></label>
+      <label title="ส่งสรุปสั้นทุกครั้งที่ตรวจรอบ (ระวัง: รอบสั้น = ข้อความเยอะ)"><input id="notify_round" type="checkbox"> <span data-i18n="html.096">สรุปทุกรอบ</span></label>
     </div>
     <div class="toggles">
-      <label><input id="daily_report" type="checkbox"> สรุปรายวันทาง Telegram</label>
-      <label>เวลา (HH:MM)<input id="daily_report_time" type="text" placeholder="08:00"></label>
+      <label><input id="daily_report" type="checkbox"> <span data-i18n="html.097">สรุปรายวันทาง Telegram</span></label>
+      <label><span data-i18n="html.098">เวลา (HH:MM)</span><input id="daily_report_time" type="text" placeholder="08:00"></label>
     </div>
     <div class="toggles">
-      <label title="พิมพ์ /help ในแชทกับ bot — ดูสถานะ/รันรอบ/restart/กู้รหัสผ่าน (เฉพาะ chat ที่ตั้งไว้ กัน 1 ครั้ง/10 นาทีสำหรับกู้รหัส)"><input id="tg_allow_reset" type="checkbox"> ควบคุม/กู้รหัสผ่านผ่าน Telegram (พิมพ์ /help ในแชท)</label>
+      <label title="พิมพ์ /help ในแชทกับ bot — ดูสถานะ/รันรอบ/restart/กู้รหัสผ่าน (เฉพาะ chat ที่ตั้งไว้ กัน 1 ครั้ง/10 นาทีสำหรับกู้รหัส)"><input id="tg_allow_reset" type="checkbox"> <span data-i18n="html.099">ควบคุม/กู้รหัสผ่านผ่าน Telegram (พิมพ์ /help ในแชท)</span></label>
     </div>
     <div class="grid2">
-      <label class="field">ชื่อเครื่องรับคำสั่ง (เว้น = ชื่อเครื่องของระบบ — ใช้ bot กลางหลายเครื่อง: พิมพ์ /status @ชื่อ)
+      <label class="field"><span data-i18n="html.100">ชื่อเครื่องรับคำสั่ง (เว้น = ชื่อเครื่องของระบบ — ใช้ bot กลางหลายเครื่อง: พิมพ์ /status @ชื่อ)</span>
         <input id="tg_cmd_name" type="text" class="mono" autocomplete="off" placeholder="(ชื่อเครื่องอัตโนมัติ)">
       </label>
     </div>
 
-    <h3>Cloudflare Tunnel (ไม่บังคับ)</h3>
+    <h3><span data-i18n="html.101">Cloudflare Tunnel (ไม่บังคับ)</span></h3>
     <div class="toggles">
-      <label><input id="tunnel_enabled" type="checkbox"> เปิด tunnel อัตโนมัติตอน service เริ่ม</label>
-      <label><button id="tunnelUpdateCheck" class="btn-secondary" type="button">เช็คอัปเดต cloudflared</button></label>
+      <label><input id="tunnel_enabled" type="checkbox"> <span data-i18n="html.102">เปิด tunnel อัตโนมัติตอน service เริ่ม</span></label>
+      <label><button id="tunnelUpdateCheck" class="btn-secondary" type="button"><span data-i18n="html.103">เช็คอัปเดต cloudflared</span></button></label>
     </div>
-    <label class="field">Tunnel Token (ยาว — วางได้เต็มช่อง ไม่ซ่อน)
+    <label class="field"><span data-i18n="html.104">Tunnel Token (ยาว — วางได้เต็มช่อง ไม่ซ่อน)</span>
       <textarea id="tunnel_token" rows="3" class="mono" spellcheck="false" autocomplete="off" placeholder="eyJhIjoi..."></textarea>
     </label>
     <div class="grid2">
-      <label class="field">ที่อยู่ cloudflared.exe (เว้นว่าง = ดาวน์โหลดข้าง exe อัตโนมัติ)
+      <label class="field"><span data-i18n="html.105">ที่อยู่ cloudflared.exe (เว้นว่าง = ดาวน์โหลดข้าง exe อัตโนมัติ)</span>
         <input id="cloudflared_path" type="text" class="mono" autocomplete="off" placeholder="(อัตโนมัติ)">
       </label>
     </div>
@@ -573,16 +586,16 @@ __LOGIN__
     <h3>DNS records</h3>
     <div id="records-editor"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-      <button id="addRecord" class="btn-secondary" type="button">+ เพิ่ม record</button>
-      <button id="loadRecords" class="btn-secondary" type="button">โหลดชื่อ record จาก Cloudflare</button>
+      <button id="addRecord" class="btn-secondary" type="button"><span data-i18n="html.106">+ เพิ่ม record</span></button>
+      <button id="loadRecords" class="btn-secondary" type="button"><span data-i18n="html.107">โหลดชื่อ record จาก Cloudflare</span></button>
       <select id="rec-pick" class="wz-zone-select" hidden style="max-width:280px"></select>
     </div>
     </div>
 
     <div id="file-view" hidden>
-      <p class="file-note">แก้ไขไฟล์ config.ini ตรง ๆ ระวังรูปแบบให้ถูกต้อง (ระบบตรวจ syntax และค่าพื้นฐานก่อนบันทึก) — ตัวอย่างดูได้จาก config.example.ini</p>
+      <p class="file-note"><span data-i18n="html.108">แก้ไขไฟล์ config.ini ตรง ๆ ระวังรูปแบบให้ถูกต้อง (ระบบตรวจ syntax และค่าพื้นฐานก่อนบันทึก) — ตัวอย่างดูได้จาก config.example.ini</span></p>
       <textarea id="file-editor" spellcheck="false" aria-label="config.ini"></textarea>
-      <p style="margin-top:10px"><button id="saveFileBtn" class="btn-primary" type="button">บันทึกไฟล์</button></p>
+      <p style="margin-top:10px"><button id="saveFileBtn" class="btn-primary" type="button"><span data-i18n="html.109">บันทึกไฟล์</span></button></p>
     </div>
   </section>
 </main>
@@ -598,10 +611,10 @@ __LOGIN__
   <div class="wz-card" role="dialog" aria-modal="true" aria-labelledby="wz-title">
     <div class="wz-head">
       <div>
-        <h1 id="wz-title">ตั้งค่า Cloudflare DDNS ครั้งแรก</h1>
-        <p>ทำตามทีละขั้นตอน ประมาณ 2 นาที — ตอนไหนติด กด "ดูวิธีทำ" ได้ทุกขั้น</p>
+        <h1 id="wz-title"><span data-i18n="html.110">ตั้งค่า Cloudflare DDNS ครั้งแรก</span></h1>
+        <p><span data-i18n="html.111">ทำตามทีละขั้นตอน ประมาณ 2 นาที — ตอนไหนติด กด "ดูวิธีทำ" ได้ทุกขั้น</span></p>
       </div>
-      <button id="wz-skip" class="wz-skip" type="button">ข้ามชั่วคราว</button>
+      <button id="wz-skip" class="wz-skip" type="button"><span data-i18n="html.112">ข้ามชั่วคราว</span></button>
     </div>
     <div class="wz-steps" id="wz-steps">
       <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
@@ -614,10 +627,10 @@ __LOGIN__
   <div class="wz-card" role="dialog" aria-modal="true" aria-labelledby="twz-title">
     <div class="wz-head">
       <div>
-        <h1 id="twz-title">ตั้งค่า Cloudflare Tunnel</h1>
-        <p>ให้บริการเว็บผ่าน Tunnel โดยไม่ต้องเปิดพอร์ต — 4 ขั้นตอน</p>
+        <h1 id="twz-title"><span data-i18n="html.113">ตั้งค่า Cloudflare Tunnel</span></h1>
+        <p><span data-i18n="html.114">ให้บริการเว็บผ่าน Tunnel โดยไม่ต้องเปิดพอร์ต — 4 ขั้นตอน</span></p>
       </div>
-      <button id="twz-close" class="wz-skip" type="button">ปิด</button>
+      <button id="twz-close" class="wz-skip" type="button"><span data-i18n="html.115">ปิด</span></button>
     </div>
     <div class="wz-steps" id="twz-steps">
       <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>

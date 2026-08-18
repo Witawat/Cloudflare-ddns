@@ -17,11 +17,13 @@ from . import __version__
 from . import config as config_mod
 from . import ddns
 from . import heartbeat
+from . import i18n
 from . import notifier
 
 # แคชผลตรวจ NAT สำหรับ /ip-check — nat_report ตรวจเต็ม (tracert + STUN หลายรอบ) ช้า ~10 วิ
 # จึงรันเต็มแค่ทุก 60 วิ ระหว่างนั้นตอบผลเดิมทันที (IP/NAT ไม่เปลี่ยนถี่ขนาดนั้น)
-_nat_cache = {"at": 0.0, "result": None}
+# แคชแยกภาษา (th/en) — message ของ nat_report ต่างกันตาม lang
+_nat_cache = {}  # lang -> {"at": float, "result": dict}
 NAT_CACHE_TTL = 60.0
 
 log = logging.getLogger("cloudflare-ddns")
@@ -75,7 +77,7 @@ def _get_tunnel_mgr(config_path=None):
     return _tunnel_mgr
 
 
-def _decode_tunnel_token(token):
+def _decode_tunnel_token(token, lang="th"):
     """แยก account_id + tunnel_id จาก tunnel token. คืน (dict, error)
 
     รองรับ 2 รูปแบบ:
@@ -94,19 +96,16 @@ def _decode_tunnel_token(token):
         account_id = claims.get("a") or claims.get("accountID")
         tunnel_id = claims.get("t") or claims.get("tunnelID")
     except Exception:
-        return None, "tunnel token ผิดรูปแบบ (ควรเป็น eyJ... ยาว ๆ จากหน้า Zero Trust)"
+        return None, i18n.t(lang, "tunnel.token_bad_format")
     if not account_id or not tunnel_id:
-        return None, "tunnel token ไม่มี account/tunnel id (token ผิดรูปแบบ?)"
+        return None, i18n.t(lang, "tunnel.token_no_ids")
     return {"account_id": account_id, "tunnel_id": tunnel_id}, ""
 
-def _tunnel_api_error(exc):
+def _tunnel_api_error(exc, lang="th"):
     """แปล error จากการเรียก API tunnel ให้อ่านง่าย — 403 = token ไม่มีสิทธิ์ Tunnel"""
     text = str(exc)
     if "403" in text or "10000" in text:
-        return (
-            "API token ไม่มีสิทธิ์จัดการ Tunnel (403) — ไปที่ dash.cloudflare.com → My Profile → API Tokens → "
-            "Edit token ที่ใช้ → เพิ่มสิทธิ์ Account → Cloudflare Tunnel → Edit แล้วลองใหม่"
-        )
+        return i18n.t(lang, "tunnel.api_token_no_tunnel_perm")
     return text
 
 
@@ -326,6 +325,14 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 return True
         return False
 
+    def _lang(self):
+        """ภาษาของ request นี้: cookie cfddns_lang -> Accept-Language -> th"""
+        return i18n.detect_lang(self.headers.get("Cookie", ""), self.headers.get("Accept-Language", ""))
+
+    def _t(self, key, **vars):
+        """แปลข้อความตามภาษาของ request (ใช้แทน string ไทยใน response message)"""
+        return i18n.t(self._lang(), key, **vars)
+
     def _origin_allowed(self):
         """กัน CSRF: browser cross-site ส่ง Origin เสมอ — ถ้ามี Origin ต้องตรงกับ host ของเรา.
 
@@ -346,7 +353,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
         except Exception:
             log.exception("do_GET เกิดข้อผิดพลาด (%s) — ตอบ 500", self.path)
             try:
-                return self._send_json(500, {"ok": False, "message": "เกิดข้อผิดพลาดภายใน — ดู log (แถบ Log ล่าสุด) เพื่อรายละเอียด"})
+                return self._send_json(500, {"ok": False, "message": self._t("err.internal")})
             except Exception:
                 return None
 
@@ -356,10 +363,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
             import concurrent.futures
 
+            lang = self._lang()
             now = time.time()
-            if not _nat_cache["result"] or now - _nat_cache["at"] > NAT_CACHE_TTL:
-                _nat_cache["at"] = now
-
+            cached = _nat_cache.get(lang)
+            if not cached or now - cached["at"] > NAT_CACHE_TTL:
                 def check(version):
                     return version, ip_detect.get_public_ip(version, timeout=6)
 
@@ -370,18 +377,19 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         version, ip = future.result()
                         result["ipv4" if version == 4 else "ipv6"] = ip or ""
                 if result["ipv4"]:
-                    result["nat"] = ip_detect.nat_report(result["ipv4"], timeout=5)
-                _nat_cache["result"] = result
-            return self._send_json(200, _nat_cache["result"])
+                    result["nat"] = ip_detect.nat_report(result["ipv4"], timeout=5, lang=lang)
+                _nat_cache[lang] = {"at": now, "result": result}
+                return self._send_json(200, result)
+            return self._send_json(200, cached["result"])
 
         if self.path == "/notify-queue":
             if not self._authed():
-                return self._send_json(401, {"ok": False, "message": "unauthorized"})
+                return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
             return self._send_json(200, {"ok": True, "queue": notifier.load_queue(config_mod.queue_path_for(self.server.config_path))})
 
         if self.path.split("?", 1)[0] == "/log":
             if not self._authed():
-                return self._send_json(401, {"ok": False, "message": "unauthorized"})
+                return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
             import os
 
             log_path = os.path.join(self.cfg.log_dir, "cloudflare-ddns.log")
@@ -391,11 +399,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 body = "".join(lines[-200:])
                 return self._send(200, body, "text/plain; charset=utf-8")
             except OSError as exc:
-                return self._send(200, f"(ยังไม่มีไฟล์ log: {exc})", "text/plain; charset=utf-8")
+                return self._send(200, self._t("log.none", exc=exc), "text/plain; charset=utf-8")
 
         if self.path == "/status.json":
             if not self._authed():
-                return self._send_json(401, {"ok": False, "message": "unauthorized"})
+                return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
             engine = ddns.DDNSEngine(self.server.config_path)
             status = engine.status()
             # records_time ต้องตรงกับ records ที่ filter แล้ว (record ถูกลบจาก config = ไม่โชว์)
@@ -442,12 +450,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
         if self.path == "/config.json":
             if not self._authed():
-                return self._send_json(401, {"ok": False, "message": "unauthorized"})
+                return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
             return self._send_json(200, _cfg_to_dict(self.cfg))
 
         if self.path == "/config-file":
             if not self._authed():
-                return self._send_json(401, {"ok": False, "message": "unauthorized"})
+                return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
             return self._send(200, self.cfg.raw_text(), "text/plain; charset=utf-8")
 
         if self.path == "/setup-state":
@@ -456,7 +464,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
         if self.path == "/update-check":
             """เช็คเวอร์ชันใหม่จาก GitHub Releases (cache 6 ชม.)"""
-            return self._send_json(200, _update_check_data())
+            return self._send_json(200, _update_check_data(lang=self._lang()))
 
         if self.path == "/webui.js":
             # JavaScript หน้าเว็บ (แยกไฟล์ — static ไม่ต้อง login เพราะไม่มีข้อมูลลับ)
@@ -494,7 +502,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
         except Exception:
             log.exception("do_POST เกิดข้อผิดพลาด (%s) — ตอบ 500", self.path)
             try:
-                return self._send_json(500, {"ok": False, "message": "เกิดข้อผิดพลาดภายใน — ดู log (แถบ Log ล่าสุด) เพื่อรายละเอียด (ข้อมูลบางส่วนอาจถูกบันทึกไปแล้ว — ตรวจอีกครั้ง)"})
+                return self._send_json(500, {"ok": False, "message": self._t("err.internal_partial")})
             except Exception:
                 return None
 
@@ -506,7 +514,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             log.warning("บล็อกคำขอข้ามไซต์ (CSRF): Origin=%r path=%s", self.headers.get("Origin"), self.path)
             return self._send_json(
                 403,
-                {"ok": False, "message": "คำขอถูกปฏิเสธ (Origin ของเบราว์เซอร์ไม่ตรงกับหน้าเว็บนี้)"},
+                {"ok": False, "message": self._t("err.csrf")},
             )
 
         if self.path == "/login":
@@ -518,7 +526,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 log.warning("login โดนล็อกชั่วคราว (รหัสผิดบ่อย) — เหลือ %d วิ", remain)
                 return self._send_json(
                     429,
-                    {"ok": False, "message": f"พยายามเข้าสู่ระบบบ่อยเกินไป — ล็อกชั่วคราว รออีก {remain} วิ"},
+                    {"ok": False, "message": self._t("login.locked", remain=remain)},
                 )
             form = dict(__import__("urllib.parse", fromlist=["parse_qsl"]).parse_qsl(body))
             stored = self.cfg.webui_password
@@ -546,12 +554,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 _login_guard["locked_until"] = now + _LOGIN_LOCK_SECONDS
                 _login_guard["fails"] = 0
                 log.warning("login ผิด %d ครั้งติดต่อกัน — ล็อกชั่วคราว %d นาที", _LOGIN_MAX_FAILS, _LOGIN_LOCK_SECONDS // 60)
-            return self._send_json(401, {"ok": False, "message": "รหัสผ่านไม่ถูกต้อง"})
+            return self._send_json(401, {"ok": False, "message": self._t("login.wrong")})
 
         if self.path == "/log-clear":
             """ล้างไฟล์ log (ผู้ใช้กดปุ่ม "ล้าง log") — ต้อง login"""
             if not self._authed():
-                return self._send_json(401, {"ok": False, "message": "unauthorized"})
+                return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
             import os
 
             log_path = os.path.join(self.cfg.log_dir, "cloudflare-ddns.log")
@@ -559,9 +567,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 with open(log_path, "w", encoding="utf-8"):
                     pass
             except OSError as exc:
-                return self._send_json(400, {"ok": False, "message": f"ล้าง log ไม่ได้: {exc}"})
+                return self._send_json(400, {"ok": False, "message": self._t("log.clear_fail", exc=exc)})
             log.info("ล้าง log ไฟล์แล้ว (ปุ่มล้าง log ในเว็บ)")
-            return self._send_json(200, {"ok": True, "message": "ล้าง log แล้ว"})
+            return self._send_json(200, {"ok": True, "message": self._t("log.clear_ok")})
 
         if self.path == "/log-event":
             """รับ error จากฝั่งหน้าเว็บ (JS) มาเขียนลงไฟล์ log — เปิดเสมอ ไม่ต้อง login"""
@@ -576,7 +584,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             return self._send_json(200, {"ok": True})
 
         if not self._authed():
-            return self._send_json(401, {"ok": False, "message": "unauthorized"})
+            return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
 
         if self.path == "/verify-token":
             from . import cloudflare_api
@@ -584,10 +592,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
             except ValueError:
-                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+                return self._send_json(400, {"ok": False, "message": self._t("err.json_bad")})
             token = str(data.get("token", "")).strip()
             if not token:
-                return self._send_json(400, {"ok": False, "message": "ไม่พบ token"})
+                return self._send_json(400, {"ok": False, "message": self._t("token.missing")})
             api = cloudflare_api.CloudflareAPI(token)
             try:
                 api.verify_token()
@@ -603,10 +611,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
             except ValueError:
-                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+                return self._send_json(400, {"ok": False, "message": self._t("err.json_bad")})
             token = str(data.get("bot_token", "")).strip()
             if not token:
-                return self._send_json(400, {"ok": False, "message": "ไม่พบ bot token"})
+                return self._send_json(400, {"ok": False, "message": self._t("token.missing_bot")})
             chat_id, error = notifier.get_chat_id(token)
             if not chat_id:
                 return self._send_json(400, {"ok": False, "message": error})
@@ -616,25 +624,25 @@ class WebUIHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
             except ValueError:
-                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+                return self._send_json(400, {"ok": False, "message": self._t("err.json_bad")})
             notify = notifier.TelegramNotifier(
                 str(data.get("bot_token", "")).strip(),
                 str(data.get("chat_id", "")).strip(),
                 config_path=self.server.config_path,
             )
             ok, error = notify.send_raw(str(data.get("text", "ทดสอบ")))
-            return self._send_json(200 if ok else 400, {"ok": ok, "message": error or "ส่งสำเร็จ"})
+            return self._send_json(200 if ok else 400, {"ok": ok, "message": error or self._t("chatid.notify_sent")})
 
         if self.path == "/heartbeat-test":
             results = heartbeat.send_test(self.cfg)
             if not results:
                 return self._send_json(
                     400,
-                    {"ok": False, "message": "ยังไม่ได้ตั้งค่า Healthchecks/Kuma URL — ตั้งในฟอร์มก่อนแล้วลองใหม่"},
+                    {"ok": False, "message": self._t("heartbeat.not_set")},
                 )
             ok = all(r["ok"] for r in results)
             detail = " · ".join(
-                "{}: {}".format(r["name"], "สำเร็จ" if r["ok"] else "ล้มเหลว ({})".format(r["error"]))
+                self._t("heartbeat.detail_ok", name=r["name"]) if r["ok"] else self._t("heartbeat.detail_fail", name=r["name"], error=r["error"])
                 for r in results
             )
             return self._send_json(200 if ok else 400, {"ok": ok, "message": detail})
@@ -645,20 +653,20 @@ class WebUIHandler(BaseHTTPRequestHandler):
             current = tunnel_mod.cloudflared_version(self.cfg)
             latest = tunnel_mod.latest_release()
             if not latest:
-                return self._send_json(400, {"ok": False, "message": "เช็คเวอร์ชันล่าสุดไม่ได้ (เน็ต?) — ลองใหม่ภายหลัง"})
+                return self._send_json(400, {"ok": False, "message": self._t("update.check_fail")})
             if current and current == latest:
-                message = f"cloudflared เป็นเวอร์ชันล่าสุดแล้ว ({latest})"
+                message = self._t("update.tunnel_latest", latest=latest)
             elif current:
-                message = f"มีเวอร์ชันใหม่: {current} → {latest} (กด 'อัปเดต cloudflared' ในหน้านี้)"
+                message = self._t("update.tunnel_new", current=current, latest=latest)
             else:
-                message = f"ยังไม่ได้ติดตั้ง cloudflared — เวอร์ชันล่าสุด: {latest}"
+                message = self._t("update.tunnel_none", latest=latest)
             return self._send_json(200, {"ok": True, "message": message, "current": current, "latest": latest})
 
         if self.path == "/save-file":
             try:
                 data = json.loads(body)
             except ValueError:
-                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+                return self._send_json(400, {"ok": False, "message": self._t("err.json_bad")})
             ok, message = self.cfg.save_text(str(data.get("text", "")))
             return self._send_json(200 if ok else 400, {"ok": ok, "message": message})
 
@@ -668,13 +676,13 @@ class WebUIHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
             except ValueError:
-                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+                return self._send_json(400, {"ok": False, "message": self._t("err.json_bad")})
             token = str(data.get("token") or "").strip() or self.cfg.api_token
             zone = str(data.get("zone") or "").strip()
             if not token:
-                return self._send_json(400, {"ok": False, "message": "ไม่พบ token (ตั้งค่า Cloudflare ก่อน)"})
+                return self._send_json(400, {"ok": False, "message": self._t("token.missing_api")})
             if not zone:
-                return self._send_json(400, {"ok": False, "message": "ไม่พบ zone"})
+                return self._send_json(400, {"ok": False, "message": self._t("zone.missing")})
             api = cloudflare_api.CloudflareAPI(token)
             try:
                 zone_id = api.get_zone_id(zone)
@@ -693,25 +701,25 @@ class WebUIHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
             except ValueError:
-                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+                return self._send_json(400, {"ok": False, "message": self._t("err.json_bad")})
             host = str(data.get("host", "")).strip().rstrip(".")
             allowed = {fqdn_name(rec.name, rec.zone).lower() for rec in self.cfg.records}
             if host.lower() not in allowed:
                 return self._send_json(
                     403,
-                    {"ok": False, "message": "อนุญาตให้สแกนเฉพาะ host ที่ตั้งไว้ใน config เท่านั้น"},
+                    {"ok": False, "message": self._t("port.scan_forbidden")},
                 )
             try:
                 ports = [int(p) for p in (data.get("ports") or DEFAULT_SCAN_PORTS)]
                 ports = [p for p in ports if 1 <= p <= 65535]
             except (TypeError, ValueError):
-                return self._send_json(400, {"ok": False, "message": "รายการพอร์ตไม่ถูกต้อง (คั่นด้วย ,)"})
+                return self._send_json(400, {"ok": False, "message": self._t("port.bad_list")})
             if not ports:
-                return self._send_json(400, {"ok": False, "message": "ไม่มีพอร์ตให้สแกน"})
+                return self._send_json(400, {"ok": False, "message": self._t("port.none")})
             try:
                 ip = socket.gethostbyname(host)
             except socket.gaierror as exc:
-                return self._send_json(400, {"ok": False, "message": f"resolve {host} ไม่ได้: {exc}"})
+                return self._send_json(400, {"ok": False, "message": self._t("port.resolve_fail", host=host, exc=exc)})
 
             def _probe(port):
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -737,18 +745,18 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
         if self.path == "/notify-queue/flush":
             if not self._authed():
-                return self._send_json(401, {"ok": False, "message": "unauthorized"})
+                return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
             notify = notifier.TelegramNotifier.from_config(self.cfg)
             if not notify.enabled:
-                return self._send_json(400, {"ok": False, "message": "ยังไม่ได้ตั้งค่า Telegram ใน config"})
+                return self._send_json(400, {"ok": False, "message": self._t("queue.telegram_not_set")})
             sent, failed = notify.flush()
             return self._send_json(200, {"ok": True, "sent": sent, "failed": failed})
 
         if self.path == "/notify-queue/clear":
             if not self._authed():
-                return self._send_json(401, {"ok": False, "message": "unauthorized"})
+                return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
             notifier.clear_queue(config_mod.queue_path_for(self.server.config_path))
-            return self._send_json(200, {"ok": True, "message": "ล้างคิวแล้ว"})
+            return self._send_json(200, {"ok": True, "message": self._t("queue.clear_ok")})
 
         if self.path == "/tunnel/test":
             import copy
@@ -757,10 +765,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
             except ValueError:
-                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+                return self._send_json(400, {"ok": False, "message": self._t("err.json_bad")})
             token = str(data.get("token", "")).strip()
             if not token:
-                return self._send_json(400, {"ok": False, "message": "กรุณาวาง tunnel token ก่อน"})
+                return self._send_json(400, {"ok": False, "message": self._t("tunnel.token_paste_first")})
             test_cfg = copy.copy(self.cfg)
             test_cfg.tunnel_token = token
             test_cfg.tunnel_enabled = True
@@ -771,10 +779,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
             still_running = _get_tunnel_mgr(self.server.config_path).status(test_cfg)["running"]
             _get_tunnel_mgr(self.server.config_path).stop()
             if still_running:
-                return self._send_json(200, {"ok": True, "message": "token ใช้ได้ — tunnel เชื่อมต่อ Cloudflare แล้ว (หยุดชั่วคราว รอขั้นตอนสุดท้าย)"})
+                return self._send_json(200, {"ok": True, "message": self._t("tunnel.test_ok")})
             return self._send_json(
                 400,
-                {"ok": False, "message": "token ตรวจไม่ผ่าน — cloudflared เชื่อมต่อไม่ได้ (ตรวจ token/อินเทอร์เน็ต/ไฟร์วอลล์)"},
+                {"ok": False, "message": self._t("tunnel.test_fail")},
             )
 
         if self.path == "/tunnel/zones":
@@ -783,10 +791,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
             except ValueError:
-                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+                return self._send_json(400, {"ok": False, "message": self._t("err.json_bad")})
             token = str(data.get("token") or "").strip() or self.cfg.api_token
             if not token:
-                return self._send_json(400, {"ok": False, "message": "ไม่พบ API token (ตั้งค่า Cloudflare ก่อน)"})
+                return self._send_json(400, {"ok": False, "message": self._t("token.missing_api")})
             api = _cf_api.CloudflareAPI(token)
             try:
                 zones = [z["name"] for z in api.list_zones()]
@@ -800,7 +808,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
             except ValueError:
-                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+                return self._send_json(400, {"ok": False, "message": self._t("err.json_bad")})
             token = str(data.get("token") or "").strip()
             hostname = str(data.get("hostname") or "").strip().rstrip(".")
             path = str(data.get("path") or "").strip()
@@ -811,14 +819,14 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 protocol = "http"
             service = str(data.get("service") or "").strip()
             if not service:
-                return self._send_json(400, {"ok": False, "message": "กรุณาระบุบริการ/พอร์ต เช่น http://localhost:8080 หรือ tcp://localhost:22"})
+                return self._send_json(400, {"ok": False, "message": self._t("tunnel.need_service")})
             if not token:
-                return self._send_json(400, {"ok": False, "message": "ไม่พบ tunnel token"})
+                return self._send_json(400, {"ok": False, "message": self._t("tunnel.token_missing")})
             if not hostname:
-                return self._send_json(400, {"ok": False, "message": "กรุณาระบุ hostname เช่น app.โดเมน.com"})
+                return self._send_json(400, {"ok": False, "message": self._t("tunnel.need_hostname")})
 
             # 1. แกะ account_id + tunnel_id จาก tunnel token (JWT payload)
-            ids, error = _decode_tunnel_token(token)
+            ids, error = _decode_tunnel_token(token, lang=self._lang())
             if error:
                 return self._send_json(400, {"ok": False, "message": error})
             account_id, tunnel_id = ids["account_id"], ids["tunnel_id"]
@@ -826,10 +834,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
             # 1.5 ตรวจชื่อชนกับ DDNS ก่อน (Cloudflare ห้าม A/AAAA กับ CNAME ซ้ำชื่อกัน)
             domain = hostname.split(".", 1)[1] if "." in hostname else ""
             if not domain:
-                return self._send_json(400, {"ok": False, "message": "hostname ไม่ถูกต้อง (ต้องเป็น app.โดเมน.com)"})
+                return self._send_json(400, {"ok": False, "message": self._t("tunnel.hostname_invalid")})
             api_token = str(data.get("api_token") or "").strip() or self.cfg.api_token
             if not api_token:
-                return self._send_json(400, {"ok": False, "message": "ไม่พบ API token สำหรับแก้ DNS (ตั้งค่า Cloudflare ก่อน)"})
+                return self._send_json(400, {"ok": False, "message": self._t("token.missing_api_dns")})
             api = _cf_api.CloudflareAPI(api_token)
             try:
                 zone_id = api.get_zone_id(domain)
@@ -847,7 +855,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         },
                     )
             except _cf_api.CloudflareError as exc:
-                return self._send_json(400, {"ok": False, "message": f"ตรวจ DNS record ไม่ได้: {exc}"})
+                return self._send_json(400, {"ok": False, "message": self._t("tunnel.conflict_check_fail", exc=exc)})
 
             # 2. ตั้ง ingress (public hostname) ใน tunnel config
             try:
@@ -875,7 +883,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             except _cf_api.CloudflareError as exc:
                 return self._send_json(
                     400,
-                    {"ok": False, "message": f"ตั้งค่า tunnel config ไม่ได้: {_tunnel_api_error(exc)}"},
+                    {"ok": False, "message": self._t("tunnel.config_write_fail", error=_tunnel_api_error(exc, lang=self._lang()))},
                 )
 
             # 3. สร้าง/แก้ CNAME record ชี้ไป tunnel
@@ -884,18 +892,18 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 cname_content = f"{tunnel_id}.cfargotunnel.com"
                 if existing:
                     api.update_record(zone_id, existing["id"], cname_content, 1, True)
-                    action = "อัปเดต"
+                    action = self._t("tunnel.record_update")
                 else:
                     api.create_record(zone_id, hostname, "CNAME", cname_content, 1, True)
-                    action = "สร้าง"
+                    action = self._t("tunnel.record_create")
             except _cf_api.CloudflareError as exc:
-                return self._send_json(400, {"ok": False, "message": f"สร้าง DNS record ไม่ได้: {exc}"})
+                return self._send_json(400, {"ok": False, "message": self._t("tunnel.record_create_fail", exc=exc)})
 
             return self._send_json(
                 200,
                 {
                     "ok": True,
-                    "message": f"{action} record แล้ว: {hostname}{path} → {tunnel_id}.cfargotunnel.com (เข้าผ่าน https://{hostname}{path})",
+                    "message": self._t("tunnel.bound_ok", action=action, hostname=hostname, path=path, tunnel_id=tunnel_id),
                     "hostname": hostname,
                 },
             )
@@ -906,11 +914,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
             except ValueError:
-                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+                return self._send_json(400, {"ok": False, "message": self._t("err.json_bad")})
             token = str(data.get("token") or "").strip()
             if not token:
-                return self._send_json(400, {"ok": False, "message": "ไม่พบ tunnel token"})
-            ids, error = _decode_tunnel_token(token)
+                return self._send_json(400, {"ok": False, "message": self._t("tunnel.token_missing")})
+            ids, error = _decode_tunnel_token(token, lang=self._lang())
             if error:
                 return self._send_json(400, {"ok": False, "message": error})
             api_token = str(data.get("api_token") or "").strip() or self.cfg.api_token
@@ -919,7 +927,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 result = api._request("GET", f"/accounts/{ids['account_id']}/cfd_tunnel/{ids['tunnel_id']}/configurations")
                 ingress = ((result or {}).get("config") or {}).get("ingress", [])
             except _cf_api.CloudflareError as exc:
-                return self._send_json(400, {"ok": False, "message": f"อ่าน tunnel config ไม่ได้: {_tunnel_api_error(exc)}"})
+                return self._send_json(400, {"ok": False, "message": self._t("tunnel.read_fail", error=_tunnel_api_error(exc, lang=self._lang()))})
             hostnames = []
             for r in ingress:
                 if not r.get("hostname"):
@@ -942,17 +950,17 @@ class WebUIHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
             except ValueError:
-                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+                return self._send_json(400, {"ok": False, "message": self._t("err.json_bad")})
             token = str(data.get("token") or "").strip()
             hostname = str(data.get("hostname") or "").strip().rstrip(".")
             path = str(data.get("path") or "").strip()
             if path and not path.startswith("/"):
                 path = "/" + path
             if not token:
-                return self._send_json(400, {"ok": False, "message": "ไม่พบ tunnel token"})
+                return self._send_json(400, {"ok": False, "message": self._t("tunnel.token_missing")})
             if not hostname:
-                return self._send_json(400, {"ok": False, "message": "ไม่พบ hostname ที่จะลบ"})
-            ids, error = _decode_tunnel_token(token)
+                return self._send_json(400, {"ok": False, "message": self._t("tunnel.unbind_no_hostname")})
+            ids, error = _decode_tunnel_token(token, lang=self._lang())
             if error:
                 return self._send_json(400, {"ok": False, "message": error})
             api_token = str(data.get("api_token") or "").strip() or self.cfg.api_token
@@ -965,14 +973,14 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     if not (r.get("hostname") == hostname and (r.get("path") or "") == path)
                 ]
                 if len(remaining) == len(ingress):
-                    return self._send_json(400, {"ok": False, "message": f"ไม่พบ {hostname}{path} ใน tunnel config"})
+                    return self._send_json(400, {"ok": False, "message": self._t("tunnel.unbind_not_found", hostname=hostname, path=path)})
                 api._request(
                     "PUT",
                     f"/accounts/{ids['account_id']}/cfd_tunnel/{ids['tunnel_id']}/configurations",
                     {"config": {"ingress": remaining}},
                 )
             except _cf_api.CloudflareError as exc:
-                return self._send_json(400, {"ok": False, "message": f"ลบออกจาก tunnel config ไม่ได้: {_tunnel_api_error(exc)}"})
+                return self._send_json(400, {"ok": False, "message": self._t("tunnel.unbind_fail", error=_tunnel_api_error(exc, lang=self._lang()))})
             # ลบ CNAME เฉพาะเมื่อไม่มี rule อื่นของ hostname นี้เหลืออยู่
             still_used = any(r.get("hostname") == hostname for r in remaining)
             if not still_used:
@@ -984,10 +992,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         if rec:
                             api.delete_record(zone_id, rec["id"])
                     except _cf_api.CloudflareError as exc:
-                        return self._send_json(400, {"ok": False, "message": f"ลบ DNS record ไม่ได้: {exc}"})
+                        return self._send_json(400, {"ok": False, "message": self._t("tunnel.unbind_dns_fail", exc=exc)})
             return self._send_json(
                 200,
-                {"ok": True, "message": f"เลิกผูก {hostname}{path} แล้ว" + ("" if still_used else " (ลบ CNAME record ด้วย)")},
+                {"ok": True, "message": self._t("tunnel.unbound_ok_del_cname", hostname=hostname, path=path) if not still_used else self._t("tunnel.unbound_ok", hostname=hostname, path=path)},
             )
 
         if self.path == "/tunnel/sync":
@@ -997,11 +1005,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
             except ValueError:
-                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+                return self._send_json(400, {"ok": False, "message": self._t("err.json_bad")})
             token = str(data.get("token") or "").strip() or self.cfg.tunnel_token
             if not token:
-                return self._send_json(400, {"ok": False, "message": "ไม่พบ tunnel token (ตั้งค่าในฟอร์ม/ wizard ก่อน)"})
-            ids, error = _decode_tunnel_token(token)
+                return self._send_json(400, {"ok": False, "message": self._t("tunnel.token_needs_setup")})
+            ids, error = _decode_tunnel_token(token, lang=self._lang())
             if error:
                 return self._send_json(400, {"ok": False, "message": error})
             api = _cf_api.CloudflareAPI(self.cfg.api_token)
@@ -1009,7 +1017,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 result = api._request("GET", f"/accounts/{ids['account_id']}/cfd_tunnel/{ids['tunnel_id']}/configurations")
                 ingress = ((result or {}).get("config") or {}).get("ingress", [])
             except _cf_api.CloudflareError as exc:
-                return self._send_json(400, {"ok": False, "message": f"อ่าน tunnel config ไม่ได้: {_tunnel_api_error(exc)}"})
+                return self._send_json(400, {"ok": False, "message": self._t("tunnel.read_fail", error=_tunnel_api_error(exc, lang=self._lang()))})
             hosts = []
             for r in ingress:
                 if not r.get("hostname"):
@@ -1028,7 +1036,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             ok, message = self.cfg.save_text(_dict_to_ini(payload, self.server.config_path))
             if not ok:
                 return self._send_json(400, {"ok": False, "message": message})
-            return self._send_json(200, {"ok": True, "message": f"ซิงค์แล้ว — บันทึก hostname {len(hosts)} รายการลง config", "hostnames": hosts})
+            return self._send_json(200, {"ok": True, "message": self._t("tunnel.sync_ok", count=len(hosts)), "hostnames": hosts})
 
         if self.path == "/tunnel/start":
             ok, message = _get_tunnel_mgr(self.server.config_path).start(self.cfg)
@@ -1052,7 +1060,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     400,
                     {
                         "ok": False,
-                        "message": "ไม่มีสิทธิ์ admin — เปิด webui จาก cmd/exe ที่รันเป็น admin (หรือติดตั้งเป็น service แล้วควบคุมจากเว็บนี้)",
+                        "message": self._t("service.no_admin"),
                     },
                 )
             if self.path == "/service/install":
@@ -1068,16 +1076,16 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         },
                     )
                 if service_mod.service_status().get("installed"):
-                    return self._send_json(400, {"ok": False, "message": "service ติดตั้งอยู่แล้ว — ใช้ปุ่ม Restart หรือถอนก่อนถ้าอยากติดตั้งใหม่"})
+                    return self._send_json(400, {"ok": False, "message": self._t("service.already_installed")})
                 try:
                     message = service_mod.install_service()
                 except Exception as exc:
-                    return self._send_json(400, {"ok": False, "message": f"ติดตั้งไม่ได้: {exc}"})
-                return self._send_json(200, {"ok": True, "message": message + " — กด Restart service เพื่อเริ่ม"})
+                    return self._send_json(400, {"ok": False, "message": self._t("service.install_fail", exc=exc)})
+                return self._send_json(200, {"ok": True, "message": self._t("service.install_ok", message=message)})
             if self.path == "/service/uninstall":
                 svc = service_mod.service_status()
                 if not svc.get("installed"):
-                    return self._send_json(400, {"ok": False, "message": "ยังไม่ได้ติดตั้ง service"})
+                    return self._send_json(400, {"ok": False, "message": self._t("service.not_installed")})
                 if svc.get("state") in ("running", "starting", "stopping"):
                     return self._send_json(
                         400,
@@ -1093,23 +1101,23 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 try:
                     message = service_mod.remove_service()
                 except Exception as exc:
-                    return self._send_json(400, {"ok": False, "message": f"ถอนไม่ได้: {exc}"})
+                    return self._send_json(400, {"ok": False, "message": self._t("service.remove_fail", exc=exc)})
                 return self._send_json(200, {"ok": True, "message": message})
             if self.path == "/service/start":
                 svc = service_mod.service_status()
                 if not svc.get("installed"):
-                    return self._send_json(400, {"ok": False, "message": "ยังไม่ได้ติดตั้ง service — กด 'ติดตั้ง service' ก่อน"})
+                    return self._send_json(400, {"ok": False, "message": self._t("service.not_installed_start")})
                 if svc.get("state") in ("running", "starting"):
-                    return self._send_json(400, {"ok": False, "message": "service กำลังทำงานอยู่แล้ว"})
+                    return self._send_json(400, {"ok": False, "message": self._t("service.already_running")})
                 try:
                     message = service_mod.start_service()
                 except Exception as exc:
-                    return self._send_json(400, {"ok": False, "message": f"เริ่มไม่ได้: {exc}"})
+                    return self._send_json(400, {"ok": False, "message": self._t("service.start_fail", exc=exc)})
                 return self._send_json(200, {"ok": True, "message": message})
             if self.path == "/service/stop":
                 svc = service_mod.service_status()
                 if not svc.get("installed"):
-                    return self._send_json(400, {"ok": False, "message": "ยังไม่ได้ติดตั้ง service"})
+                    return self._send_json(400, {"ok": False, "message": self._t("service.not_installed")})
                 if _in_service():
                     return self._send_json(
                         400,
@@ -1124,7 +1132,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 try:
                     message = service_mod.stop_service()
                 except Exception as exc:
-                    return self._send_json(400, {"ok": False, "message": f"หยุดไม่ได้: {exc}"})
+                    return self._send_json(400, {"ok": False, "message": self._t("service.stop_fail", exc=exc)})
                 return self._send_json(200, {"ok": True, "message": message})
             # restart: ต้องสั่งผ่าน process ภายนอก (cmd.exe) ทั้งชุด stop+start —
             # ถ้าเรียก stop จาก thread ในตัวเอง กระบวนการตายก่อน start รัน -> service ค้าง
@@ -1146,14 +1154,14 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     log.warning("restart service ไม่ได้: %s", exc)
 
             if not service_mod.service_status().get("installed"):
-                return self._send_json(400, {"ok": False, "message": "ยังไม่ได้ติดตั้ง service — กด 'ติดตั้ง service' ก่อน"})
+                return self._send_json(400, {"ok": False, "message": self._t("service.not_installed_start")})
             threading.Thread(target=_do_restart, daemon=True).start()
-            return self._send_json(200, {"ok": True, "message": "กำลัง restart service — หน้าเว็บจะหลุดชั่วครู่ แล้วกลับมาเอง"})
+            return self._send_json(200, {"ok": True, "message": self._t("service.restart_started")})
 
         if self.path == "/ddns-run":
             """รันรอบ DDNS เลย (ไม่รอรอบถัดไป) — รันใน thread กัน handler ค้าง"""
             if _ddns_busy["running"]:
-                return self._send_json(400, {"ok": False, "message": "กำลังตรวจรอบก่อนหน้าอยู่ ยังไม่เสร็จ — รอสักครู่แล้วลองใหม่"})
+                return self._send_json(400, {"ok": False, "message": self._t("ddns.busy")})
             _ddns_busy["running"] = True
 
             def _do_run():
@@ -1166,7 +1174,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     _ddns_busy["running"] = False
 
             threading.Thread(target=_do_run, daemon=True).start()
-            return self._send_json(200, {"ok": True, "message": "กำลังตรวจ DDNS — สถานะจะอัปเดตให้อัตโนมัติ"})
+            return self._send_json(200, {"ok": True, "message": self._t("ddns.running")})
 
         if self.path == "/open-data-folder":
             import os
@@ -1189,14 +1197,14 @@ class WebUIHandler(BaseHTTPRequestHandler):
             try:
                 os.startfile(path)
             except Exception as exc:
-                return self._send_json(400, {"ok": False, "message": f"เปิดโฟลเดอร์ไม่ได้: {exc}"})
-            return self._send_json(200, {"ok": True, "path": path, "message": f"เปิดโฟลเดอร์ข้อมูลแล้ว ({path})"})
+                return self._send_json(400, {"ok": False, "message": self._t("folder.open_fail", exc=exc)})
+            return self._send_json(200, {"ok": True, "path": path, "message": self._t("folder.open_ok", path=path)})
 
         if self.path == "/save-config":
             try:
                 data = json.loads(body)
             except ValueError:
-                return self._send_json(400, {"ok": False, "message": "JSON ผิดรูปแบบ"})
+                return self._send_json(400, {"ok": False, "message": self._t("err.json_bad")})
             # เติม field ที่ client ไม่ได้ส่งจาก config ปัจจุบัน (กันบันทึกแล้วข้อมูลหาย
             # เช่น client/เวอร์ชันเก่า, wizard ที่ payload ไม่ครบ)
             if isinstance(data, dict):
@@ -1211,14 +1219,14 @@ class WebUIHandler(BaseHTTPRequestHandler):
         if self.path == "/notify-test":
             notify = notifier.TelegramNotifier.from_config(self.cfg)
             if not notify.enabled:
-                return self._send_json(400, {"ok": False, "message": "ยังไม่ได้ตั้งค่า Telegram ใน config"})
-            ok, error = notify.send_raw("✅ ทดสอบการแจ้งเตือนจาก Cloudflare DDNS (Web UI)")
-            return self._send_json(200 if ok else 500, {"ok": ok, "message": error or "ส่งสำเร็จ — ตรวจใน Telegram"})
+                return self._send_json(400, {"ok": False, "message": self._t("queue.telegram_not_set")})
+            ok, error = notify.send_raw(self._t("notify_test.text"))
+            return self._send_json(200 if ok else 500, {"ok": ok, "message": error or self._t("notify_test.sent")})
 
-        return self._send_json(404, {"ok": False, "message": "ไม่พบ path"})
+        return self._send_json(404, {"ok": False, "message": self._t("err.not_found")})
 
 
-def _update_check_data():
+def _update_check_data(lang="th"):
     """เช็คเวอร์ชันใหม่จาก GitHub Releases (cache 1 ชม.) — คืน dict สำหรับ /update-check + startup/periodic check"""
     now = time.time()
     if _update_cache["time"] and now - _update_cache["time"] < 1 * 3600:
@@ -1246,11 +1254,11 @@ def _update_check_data():
             if release.get("html_url"):
                 data["url"] = release["html_url"]
         else:
-            data["message"] = "ไม่พบ release ล่าสุด (tag ว่าง)"
+            data["message"] = i18n.t(lang, "update.no_release")
     except urllib.error.HTTPError as exc:
-        data["message"] = f"GitHub ตอบ {exc.code} (ไม่มี release/rate limit)"
+        data["message"] = i18n.t(lang, "update.github_err", code=exc.code)
     except Exception as exc:
-        data["message"] = f"เช็คไม่ได้: {exc}"
+        data["message"] = i18n.t(lang, "update.check_err", exc=exc)
     _update_cache.update(time=now, data=data)
     return data
 

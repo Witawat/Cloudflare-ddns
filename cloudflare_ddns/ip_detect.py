@@ -11,6 +11,7 @@ import time
 import urllib.request
 
 from . import config as config_mod
+from . import i18n
 
 PROVIDERS = {
     4: [
@@ -269,7 +270,7 @@ def _stun_stability(rounds=4, timeout=5, delay=0.3):
     return {"ips": sorted(ips), "ports": sorted(ports), "count": n}
 
 
-def nat_report(public_ip=None, timeout=5, trace=True, stun_rounds=4):
+def nat_report(public_ip=None, timeout=5, trace=True, stun_rounds=4, lang="th"):
     """ตรวจสถานะ NAT ของเครื่อง 3 ชั้น: provider IP + tracert (ฮอปแรกหลัง WAN) + STUN ซ้ำ.
 
     คืน dict:
@@ -279,7 +280,7 @@ def nat_report(public_ip=None, timeout=5, trace=True, stun_rounds=4):
         tracert        - list IP ต่อฮอป (Windows tracert) หรือ [] ถ้าใช้ไม่ได้
         stun_rounds    - dict จาก _stun_stability หรือ None
         nat_type       - 'public' | 'cg-nat' | 'private-ip' | 'double-nat' | 'mismatch' | 'unknown'
-        message        - คำอธิบายภาษาไทย
+        message        - คำอธิบายตามภาษา (lang)
     """
     if not public_ip:
         public_ip = get_public_ip(4, timeout=timeout)
@@ -290,7 +291,7 @@ def nat_report(public_ip=None, timeout=5, trace=True, stun_rounds=4):
         "tracert": [],
         "stun_rounds": None,
         "nat_type": "unknown",
-        "message": "ตรวจ NAT ไม่ได้",
+        "message": i18n.t(lang, "nat.unknown"),
     }
     if not public_ip:
         return result
@@ -300,6 +301,7 @@ def nat_report(public_ip=None, timeout=5, trace=True, stun_rounds=4):
         result["stun_ip"], result["stun_port"] = stun
 
     trace_v = None
+    hops = []
     if trace:
         hops = _tracert_hops()
         result["tracert"] = hops or []
@@ -310,22 +312,13 @@ def nat_report(public_ip=None, timeout=5, trace=True, stun_rounds=4):
 
     if is_cgnat_ip(public_ip):
         result["nat_type"] = "cg-nat"
-        result["message"] = (
-            "IP อยู่ในช่วง CGNAT (100.64.0.0/10) — ISP แจก IP ร่วมกันให้หลายบ้าน "
-            "DDNS ไม่สามารถใช้งานได้ ควรใช้ Cloudflare Tunnel หรือ IPv6 แทน"
-        )
+        result["message"] = i18n.t(lang, "nat.cgnat_ip")
     elif is_private_ip(public_ip):
         result["nat_type"] = "private-ip"
-        result["message"] = (
-            "IP ที่ตรวจได้เป็น IP ภายใน (private) — อาจต่อผ่าน VPN/proxy หรือผิดปกติ "
-            "DDNS จะอัปเดต IP นี้ไป ซึ่งไม่ใช่ IP ที่คนนอกเข้าถึงได้"
-        )
+        result["message"] = i18n.t(lang, "nat.private_ip")
     elif trace_v == "cg-nat":
         result["nat_type"] = "cg-nat"
-        result["message"] = (
-            "tracert เห็น 100.64.0.0/10 หลัง WAN ของเราโดยตรง — อยู่หลัง CGNAT ของ ISP "
-            "DDNS ไม่สามารถใช้งานได้ ควรใช้ Cloudflare Tunnel หรือ IPv6 แทน"
-        )
+        result["message"] = i18n.t(lang, "nat.cgnat_trace")
     elif trace_v == "double-nat":
         # นับชั้น NAT ส่วนตัวในบ้าน (private IP ต่อเนื่องตั้งแต่ฮอปแรก — ไม่นับ core ISP หลัง public)
         layers = 1
@@ -336,29 +329,18 @@ def nat_report(public_ip=None, timeout=5, trace=True, stun_rounds=4):
                 break
         result["nat_type"] = "double-nat"
         result["nat_layers"] = layers
-        result["message"] = (
-            f"เป็น NAT ส่วนตัวในบ้าน (ซ้อน {layers} ชั้น) — DDNS ใช้งานได้ตามปกติ"
-        )
+        result["message"] = i18n.t(lang, "nat.double_nat", layers=layers)
     elif stun and result["stun_ip"] and result["stun_ip"] != public_ip:
         result["nat_type"] = "mismatch"
-        result["message"] = (
-            f"IP ที่เห็นจาก provider ({public_ip}) ไม่ตรงกับที่ STUN เห็น ({result['stun_ip']}) "
-            "— สัญญาณว่า IP อาจไม่เสถียร/ผ่านตัวกลางหลายชั้น ตรวจสอบเองเพิ่มเติม"
-        )
+        result["message"] = i18n.t(lang, "nat.mismatch", public=public_ip, stun=result["stun_ip"])
         if port_flips:
-            result["message"] += " และ mapped port เปลี่ยนทุกครั้ง (NAT แบบ dynamic)"
+            result["message"] += i18n.t(lang, "nat.mismatch_dyn")
     elif stun and result["stun_ip"]:
         result["nat_type"] = "public"
-        result["message"] = (
-            "IP สาธารณะตรงปกติ (ไม่มี NAT ซ้อน หรือ NAT แบบ 1:1) — DDNS ใช้งานได้ตามปกติ "
-            "(ถ้ามีเราเตอร์ที่บ้าน อย่าลืมตั้ง port forward สำหรับบริการภายใน)"
-        )
+        result["message"] = i18n.t(lang, "nat.public")
         if port_flips:
-            result["message"] += (
-                " หมายเหตุ: mapped port เปลี่ยนทุกครั้ง (symmetric mapping) — "
-                "port forward ต้องตั้ง static mapping ที่เราเตอร์"
-            )
+            result["message"] += i18n.t(lang, "nat.public_symmetric")
     else:
         result["nat_type"] = "unknown"
-        result["message"] = "ตรวจ STUN ไม่ได้ — IP เป็น public แต่ไม่สามารถยืนยัน NAT ได้"
+        result["message"] = i18n.t(lang, "nat.unknown_stun")
     return result

@@ -2,6 +2,22 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.0.0] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
+
+### เพิ่ม (Features)
+
+- **i18n ไทย/อังกฤษ + ปุ่มสลับภาษา TH/EN ที่หัวหน้าเว็บ**:
+  - หน้าเว็บทั้งหมด 2 ภาษา — ข้อความ static, toast, wizard 2 ตัว (ตั้งค่าแรก + Tunnel), ตาราง, ฟอร์มตั้งค่า, หน้า login
+  - server message (response ทุก endpoint) แปลตาม cookie `cfddns_lang` / `Accept-Language`
+  - auto-detect ครั้งแรกจาก `navigator.language` (ต่างชาติได้ eng อัตโนมัติ, fallback ไทย)
+  - จำภาษาได้หลัง refresh (localStorage + cookie)
+  - วันที่-เวลาแสดง locale ตามภาษา (`th-TH` / `en-GB`)
+  - สถาปัตยกรรม stdlib ล้วน: `i18n.py` + `lang/th.py` + `lang/en.py` ฝั่ง Python, `I18N` dict ฝั่ง JS
+
+### แก้บั๊ก (Fixes)
+
+- **ข้อความตรวจ NAT/CGNAT ยังเป็นไทยค้าง**: `/ip-check` (nat_report) ตอบ message ภาษาไทยเสมอ แม้หน้าเว็บเป็น eng — แก้ให้ `nat_report()` รับ `lang` แล้วแปลตาม (แคช NAT แยกภาษา th/en ด้วย กัน cache ข้ามภาษา)
+
 ## [1.8.4] — 2026-08-17
 
 ### เพิ่ม (Features)
