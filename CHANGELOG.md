@@ -2,6 +2,23 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.1.3] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
+
+### เพิ่ม (Features)
+
+- **Tunnel status ดูปัญหาได้จริง**:
+  - cloudflared เขียน log ไป `tunnel.log` (ข้าง exe) ด้วย `--logfile --loglevel info` (เดิมทิ้ง stderr เงียบ)
+  - `status.json` → `tunnel` เพิ่ม `last_error` (สแกน log หา error ล่าสุด เช่น token ผิด/เชื่อมต่อไม่ได้) + `log_exists`
+  - หน้าเว็บ: ถ้า tunnel เปิดแต่ไม่รัน + มี error → แสดง ⚠ error ใต้ status · ปุ่มใหม่ **"ดู log tunnel"** (toggle แสดง tail 30 บรรทัด)
+  - console `status` แสดง error ล่าสุด + ตำแหน่ง log
+- **รองรับ private hostname ใน UI**: placeholder ฟอร์ม + hint wizard บอกว่าใส่ IP ใน LAN ได้ (`http://192.168.1.50:3000`) · `/tunnel/bind` validate protocol (`http:// https:// tcp:// udp://`) กันพิมพ์มั่ว → Cloudflare reject เงียบ
+
+### เพิ่ม (Tests)
+
+- `tests/test_tunnel.py` ใหม่: log_tail / last_error (5 เทสต์)
+- `TunnelBindValidateTest` (test_webui_security): service protocol ผิด → 400, protocol ถูก → ผ่าน (2 เทสต์)
+- รวม: 126 → 133 เทสต์
+
 ## [2.1.2] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
 
 ### แก้บั๊ก (Fixes)

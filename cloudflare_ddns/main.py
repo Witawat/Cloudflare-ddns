@@ -378,6 +378,10 @@ def cmd_status(args):
               f"cloudflared: {'ติดตั้งแล้ว' if tunnel_status['installed'] else 'ยังไม่ติดตั้ง'} | "
               f"รันอยู่: {'ใช่' if tunnel_status['running'] else 'ไม่'}"
               + (f" (pid {tunnel_status['pid']})" if tunnel_status["pid"] else ""))
+        if tunnel_status.get("last_error"):
+            print(f"  error ล่าสุด: {tunnel_status['last_error']}")
+        if tunnel_status.get("log_exists"):
+            print("  log: ดูได้จากเว็บ (ปุ่ม 'ดู log tunnel') หรือไฟล์ tunnel.log ข้าง exe")
     except Exception as exc:
         log.warning("อ่านสถานะ Cloudflare Tunnel ไม่ได้: %s", exc)
         print(f"  (อ่านสถานะ tunnel ไม่ได้: {exc})")

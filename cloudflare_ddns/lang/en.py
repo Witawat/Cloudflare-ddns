@@ -87,6 +87,11 @@ EN = {
     "tunnel.test_fail": "Token check failed — cloudflared could not connect (check token/network/firewall)",
     "tunnel.sync_ok": "Synced — saved {count} hostnames to config",
     "tunnel.token_needs_setup": "No tunnel token found (set it in the form/wizard first)",
+    "tunnel.service_invalid": "Invalid service/port — must start with http:// https:// tcp:// or udp:// (e.g. http://localhost:8080, http://192.168.1.50:3000 or tcp://10.0.0.5:22)",
+    "tunnel.log_empty": "(no cloudflared log yet — start the tunnel first or wait a moment)",
+    "tunnel.show_log": "View tunnel log",
+    "tunnel.hide_log": "Hide tunnel log",
+    "tunnel.log_title": "cloudflared log (tunnel.log)",
 
     # ---- service ----
     "service.no_admin": "No admin rights — open the web UI from a cmd/exe run as admin (or install as a service and control it from this page)",

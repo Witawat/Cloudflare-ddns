@@ -114,6 +114,8 @@ const I18N = {
     "tunnel.action_start": "เริ่ม tunnel",
     "tunnel.action_stop": "หยุด tunnel",
     "tunnel.action_download": "ดาวน์โหลด",
+    "tunnel.show_log": "ดู log tunnel",
+    "tunnel.log_title": "Log ของ cloudflared (tunnel.log)",
     "tg.test_ok": "ส่งข้อความทดสอบสำเร็จ — ตรวจใน Telegram",
     "tg.test_fail": "ส่งไม่สำเร็จ: {msg}",
     "tg.queue_empty": "คิวว่าง — ไม่มีข้อความค้างส่ง",
@@ -175,7 +177,7 @@ const I18N = {
     "twz.type_tcp": "TCP (เช่น SSH)",
     "twz.type_udp": "UDP (เช่น game/VPN)",
     "twz.service_label": "บริการ/พอร์ต",
-    "twz.service_hint": "💡 เลือกชนิดให้ตรงกับบริการ: <b>HTTP</b> = เว็บธรรมดา (เช่น <span class=\"mono\">http://localhost:8080</span>) · <b>HTTPS</b> = พอร์ต SSL เช่น 443/8443 (ต้องเป็น <span class=\"mono\">https://localhost:443</span> — ถ้าผูกเป็น http จะเจอ \"Bad Request\") · <b>TCP/UDP</b> = SSH/game/VPN (เช่น <span class=\"mono\">tcp://localhost:22</span>)",
+    "twz.service_hint": "💡 เลือกชนิดให้ตรงกับบริการ: <b>HTTP</b> = เว็บธรรมดา (เช่น <span class=\"mono\">http://localhost:8080</span>) · <b>HTTPS</b> = พอร์ต SSL เช่น 443/8443 (ต้องเป็น <span class=\"mono\">https://localhost:443</span> — ถ้าผูกเป็น http จะเจอ \"Bad Request\") · <b>TCP/UDP</b> = SSH/game/VPN (เช่น <span class=\"mono\">tcp://localhost:22</span>) · ใส่ <b>IP ใน LAN</b> ได้ด้วย (private hostname — เช่น <span class=\"mono\">http://192.168.1.50:3000</span>) แต่ cloudflared ต้องอยู่ใน LAN เดียวกับ service",
     "twz.load_records": "เลือกจาก record ที่มีอยู่",
     "twz.bound_title": "ผูกกับ tunnel แล้ว",
     "twz.binding_btn": "ผูกกับ tunnel",
@@ -592,6 +594,8 @@ const I18N = {
     "tunnel.action_start": "Start tunnel",
     "tunnel.action_stop": "Stop tunnel",
     "tunnel.action_download": "Download",
+    "tunnel.show_log": "View tunnel log",
+    "tunnel.log_title": "cloudflared log (tunnel.log)",
     "tg.test_ok": "Test message sent — check Telegram",
     "tg.test_fail": "Could not send: {msg}",
     "tg.queue_empty": "Queue is empty — no pending messages",
@@ -653,7 +657,7 @@ const I18N = {
     "twz.type_tcp": "TCP (e.g. SSH)",
     "twz.type_udp": "UDP (e.g. game/VPN)",
     "twz.service_label": "Service/port",
-    "twz.service_hint": "💡 Match the type to the service: <b>HTTP</b> = plain web (e.g. <span class=\"mono\">http://localhost:8080</span>) · <b>HTTPS</b> = SSL port like 443/8443 (must be <span class=\"mono\">https://localhost:443</span> — binding as http gives \"Bad Request\") · <b>TCP/UDP</b> = SSH/game/VPN (e.g. <span class=\"mono\">tcp://localhost:22</span>)",
+    "twz.service_hint": "💡 Match the type to the service: <b>HTTP</b> = plain web (e.g. <span class=\"mono\">http://localhost:8080</span>) · <b>HTTPS</b> = SSL port like 443/8443 (must be <span class=\"mono\">https://localhost:443</span> — binding as http gives \"Bad Request\") · <b>TCP/UDP</b> = SSH/game/VPN (e.g. <span class=\"mono\">tcp://localhost:22</span>) · <b>LAN IPs</b> work too (private hostname — e.g. <span class=\"mono\">http://192.168.1.50:3000</span>) but cloudflared must be on the same LAN as the service",
     "twz.load_records": "Pick an existing record",
     "twz.bound_title": "Bound to tunnel",
     "twz.binding_btn": "Bind to tunnel",
@@ -1409,9 +1413,31 @@ async function loadTunnelStatus() {
     else if (tun.enabled) parts.push('<span>' + t("tunnel.not_running") + "</span>");
     if (tun.installed && tun.version) parts.push('<span style="color:var(--muted)">cloudflared ' + escapeHtml(tun.version) + "</span>");
     box.innerHTML = parts.join(" · ");
+    const errBox = $("tunnel-err");
+    if (tun.enabled && !tun.running && tun.last_error) {
+      errBox.hidden = false;
+      errBox.textContent = "⚠ " + tun.last_error;
+    } else {
+      errBox.hidden = true;
+    }
   } catch (e) {
     logClientError('loadTunnelStatus', e);
     $("tunnel-status").textContent = t("tunnel.unreadable", { err: e });
+  }
+}
+
+async function tunnelLog() {
+  const box = $("tunnel-logview");
+  const pre = $("tunnel-logpre");
+  if (!box.hidden) { box.hidden = true; return; }
+  box.hidden = false;
+  pre.textContent = t("tunnel.loading");
+  try {
+    const r = await fetch("/tunnel/log?t=" + Date.now());
+    pre.textContent = await r.text();
+    pre.scrollTop = pre.scrollHeight;
+  } catch (e) {
+    pre.textContent = t("log.read_fail", { err: e });
   }
 }
 
@@ -2344,6 +2370,7 @@ $("tunnelStop").addEventListener("click", () => tunnelAction("/tunnel/stop", t("
 $("tunnelDownload").addEventListener("click", () => tunnelAction("/tunnel/download", t("tunnel.action_download")));
 $("tunnelWizard").addEventListener("click", openTunnelWizard);
 $("tunnelHostsBtn").addEventListener("click", tunnelHosts);
+$("tunnelLogBtn").addEventListener("click", tunnelLog);
 $("tunnelAddHost").addEventListener("click", tunnelAddHost);
 $("tunnelSync").addEventListener("click", tunnelSync);
 $("th-bind").addEventListener("click", thBind);

@@ -87,6 +87,11 @@ TH = {
     "tunnel.test_fail": "token ตรวจไม่ผ่าน — cloudflared เชื่อมต่อไม่ได้ (ตรวจ token/อินเทอร์เน็ต/ไฟร์วอลล์)",
     "tunnel.sync_ok": "ซิงค์แล้ว — บันทึก hostname {count} รายการลง config",
     "tunnel.token_needs_setup": "ไม่พบ tunnel token (ตั้งค่าในฟอร์ม/ wizard ก่อน)",
+    "tunnel.service_invalid": "บริการ/พอร์ตไม่ถูกต้อง — ต้องขึ้นต้น http:// https:// tcp:// หรือ udp:// (เช่น http://localhost:8080, http://192.168.1.50:3000 หรือ tcp://10.0.0.5:22)",
+    "tunnel.log_empty": "(ยังไม่มี log ของ cloudflared — รัน tunnel ก่อน หรือรอสักครู่)",
+    "tunnel.show_log": "ดู log tunnel",
+    "tunnel.hide_log": "ซ่อน log tunnel",
+    "tunnel.log_title": "Log ของ cloudflared (tunnel.log)",
 
     # ---- service ----
     "service.no_admin": "ไม่มีสิทธิ์ admin — เปิด webui จาก cmd/exe ที่รันเป็น admin (หรือติดตั้งเป็น service แล้วควบคุมจากเว็บนี้)",

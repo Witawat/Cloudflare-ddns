@@ -21,6 +21,7 @@ DOWNLOAD_URL = (
 )
 
 PID_FILE = "tunnel.pid"
+TUNNEL_LOG = "tunnel.log"
 
 _version_cache = {"time": 0.0, "version": ""}
 _latest_cache = {"time": 0.0, "version": ""}
@@ -93,6 +94,10 @@ def cloudflared_path(cfg=None):
 
 def _pid_path(config_path=None):
     return os.path.join(config_mod.data_dir_for(config_path), PID_FILE)
+
+
+def _log_path(config_path=None):
+    return os.path.join(config_mod.data_dir_for(config_path), TUNNEL_LOG)
 
 
 def is_installed(cfg=None):
@@ -204,7 +209,36 @@ class TunnelManager:
             "pid": pid if running else None,
             "path": cloudflared_path(cfg),
             "version": cloudflared_version(cfg),
+            "log_exists": os.path.isfile(_log_path(self.config_path)),
+            "last_error": self.last_error(),
         }
+
+    def log_tail(self, limit=30, max_bytes=4096):
+        """อ่าน tail ของ cloudflared log (ท้ายไฟล์ max_bytes — กันอ่านไฟล์ใหญ่ทั้งไฟล์)."""
+        path = _log_path(self.config_path)
+        try:
+            size = os.path.getsize(path)
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                if size > max_bytes:
+                    handle.seek(size - max_bytes)
+                    # ตัดบรรทัดแรกที่อาจขาดครึ่ง (ลากไปขึ้นบรรทัดใหม่)
+                    handle.readline()
+                lines = handle.readlines()
+            return "".join(lines[-limit:])
+        except OSError:
+            return ""
+
+    def last_error(self, limit=60):
+        """หาบรรทัด error ล่าสุดจาก cloudflared log (เช่น token ผิด/เชื่อมต่อไม่ได้)."""
+        tail = self.log_tail(limit=limit)
+        if not tail:
+            return ""
+        keywords = ("ERR", "ERROR", "Unable", "Invalid", "failed", "Failed", "error", "Error")
+        last = ""
+        for line in tail.splitlines():
+            if any(k in line for k in keywords):
+                last = line.strip()
+        return last[:300]
 
     def start(self, cfg):
         """เริ่ม cloudflared tunnel run --token คืน (ok, message)."""
@@ -230,6 +264,10 @@ class TunnelManager:
             "run",
             "--token",
             cfg.tunnel_token.strip(),
+            "--logfile",
+            _log_path(self.config_path),
+            "--loglevel",
+            "info",
         ]
         try:
             self._proc = subprocess.Popen(

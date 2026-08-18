@@ -89,6 +89,40 @@ class UnknownPathTest(unittest.TestCase):
         handler._send.assert_called_once()
 
 
+class TunnelBindValidateTest(unittest.TestCase):
+    """/tunnel/bind ตรวจ protocol ของ service (http/https/tcp/udp://)"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "config.ini")
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write(MINIMAL_INI)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _post(self, payload):
+        handler = make_handler(self.path)
+        handler.path = "/tunnel/bind"
+        handler._read_body = mock.Mock(return_value=json.dumps(payload).encode())
+        webui._login_guard["locked_until"] = 0.0
+        webui._login_guard["fails"] = 0
+        handler._do_post_inner()
+        handler._send_json.assert_called_once()
+        return handler._send_json.call_args[0]
+
+    def test_invalid_service_protocol_rejected(self):
+        code, payload = self._post({"service": "192.168.1.50:3000", "hostname": "app.x.com", "token": "t"})
+        self.assertEqual(code, 400)
+        self.assertIn("http", payload["message"].lower())
+
+    def test_valid_service_protocols_accepted(self):
+        for svc in ("http://localhost:8080", "https://192.168.1.50:443", "tcp://10.0.0.5:22", "udp://10.0.0.5:51820"):
+            code, payload = self._post({"service": svc, "hostname": "app.x.com", "token": "t"})
+            # ผ่าน protocol check แล้ว -> ต่อไปต้องเจอ token decode fail (400 อื่น) ไม่ใช่ service_invalid
+            self.assertNotIn("must start with", payload.get("message", "").lower())
+
+
 class OriginCheckTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

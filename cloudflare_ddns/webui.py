@@ -8,6 +8,7 @@
 import json
 import logging
 import os
+import re
 import sys
 import threading
 import time
@@ -474,6 +475,13 @@ class WebUIHandler(BaseHTTPRequestHandler):
             # JavaScript หน้าเว็บ (แยกไฟล์ — static ไม่ต้อง login เพราะไม่มีข้อมูลลับ)
             return self._send(200, PAGE_JS, "application/javascript; charset=utf-8")
 
+        if path == "/tunnel/log":
+            """log ของ cloudflared (tunnel.log) — tail 30 บรรทัด"""
+            if not self._authed():
+                return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
+            body = _get_tunnel_mgr(self.server.config_path).log_tail(limit=30)
+            return self._send(200, body or self._t("tunnel.log_empty"), "text/plain; charset=utf-8")
+
         if path in ("", "/"):
             # หน้าเว็บหลัก — ถ้าไม่ authed เสิร์ฟหน้า login แบบเดี่ยว (ห้ามส่ง PAGE หลัก)
             if not self._authed():
@@ -829,6 +837,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
             service = str(data.get("service") or "").strip()
             if not service:
                 return self._send_json(400, {"ok": False, "message": self._t("tunnel.need_service")})
+            if not re.match(r"^(https?|tcp|udp)://", service, re.I):
+                return self._send_json(400, {"ok": False, "message": self._t("tunnel.service_invalid")})
             if not token:
                 return self._send_json(400, {"ok": False, "message": self._t("tunnel.token_missing")})
             if not hostname:
