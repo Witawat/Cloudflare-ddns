@@ -2,6 +2,21 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.1.6] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
+
+### เพิ่ม (Features)
+
+- **ปุ่มเริ่ม/หยุด tunnel disabled ตามสถานะ** (เหมือนปุ่ม service): tunnel รันอยู่ → "เริ่ม tunnel" ปิด (กดซ้ำไม่ได้), ไม่รัน → "หยุด tunnel" ปิด — พร้อม title บอกเหตุผล
+
+### แก้บั๊ก (Fixes)
+
+- **tunnel เริ่มแล้วตายทันที (v2.1.3+)**: `--logfile`/`--loglevel` เป็น global flag ของ cloudflared ต้องอยู่**ก่อน** subcommand `tunnel run` — เดิมใส่หลัง → cloudflared error "flag provided but not defined" แล้ว exit → tunnel.log ไม่ถูกสร้าง
+- **webui เห็นสถานะ tunnel ค้างเก่า**: `TunnelManager.status()` ใช้ pid ที่ cache ครั้งเดียวตอน init — ถ้า cloudflared ถูกเริ่ม/หยุดโดย process อื่น (service/คำสั่ง/ปุ่มเว็บรอบก่อน) → เห็นสถานะไม่ตรง → แก้ให้ re-read `tunnel.pid` จากไฟล์ทุกครั้ง
+
+### เพิ่ม (Tests)
+
+- `TunnelStatusPidTest` (test_tunnel): status() re-read pid ใหม่จากไฟล์ (137 เทสต์)
+
 ## [2.1.5] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
 
 ### เพิ่ม (Features)

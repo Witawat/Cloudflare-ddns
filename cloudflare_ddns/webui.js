@@ -122,6 +122,9 @@ const I18N = {
     "tunnel.tls_timeout": "TLS timeout (วิ, 0 = ค่าเริ่มต้น)",
     "tunnel.http2_origin": "HTTP/2 ไป origin",
     "tunnel.no_happy_eyeballs": "ปิด Happy Eyeballs (origin IPv6 ค้าง)",
+    "tunnel.ctl_running": "tunnel รันอยู่แล้ว",
+    "tunnel.ctl_disabled": "เปิด tunnel ใน config ก่อน",
+    "tunnel.ctl_not_running": "tunnel ยังไม่รัน",
     "tg.test_ok": "ส่งข้อความทดสอบสำเร็จ — ตรวจใน Telegram",
     "tg.test_fail": "ส่งไม่สำเร็จ: {msg}",
     "tg.queue_empty": "คิวว่าง — ไม่มีข้อความค้างส่ง",
@@ -608,6 +611,9 @@ const I18N = {
     "tunnel.tls_timeout": "TLS timeout (s, 0 = default)",
     "tunnel.http2_origin": "HTTP/2 to origin",
     "tunnel.no_happy_eyeballs": "Disable Happy Eyeballs (stuck IPv6 origin)",
+    "tunnel.ctl_running": "Tunnel is already running",
+    "tunnel.ctl_disabled": "Enable the tunnel in config first",
+    "tunnel.ctl_not_running": "Tunnel is not running",
     "tg.test_ok": "Test message sent — check Telegram",
     "tg.test_fail": "Could not send: {msg}",
     "tg.queue_empty": "Queue is empty — no pending messages",
@@ -1427,6 +1433,16 @@ async function loadTunnelStatus() {
     else if (tun.enabled) parts.push('<span>' + t("tunnel.not_running") + "</span>");
     if (tun.installed && tun.version) parts.push('<span style="color:var(--muted)">cloudflared ' + escapeHtml(tun.version) + "</span>");
     box.innerHTML = parts.join(" · ");
+    // ปุ่มเริ่ม/หยุด disabled ตามสถานะ (กันกดซ้ำไร้ประโยชน์ — เหมือนปุ่ม service)
+    const startBtn = $("tunnelStart");
+    const stopBtn = $("tunnelStop");
+    const enabled = !!tun.enabled;
+    const installed = !!tun.installed;
+    const running = !!tun.running;
+    startBtn.disabled = !enabled || !installed || running;
+    startBtn.title = running ? t("tunnel.ctl_running") : (!enabled ? t("tunnel.ctl_disabled") : "");
+    stopBtn.disabled = !running;
+    stopBtn.title = running ? "" : t("tunnel.ctl_not_running");
     const errBox = $("tunnel-err");
     if (tun.enabled && !tun.running && tun.last_error) {
       errBox.hidden = false;

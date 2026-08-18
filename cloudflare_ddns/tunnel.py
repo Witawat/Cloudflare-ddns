@@ -195,6 +195,9 @@ class TunnelManager:
             pass
 
     def status(self, cfg):
+        # re-read pid จากไฟล์ทุกครั้ง — cloudflared อาจถูกเริ่ม/หยุดโดย process อื่น
+        # (service restart / webui รอบอื่น / command line) — กันเห็นสถานะค้างเก่า
+        self._pid = self._load_pid()
         running = False
         pid = self._pid
         if self._proc is not None and self._proc.poll() is None:
@@ -260,14 +263,15 @@ class TunnelManager:
             )
         args = [
             cloudflared_path(cfg),
-            "tunnel",
-            "run",
-            "--token",
-            cfg.tunnel_token.strip(),
+            # --logfile/--loglevel เป็น global flag — ต้องอยู่ก่อน subcommand tunnel run
             "--logfile",
             _log_path(self.config_path),
             "--loglevel",
             "info",
+            "tunnel",
+            "run",
+            "--token",
+            cfg.tunnel_token.strip(),
         ]
         try:
             self._proc = subprocess.Popen(

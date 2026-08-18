@@ -3,6 +3,7 @@
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from cloudflare_ddns import config as config_mod
 from cloudflare_ddns import tunnel as tunnel_mod
@@ -60,6 +61,32 @@ class TunnelLogTest(unittest.TestCase):
         ])
         mgr = tunnel_mod.TunnelManager(self.cfg_path)
         self.assertIn("Invalid token", mgr.last_error())
+
+
+class TunnelStatusPidTest(unittest.TestCase):
+    """status() re-read tunnel.pid ทุกครั้ง (cloudflared อาจถูกเริ่มโดย process อื่น)"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cfg_path = os.path.join(self.tmp.name, "config.ini")
+        with open(self.cfg_path, "w", encoding="utf-8") as handle:
+            handle.write("[cloudflare]\napi_token = t\n\n[record:h.example.com]\nname = h\nzone = example.com\n")
+        self.pid_path = tunnel_mod._pid_path(self.cfg_path)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_status_reloads_pid_from_file(self):
+        mgr = tunnel_mod.TunnelManager(self.cfg_path)
+        self.assertIsNone(mgr._pid)
+        # เขียน pid ใหม่ลงไฟล์ (จำลอง process อื่นเริ่ม cloudflared)
+        os.makedirs(os.path.dirname(self.pid_path), exist_ok=True)
+        with open(self.pid_path, "w", encoding="utf-8") as handle:
+            handle.write("999999")
+        with mock.patch.object(tunnel_mod, "_pid_alive", return_value=True):
+            st = mgr.status(config_mod.Config(self.cfg_path))
+        self.assertTrue(st["running"])
+        self.assertEqual(st["pid"], 999999)
 
 
 if __name__ == "__main__":
