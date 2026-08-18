@@ -118,6 +118,11 @@ def _build_origin_request(data):
     host_header = str(data.get("http_host_header") or "").strip()
     if host_header:
         origin["httpHostHeader"] = host_header
+    origin_server = str(data.get("origin_server_name") or "").strip()
+    if origin_server:
+        origin["originServerName"] = origin_server
+    if str(data.get("no_chunked_encoding") or "").lower() in ("1", "true", "yes", "on"):
+        origin["noChunkedEncoding"] = True
     try:
         ct = float(data.get("connect_timeout") or 0)
         if ct > 0:
@@ -128,6 +133,18 @@ def _build_origin_request(data):
         tt = float(data.get("tls_timeout") or 0)
         if tt > 0:
             origin["tlsTimeout"] = tt
+    except (TypeError, ValueError):
+        pass
+    try:
+        ka = float(data.get("keep_alive_timeout") or 0)
+        if ka > 0:
+            origin["keepAliveTimeout"] = ka
+    except (TypeError, ValueError):
+        pass
+    try:
+        kac = int(data.get("keep_alive_connections") or 0)
+        if kac > 0:
+            origin["keepAliveConnections"] = kac
     except (TypeError, ValueError):
         pass
     protocol = str(data.get("protocol") or "http").strip().lower()
@@ -145,8 +162,12 @@ def _origin_request_to_dict(orq):
     return {
         "no_tls_verify": bool(orq.get("noTLSVerify")),
         "http_host_header": orq.get("httpHostHeader", ""),
+        "origin_server_name": orq.get("originServerName", ""),
+        "no_chunked_encoding": bool(orq.get("noChunkedEncoding")),
         "connect_timeout": orq.get("connectTimeout", 0),
         "tls_timeout": orq.get("tlsTimeout", 0),
+        "keep_alive_timeout": orq.get("keepAliveTimeout", 0),
+        "keep_alive_connections": orq.get("keepAliveConnections", 0),
         "http2_origin": bool(orq.get("http2Origin")),
         "no_happy_eyeballs": bool(orq.get("noHappyEyeballs")),
     }

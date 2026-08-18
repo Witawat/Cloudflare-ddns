@@ -408,12 +408,19 @@ __LOGIN__
         </label>
       </div>
       <div class="grid2" style="margin-bottom:8px">
-        <label class="field" style="font-size:0.85rem"><span data-i18n="tunnel.tls_timeout">TLS timeout (วิ, 0 = ค่าเริ่มต้น)</span>
-          <input id="th-tlstimeout" type="number" min="0" step="1" placeholder="10">
+        <label class="field" style="font-size:0.85rem"><span data-i18n="tunnel.origin_server_name">Origin server name (ชื่อบน cert — ใช้เมื่อ cert CN ไม่ตรง IP)</span>
+          <input id="th-originserver" type="text" class="mono" placeholder="">
+        </label>
+        <label class="field" style="font-size:0.85rem"><span data-i18n="tunnel.keep_alive_timeout">Keep-alive timeout (วิ, 0 = ค่าเริ่มต้น)</span>
+          <input id="th-keepalive" type="number" min="0" step="1" placeholder="90">
+        </label>
+      </div>
+      <div class="grid2" style="margin-bottom:8px">
+        <label class="field" style="font-size:0.85rem"><span data-i18n="tunnel.keep_alive_connections">Keep-alive connections (0 = ค่าเริ่มต้น)</span>
+          <input id="th-keepaliveconn" type="number" min="0" step="1" placeholder="100">
         </label>
         <div class="toggles" style="font-size:0.85rem">
-          <label><input id="th-http2" type="checkbox"> <span data-i18n="tunnel.http2_origin">HTTP/2 ไป origin</span></label>
-          <label><input id="th-happy" type="checkbox"> <span data-i18n="tunnel.no_happy_eyeballs">ปิด Happy Eyeballs (origin IPv6 ค้าง)</span></label>
+          <label><input id="th-nochunk" type="checkbox"> <span data-i18n="tunnel.no_chunked_encoding">ปิด chunked encoding (origin เป็น WSGI)</span></label>
         </div>
       </div>
       <p style="margin:0 0 10px;font-size:0.8rem;color:var(--muted);line-height:1.5"><span data-i18n="html.033">💡 เลือกชนิดให้ตรงกับบริการ:</span> <b>HTTP</b> <span data-i18n="html.034">= เว็บธรรมดา (เช่น</span> <span class="mono">http://localhost:8080</span>) · <b>HTTPS</b> <span data-i18n="html.035">= พอร์ต SSL เช่น 443/8443 (ต้องเป็น</span> <span class="mono">https://localhost:443</span> <span data-i18n="html.036">— ถ้าผูกเป็น http จะเจอ "Bad Request") ·</span> <b>TCP/UDP</b> <span data-i18n="html.037">= SSH/game/VPN (เช่น</span> <span class="mono">tcp://localhost:22</span>)</p>

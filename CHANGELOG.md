@@ -2,6 +2,20 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.1.7] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
+
+### เพิ่ม (Features)
+
+- **Tunnel origin options ครบชุดที่ใช้บ่อย** (ต่อจาก v2.1.5):
+  - **Origin server name** (`originServerName`) — ชื่อบน cert origin (ใช้เมื่อ cert CN ไม่ตรง IP — self-signed)
+  - **ปิด chunked encoding** (`noChunkedEncoding`) — origin เป็น WSGI
+  - **Keep-alive timeout** (`keepAliveTimeout`) + **Keep-alive connections** (`keepAliveConnections`)
+  - ฟอร์มผูก/แก้ไข hostname ครบทุกช่อง · sync + hostnames คืนทุก field
+
+### เพิ่ม (Tests)
+
+- `TunnelBindNoTlsTest.test_all_options_built` ขยาย: originServerName/noChunkedEncoding/keepAliveTimeout/keepAliveConnections (137 เทสต์)
+
 ## [2.1.6] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
 
 ### เพิ่ม (Features)

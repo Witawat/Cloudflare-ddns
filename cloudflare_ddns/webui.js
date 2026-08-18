@@ -122,6 +122,10 @@ const I18N = {
     "tunnel.tls_timeout": "TLS timeout (วิ, 0 = ค่าเริ่มต้น)",
     "tunnel.http2_origin": "HTTP/2 ไป origin",
     "tunnel.no_happy_eyeballs": "ปิด Happy Eyeballs (origin IPv6 ค้าง)",
+    "tunnel.origin_server_name": "Origin server name (ชื่อบน cert — ใช้เมื่อ cert CN ไม่ตรง IP)",
+    "tunnel.no_chunked_encoding": "ปิด chunked encoding (origin เป็น WSGI)",
+    "tunnel.keep_alive_timeout": "Keep-alive timeout (วิ, 0 = ค่าเริ่มต้น)",
+    "tunnel.keep_alive_connections": "Keep-alive connections (0 = ค่าเริ่มต้น)",
     "tunnel.ctl_running": "tunnel รันอยู่แล้ว",
     "tunnel.ctl_disabled": "เปิด tunnel ใน config ก่อน",
     "tunnel.ctl_not_running": "tunnel ยังไม่รัน",
@@ -611,6 +615,10 @@ const I18N = {
     "tunnel.tls_timeout": "TLS timeout (s, 0 = default)",
     "tunnel.http2_origin": "HTTP/2 to origin",
     "tunnel.no_happy_eyeballs": "Disable Happy Eyeballs (stuck IPv6 origin)",
+    "tunnel.origin_server_name": "Origin server name (name on the cert — use when cert CN doesn't match the IP)",
+    "tunnel.no_chunked_encoding": "Disable chunked encoding (WSGI origin)",
+    "tunnel.keep_alive_timeout": "Keep-alive timeout (s, 0 = default)",
+    "tunnel.keep_alive_connections": "Keep-alive connections (0 = default)",
     "tunnel.ctl_running": "Tunnel is already running",
     "tunnel.ctl_disabled": "Enable the tunnel in config first",
     "tunnel.ctl_not_running": "Tunnel is not running",
@@ -1497,7 +1505,7 @@ async function tunnelHosts() {
         '<td style="padding:5px 10px">' + escapeHtml(h.protocol || "http") + "</td>" +
         '<td class="mono" style="padding:5px 10px;color:var(--muted)">' + escapeHtml(h.service) + "</td>" +
         '<td style="padding:2px 6px;white-space:nowrap">' +
-        '<button class="btn-secondary" style="padding:3px 8px;font-size:0.75rem" type="button" data-edit-host="' + escapeHtml(h.hostname) + '" data-edit-path="' + escapeHtml(h.path || "") + '" data-edit-protocol="' + escapeHtml(h.protocol || "http") + '" data-edit-service="' + escapeHtml(h.service || "") + '" data-edit-notls="' + (h.no_tls_verify ? "1" : "0") + '" data-edit-hostheader="' + escapeHtml(h.http_host_header || "") + '" data-edit-connecttimeout="' + (h.connect_timeout || 0) + '" data-edit-tlstimeout="' + (h.tls_timeout || 0) + '" data-edit-http2="' + (h.http2_origin ? "1" : "0") + '" data-edit-happy="' + (h.no_happy_eyeballs ? "1" : "0") + '" title="' + t("tunnel.edit_title") + '">' + t("tunnel.edit") + "</button> " +
+        '<button class="btn-secondary" style="padding:3px 8px;font-size:0.75rem" type="button" data-edit-host="' + escapeHtml(h.hostname) + '" data-edit-path="' + escapeHtml(h.path || "") + '" data-edit-protocol="' + escapeHtml(h.protocol || "http") + '" data-edit-service="' + escapeHtml(h.service || "") + '" data-edit-notls="' + (h.no_tls_verify ? "1" : "0") + '" data-edit-hostheader="' + escapeHtml(h.http_host_header || "") + '" data-edit-originserver="' + escapeHtml(h.origin_server_name || "") + '" data-edit-nochunk="' + (h.no_chunked_encoding ? "1" : "0") + '" data-edit-connecttimeout="' + (h.connect_timeout || 0) + '" data-edit-tlstimeout="' + (h.tls_timeout || 0) + '" data-edit-keepalive="' + (h.keep_alive_timeout || 0) + '" data-edit-keepaliveconn="' + (h.keep_alive_connections || 0) + '" data-edit-http2="' + (h.http2_origin ? "1" : "0") + '" data-edit-happy="' + (h.no_happy_eyeballs ? "1" : "0") + '" title="' + t("tunnel.edit_title") + '">' + t("tunnel.edit") + "</button> " +
         '<button class="btn-del" type="button" data-host="' + escapeHtml(h.hostname) + '" data-path="' + escapeHtml(h.path || "") + '" title="' + t("tunnel.unbind_title") + '">×</button></td></tr>'
       ).join("") + "</table></div>" +
       '<p style="margin-top:6px;font-size:0.8rem;color:var(--muted)">' + t("tunnel.hint") + "</p>";
@@ -1562,8 +1570,12 @@ async function editTunnelHost(btn) {
   $("th-service").value = service;
   $("th-notls").checked = btn.dataset.editNotls === "1";
   $("th-hostheader").value = btn.dataset.editHostheader || "";
+  $("th-originserver").value = btn.dataset.editOriginserver || "";
+  $("th-nochunk").checked = btn.dataset.editNochunk === "1";
   $("th-connecttimeout").value = btn.dataset.editConnecttimeout || "";
   $("th-tlstimeout").value = btn.dataset.editTlstimeout || "";
+  $("th-keepalive").value = btn.dataset.editKeepalive || "";
+  $("th-keepaliveconn").value = btn.dataset.editKeepaliveconn || "";
   $("th-http2").checked = btn.dataset.editHttp2 === "1";
   $("th-happy").checked = btn.dataset.editHappy === "1";
   const msg = $("th-msg");
@@ -1624,8 +1636,12 @@ async function thBind() {
         service: $("th-service").value.trim(),
         no_tls_verify: $("th-notls").checked ? "true" : "false",
         http_host_header: $("th-hostheader").value.trim(),
+        origin_server_name: $("th-originserver").value.trim(),
+        no_chunked_encoding: $("th-nochunk").checked ? "true" : "false",
         connect_timeout: $("th-connecttimeout").value.trim(),
         tls_timeout: $("th-tlstimeout").value.trim(),
+        keep_alive_timeout: $("th-keepalive").value.trim(),
+        keep_alive_connections: $("th-keepaliveconn").value.trim(),
         http2_origin: $("th-http2").checked ? "true" : "false",
         no_happy_eyeballs: $("th-happy").checked ? "true" : "false",
       }),

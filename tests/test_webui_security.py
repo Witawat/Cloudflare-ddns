@@ -144,7 +144,7 @@ class TunnelBindNoTlsTest(unittest.TestCase):
             "token": "eyJhIjoxLCJ0IjoyfQ",
             "protocol": "https",
             "no_tls_verify": "true",
-            **({"http_host_header": "192.168.1.50:443", "connect_timeout": "5", "tls_timeout": "3", "http2_origin": "true", "no_happy_eyeballs": "true"} if extra else {}),
+            **({"http_host_header": "192.168.1.50:443", "origin_server_name": "nas.local", "no_chunked_encoding": "true", "connect_timeout": "5", "tls_timeout": "3", "keep_alive_timeout": "60", "keep_alive_connections": "10", "http2_origin": "true", "no_happy_eyeballs": "true"} if extra else {}),
         }
         handler = make_handler(self.path)
         handler.path = "/tunnel/bind"
@@ -173,8 +173,12 @@ class TunnelBindNoTlsTest(unittest.TestCase):
         self.assertEqual(rule["originRequest"], {
             "noTLSVerify": True,
             "httpHostHeader": "192.168.1.50:443",
+            "originServerName": "nas.local",
+            "noChunkedEncoding": True,
             "connectTimeout": 5.0,
             "tlsTimeout": 3.0,
+            "keepAliveTimeout": 60.0,
+            "keepAliveConnections": 10,
             "http2Origin": True,
             "noHappyEyeballs": True,
         })
