@@ -34,6 +34,7 @@ body {
   font-family: "Segoe UI", system-ui, sans-serif; font-size: 1rem; line-height: 1.5;
 }
 .mono { font-family: "Cascadia Code", Consolas, monospace; }
+.hint { display: block; font-size: 0.72rem; color: var(--muted); line-height: 1.4; margin-top: 2px; }
 h1 { font-size: 1.4rem; margin: 0; letter-spacing: -0.02em; }
 h2 { font-size: 1.05rem; margin: 0; }
 h3 { font-size: 0.9rem; margin: 26px 0 10px; color: var(--ink-2); font-weight: 600; }
@@ -398,29 +399,48 @@ __LOGIN__
         <label class="field"><span data-i18n="html.031">ชนิด</span><select id="th-protocol" class="wz-zone-select" onchange="adaptServiceToProtocol(this, document.getElementById('th-service'))"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="udp">UDP</option></select></label>
       </div>
       <label class="field"><span data-i18n="html.032">บริการ/พอร์ต</span><input id="th-service" type="text" class="mono" value="http://localhost:8080" placeholder="http://localhost:8080 · http://192.168.1.50:3000 · tcp://10.0.0.5:22"></label>
-      <label style="font-size:0.85rem;display:flex;align-items:center;gap:6px;margin:2px 0 8px"><input id="th-notls" type="checkbox"> <span data-i18n="tunnel.no_tls_verify">ข้ามตรวจ SSL (self-signed — ใช้กับ https ไป IP ใน LAN)</span></label>
+      <label style="font-size:0.85rem;display:flex;align-items:center;gap:6px;margin:2px 0 2px"><input id="th-notls" type="checkbox"> <span data-i18n="tunnel.no_tls_verify">ข้ามตรวจ SSL (self-signed — ใช้กับ https ไป IP ใน LAN)</span></label>
+      <p class="hint" data-i18n="tunnel.no_tls_verify_hint">ใช้เมื่อ origin เป็น https ที่ cert self-signed หรือออกให้ชื่ออื่น (เช่น IP ใน LAN) — cloudflared จะไม่ตรวจ cert. ระวัง: ลดความปลอดภัย</p>
       <div class="grid2" style="margin-bottom:8px">
-        <label class="field" style="font-size:0.85rem"><span data-i18n="tunnel.host_header">Host header (บังคับชื่อที่ส่งไป origin — เช่น 192.168.10.152:443)</span>
-          <input id="th-hostheader" type="text" class="mono" placeholder="">
+        <label class="field" style="font-size:0.85rem"><span data-i18n="tunnel.host_header">Host header (บังคับชื่อที่ส่งไป origin)</span>
+          <input id="th-hostheader" type="text" class="mono" placeholder="192.168.10.152:443">
+          <span class="hint" data-i18n="tunnel.host_header_hint">ใช้เมื่อ origin ตรวจชื่อ (vhost/SNI) — ใส่ชื่อที่ origin รู้จัก เช่น เปิดตรง IP ได้แต่ผ่าน domain ไม่ได้</span>
         </label>
         <label class="field" style="font-size:0.85rem"><span data-i18n="tunnel.connect_timeout">เชื่อมต่อ timeout (วิ, 0 = ค่าเริ่มต้น)</span>
           <input id="th-connecttimeout" type="number" min="0" step="1" placeholder="30">
+          <span class="hint" data-i18n="tunnel.connect_timeout_hint">เวลารอเชื่อมต่อ origin — origin ช้า/หลุดบ่อย ให้เพิ่มค่า</span>
         </label>
       </div>
       <div class="grid2" style="margin-bottom:8px">
-        <label class="field" style="font-size:0.85rem"><span data-i18n="tunnel.origin_server_name">Origin server name (ชื่อบน cert — ใช้เมื่อ cert CN ไม่ตรง IP)</span>
-          <input id="th-originserver" type="text" class="mono" placeholder="">
+        <label class="field" style="font-size:0.85rem"><span data-i18n="tunnel.origin_server_name">Origin server name (ชื่อบน cert)</span>
+          <input id="th-originserver" type="text" class="mono" placeholder="nas.local">
+          <span class="hint" data-i18n="tunnel.origin_server_name_hint">ใช้เมื่อ cert ของ origin ออกให้ชื่ออื่น (CN ไม่ตรง IP) — ใส่ชื่อที่ cert ออกให้ เช่น nas.local</span>
         </label>
         <label class="field" style="font-size:0.85rem"><span data-i18n="tunnel.keep_alive_timeout">Keep-alive timeout (วิ, 0 = ค่าเริ่มต้น)</span>
           <input id="th-keepalive" type="number" min="0" step="1" placeholder="90">
+          <span class="hint" data-i18n="tunnel.keep_alive_timeout_hint">เวลาที่จะเก็บ connection ไป origin — ลดค่าถ้า origin จำกัด connection พร้อมกัน</span>
         </label>
       </div>
       <div class="grid2" style="margin-bottom:8px">
         <label class="field" style="font-size:0.85rem"><span data-i18n="tunnel.keep_alive_connections">Keep-alive connections (0 = ค่าเริ่มต้น)</span>
           <input id="th-keepaliveconn" type="number" min="0" step="1" placeholder="100">
+          <span class="hint" data-i18n="tunnel.keep_alive_connections_hint">จำนวน connection ที่เก็บไว้พร้อมกัน — ลดถ้า origin รองรับน้อย (เช่น dev server)</span>
         </label>
         <div class="toggles" style="font-size:0.85rem">
-          <label><input id="th-nochunk" type="checkbox"> <span data-i18n="tunnel.no_chunked_encoding">ปิด chunked encoding (origin เป็น WSGI)</span></label>
+          <label><input id="th-nochunk" type="checkbox"> <span data-i18n="tunnel.no_chunked_encoding">ปิด chunked encoding</span></label>
+          <span class="hint" data-i18n="tunnel.no_chunked_encoding_hint">ใช้เมื่อ origin เป็น WSGI (Flask/Django dev server) แล้วหน้าเว็บค้าง/โหลดไม่ขึ้น</span>
+        </div>
+      </div>
+      <div class="grid2" style="margin-bottom:8px">
+        <label class="field" style="font-size:0.85rem"><span data-i18n="tunnel.tls_timeout">TLS timeout (วิ, 0 = ค่าเริ่มต้น)</span>
+          <input id="th-tlstimeout" type="number" min="0" step="1" placeholder="10">
+          <span class="hint" data-i18n="tunnel.tls_timeout_hint">เวลารอ TLS handshake กับ origin (https) — origin ช้า/เครื่องเก่า ให้เพิ่มค่า</span>
+        </label>
+        <div class="toggles" style="font-size:0.85rem">
+          <label><input id="th-http2" type="checkbox"> <span data-i18n="tunnel.http2_origin">HTTP/2 ไป origin</span></label>
+          <span class="hint" data-i18n="tunnel.http2_origin_hint">ใช้เมื่อ origin รองรับ HTTP/2 (เช่น nginx เปิด h2) — ลด latency. เฉพาะ http/https</span>
+          <label style="margin-top:4px"><input id="th-happy" type="checkbox"> <span data-i18n="tunnel.no_happy_eyeballs">ปิด Happy Eyeballs</span></label>
+          <span class="hint" data-i18n="tunnel.no_happy_eyeballs_hint">ใช้เมื่อ origin มี IPv6 ที่ค้าง/ไม่ตอบ — บังคับใช้ IPv4. เฉพาะ http/https</span>
         </div>
       </div>
       <p style="margin:0 0 10px;font-size:0.8rem;color:var(--muted);line-height:1.5"><span data-i18n="html.033">💡 เลือกชนิดให้ตรงกับบริการ:</span> <b>HTTP</b> <span data-i18n="html.034">= เว็บธรรมดา (เช่น</span> <span class="mono">http://localhost:8080</span>) · <b>HTTPS</b> <span data-i18n="html.035">= พอร์ต SSL เช่น 443/8443 (ต้องเป็น</span> <span class="mono">https://localhost:443</span> <span data-i18n="html.036">— ถ้าผูกเป็น http จะเจอ "Bad Request") ·</span> <b>TCP/UDP</b> <span data-i18n="html.037">= SSH/game/VPN (เช่น</span> <span class="mono">tcp://localhost:22</span>)</p>

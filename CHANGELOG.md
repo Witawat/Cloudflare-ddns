@@ -2,6 +2,20 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.1.8] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
+
+### เพิ่ม (Features)
+
+- **คำแนะนำใต้ทุก tunnel option** (ฟอร์มผูก/แก้ไข hostname): hint สั้นๆ บอก "ใช้ตอนไหน/แบบไหน" สำหรับทุกช่อง:
+  - ข้ามตรวจ SSL → cert self-signed/ชื่ออื่น (ระวังลดความปลอดภัย)
+  - Host header → origin ตรวจชื่อ (vhost/SNI) — เปิดตรง IP ได้แต่ผ่าน domain ไม่ได้
+  - Origin server name → cert ออกให้ชื่ออื่น (CN ไม่ตรง IP)
+  - connect/TLS timeout → origin ช้า/หลุดบ่อย เพิ่มค่า
+  - keep-alive → origin จำกัด connection ลดค่า
+  - ปิด chunked → origin เป็น WSGI (Flask/Django dev) แล้วโหลดไม่ขึ้น
+  - HTTP/2 / Happy Eyeballs → เงื่อนไข + เฉพาะ http/https
+- เพิ่ม key hint 13 ตัว (ไทย/อังกฤษ) — i18n 380 keys ตรงกัน
+
 ## [2.1.7] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
 
 ### เพิ่ม (Features)
