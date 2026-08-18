@@ -2,6 +2,19 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.2.0] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
+
+### เพิ่ม (Features)
+
+- **tunnel.log กันบวม + กรอง error**:
+  - ไฟล์ log ใหญ่เกิน 5MB → ตัดเหลือท้าย 1MB อัตโนมัติ (cloudflared เขียนต่อด้วย O_APPEND ไม่เสีย) — รันนานๆ ไม่บวม
+  - ปุ่ม "เฉพาะ error" ถัดจาก "ดู log tunnel" → กรองเฉพาะบรรทัด error/warn (อ่านท้าย 64KB) — ดูปัญหาได้เร็ว ไม่ต้องไล่ info
+  - แสดงผลจำกัด: tail 30 บรรทัด / อ่านท้าย 16KB (เดิม 4KB — log JSON บรรทัดยาว บรรทัดหาย)
+
+### เพิ่ม (Tests)
+
+- `TunnelLogFilterTest` (test_tunnel): only_errors กรอง level error/warn, rotation ตัดไฟล์ใหญ่ (139 เทสต์)
+
 ## [2.1.9] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
 
 ### แก้บั๊ก (Fixes)

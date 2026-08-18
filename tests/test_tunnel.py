@@ -89,5 +89,44 @@ class TunnelStatusPidTest(unittest.TestCase):
         self.assertEqual(st["pid"], 999999)
 
 
+class TunnelLogFilterTest(unittest.TestCase):
+    """log_tail only_errors + rotation กันบวม"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cfg_path = os.path.join(self.tmp.name, "config.ini")
+        with open(self.cfg_path, "w", encoding="utf-8") as handle:
+            handle.write("[cloudflare]\napi_token = t\n\n[record:h.example.com]\nname = h\nzone = example.com\n")
+        self.log_path = tunnel_mod._log_path(self.cfg_path)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_only_errors_filters_levels(self):
+        lines = [
+            '{"level":"info","message":"Registered tunnel connection"}',
+            '{"level":"error","message":"Unable to establish connection"}',
+            '{"level":"info","message":"precheck complete"}',
+            '{"level":"warn","message":"retrying"}',
+        ]
+        with open(self.log_path, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines))
+        mgr = tunnel_mod.TunnelManager(self.cfg_path)
+        out = mgr.log_tail(only_errors=True)
+        self.assertIn("Unable to establish", out)
+        self.assertIn("retrying", out)
+        self.assertNotIn("Registered tunnel connection", out)
+
+    def test_rotation_truncates_large_file(self):
+        # เขียนไฟล์ใหญ่กว่า TUNNEL_LOG_MAX -> log_tail ควรตัดเหลือเล็กกว่า
+        big = ("x" * 2000 + "\n") * 3000  # ~6MB
+        with open(self.log_path, "w", encoding="utf-8") as handle:
+            handle.write(big)
+        mgr = tunnel_mod.TunnelManager(self.cfg_path)
+        mgr.log_tail()
+        size = os.path.getsize(self.log_path)
+        self.assertLess(size, tunnel_mod.TUNNEL_LOG_MAX)
+
+
 if __name__ == "__main__":
     unittest.main()

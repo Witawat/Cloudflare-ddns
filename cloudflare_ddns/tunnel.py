@@ -22,6 +22,9 @@ DOWNLOAD_URL = (
 
 PID_FILE = "tunnel.pid"
 TUNNEL_LOG = "tunnel.log"
+# กันไฟล์ log บวม: ใหญ่เกินนี้ -> truncate เหลือท้าย (cloudflared เขียนต่อด้วย O_APPEND ไม่เสีย)
+TUNNEL_LOG_MAX = 5 * 1024 * 1024
+TUNNEL_LOG_KEEP = 1024 * 1024
 
 _version_cache = {"time": 0.0, "version": ""}
 _latest_cache = {"time": 0.0, "version": ""}
@@ -216,17 +219,45 @@ class TunnelManager:
             "last_error": self.last_error(),
         }
 
-    def log_tail(self, limit=30, max_bytes=4096):
-        """อ่าน tail ของ cloudflared log (ท้ายไฟล์ max_bytes — กันอ่านไฟล์ใหญ่ทั้งไฟล์)."""
+    def log_tail(self, limit=30, max_bytes=16384, only_errors=False):
+        """อ่าน tail ของ cloudflared log — จำกัดขนาด (กันไฟล์ใหญ่) + กรองเฉพาะ error ได้.
+
+        - ไฟล์ > TUNNEL_LOG_MAX -> truncate เหลือ TUNNEL_LOG_KEEP (กันบวม ขณะ cloudflared เขียนต่อ)
+        - only_errors=True -> อ่านท้าย 64KB แล้วกรองเฉพาะบรรทัด level error/warn
+        """
         path = _log_path(self.config_path)
         try:
             size = os.path.getsize(path)
+        except OSError:
+            return ""
+        # rotation กันบวม: ตัดเหลือท้าย (เขียนทับ — cloudflared ใช้ O_APPEND ต่อท้ายใหม่ได้)
+        try:
+            if size > TUNNEL_LOG_MAX:
+                with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                    handle.seek(size - TUNNEL_LOG_KEEP)
+                    handle.readline()
+                    tail_text = handle.read()
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write(tail_text)
+                size = len(tail_text.encode("utf-8", "replace"))
+        except OSError:
+            pass
+        try:
+            read_bytes = 65536 if only_errors else max_bytes
             with open(path, "r", encoding="utf-8", errors="replace") as handle:
-                if size > max_bytes:
-                    handle.seek(size - max_bytes)
-                    # ตัดบรรทัดแรกที่อาจขาดครึ่ง (ลากไปขึ้นบรรทัดใหม่)
+                if size > read_bytes:
+                    handle.seek(size - read_bytes)
                     handle.readline()
                 lines = handle.readlines()
+            if only_errors:
+                # cloudflared log เป็น JSON ต่อบรรทัด — กรอง level error/warn + ข้อความ error ตรง
+                err_lines = []
+                for line in lines:
+                    low = line.lower()
+                    if ('"level":"error"' in low or '"level":"warn"' in low
+                            or "err" in low or "unable" in low or "failed" in low or "invalid" in low):
+                        err_lines.append(line)
+                return "".join(err_lines[-limit:])
             return "".join(lines[-limit:])
         except OSError:
             return ""

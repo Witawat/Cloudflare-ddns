@@ -116,6 +116,7 @@ const I18N = {
     "tunnel.action_download": "ดาวน์โหลด",
     "tunnel.show_log": "ดู log tunnel",
     "tunnel.log_title": "Log ของ cloudflared (tunnel.log)",
+    "tunnel.log_errors_only": "เฉพาะ error",
     "tunnel.no_tls_verify": "ข้ามตรวจ SSL (self-signed — ใช้กับ https ไป IP ใน LAN)",
     "tunnel.no_tls_verify_hint": "ใช้เมื่อ origin เป็น https ที่ cert self-signed หรือออกให้ชื่ออื่น (เช่น IP ใน LAN) — cloudflared จะไม่ตรวจ cert. ระวัง: ลดความปลอดภัย",
     "tunnel.host_header_hint": "ใช้เมื่อ origin ตรวจชื่อ (vhost/SNI) — ใส่ชื่อที่ origin รู้จัก เช่น เปิดตรง IP ได้แต่ผ่าน domain ไม่ได้",
@@ -619,6 +620,7 @@ const I18N = {
     "tunnel.action_download": "Download",
     "tunnel.show_log": "View tunnel log",
     "tunnel.log_title": "cloudflared log (tunnel.log)",
+    "tunnel.log_errors_only": "Errors only",
     "tunnel.no_tls_verify": "Skip SSL verification (self-signed — for https to a LAN IP)",
     "tunnel.no_tls_verify_hint": "Use when the origin is https with a self-signed cert or one issued to another name (e.g. a LAN IP) — cloudflared will not verify the cert. Caution: reduces security",
     "tunnel.host_header_hint": "Use when the origin checks the name (vhost/SNI) — set the name the origin knows, e.g. works via IP but not via the domain",
@@ -1490,8 +1492,9 @@ async function tunnelLog() {
   if (!box.hidden) { box.hidden = true; return; }
   box.hidden = false;
   pre.textContent = t("tunnel.loading");
+  const errorsOnly = $("tunnelLogErrors").checked ? "?errors=1" : "";
   try {
-    const r = await fetch("/tunnel/log?t=" + Date.now());
+    const r = await fetch("/tunnel/log" + errorsOnly + (errorsOnly ? "&" : "?") + "t=" + Date.now());
     pre.textContent = await r.text();
     pre.scrollTop = pre.scrollHeight;
   } catch (e) {

@@ -89,6 +89,7 @@ TH = {
     "tunnel.token_needs_setup": "ไม่พบ tunnel token (ตั้งค่าในฟอร์ม/ wizard ก่อน)",
     "tunnel.service_invalid": "บริการ/พอร์ตไม่ถูกต้อง — ต้องขึ้นต้น http:// https:// tcp:// หรือ udp:// (เช่น http://localhost:8080, http://192.168.1.50:3000 หรือ tcp://10.0.0.5:22)",
     "tunnel.log_empty": "(ยังไม่มี log ของ cloudflared — รัน tunnel ก่อน หรือรอสักครู่)",
+    "tunnel.log_no_errors": "(ไม่มี error ใน log ล่าสุด — tunnel ทำงานปกติ)",
     "tunnel.show_log": "ดู log tunnel",
     "tunnel.hide_log": "ซ่อน log tunnel",
     "tunnel.log_title": "Log ของ cloudflared (tunnel.log)",

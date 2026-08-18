@@ -89,6 +89,7 @@ EN = {
     "tunnel.token_needs_setup": "No tunnel token found (set it in the form/wizard first)",
     "tunnel.service_invalid": "Invalid service/port — must start with http:// https:// tcp:// or udp:// (e.g. http://localhost:8080, http://192.168.1.50:3000 or tcp://10.0.0.5:22)",
     "tunnel.log_empty": "(no cloudflared log yet — start the tunnel first or wait a moment)",
+    "tunnel.log_no_errors": "(no errors in the recent log — tunnel is working normally)",
     "tunnel.show_log": "View tunnel log",
     "tunnel.hide_log": "Hide tunnel log",
     "tunnel.log_title": "cloudflared log (tunnel.log)",

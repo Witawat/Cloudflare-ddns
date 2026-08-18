@@ -539,10 +539,13 @@ class WebUIHandler(BaseHTTPRequestHandler):
             return self._send(200, PAGE_JS, "application/javascript; charset=utf-8")
 
         if path == "/tunnel/log":
-            """log ของ cloudflared (tunnel.log) — tail 30 บรรทัด"""
+            """log ของ cloudflared (tunnel.log) — tail 30 บรรทัด; ?errors=1 = เฉพาะ error/warn"""
             if not self._authed():
                 return self._send_json(401, {"ok": False, "message": self._t("err.unauthorized")})
-            body = _get_tunnel_mgr(self.server.config_path).log_tail(limit=30)
+            only_errors = (self.path.split("?", 1)[1:] and "errors=1" in self.path.split("?", 1)[1]) or False
+            body = _get_tunnel_mgr(self.server.config_path).log_tail(limit=30, only_errors=only_errors)
+            if not body and only_errors:
+                body = self._t("tunnel.log_no_errors")
             return self._send(200, body or self._t("tunnel.log_empty"), "text/plain; charset=utf-8")
 
         if path in ("", "/"):
