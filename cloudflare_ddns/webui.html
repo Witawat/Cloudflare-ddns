@@ -72,12 +72,17 @@ p { margin: 0; }
 .lang-btn:hover { background: var(--surface-2); }
 .lang-btn.active { background: var(--accent); color: var(--accent-ink); }
 /* มือถือ: topbar กันล้นขอบ — ลด padding, brand ย่อ, ปุ่มเรียง 2 แถว
-   แถว 1: สถานะ (ซ้าย) + รีเฟรช (ขวา) · แถว 2: ภาษา + ขนาดอักษร */
+   แถว 1: สถานะ (ซ้าย) + รีเฟรช (ขวา) · แถว 2: ภาษา + ขนาดอักษร
+   หมายเหตุ: .brand .sub = "รอบล่าสุด" — สำคัญ ต้องโชว์ (ย่อขนาดแทนซ่อน) */
 @media (max-width: 560px) {
   .topbar { padding: 10px 12px; gap: 8px; }
-  .brand { gap: 8px; width: 100%; }
+  .brand { gap: 8px; width: 100%; min-width: 0; }
+  .brand > div { min-width: 0; flex: 1; }
   .brand-dot { width: 30px; height: 30px; }
-  .brand .sub { display: none; }
+  .brand h1 { font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .brand .sub { font-size: 0.72rem; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: baseline; }
+  .brand .sub span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .brand .sub .mono { flex: none; }
   .top-right {
     width: 100%; gap: 6px; flex-wrap: wrap;
     justify-content: flex-end;
