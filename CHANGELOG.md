@@ -2,6 +2,20 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.2.4] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
+
+### แก้บั๊ก (Fixes)
+
+- **Heartbeats ยังส่ง 2 ครั้ง/นาทีเมื่อ interval_seconds = 15** (เจอจริงจาก log เครื่องผู้ใช้):
+  loop วนทุก 15 วิ → ทุกรอบเรียก send_ping → ถูก MIN_PING_INTERVAL=30 กัน → ส่งจริงทุก ~31 วิ
+  = 2 ครั้ง/นาทีเสมอ (pid เดียว ไม่ใช่ 2 instance)
+  - แก้: MIN_PING_INTERVAL 30 → 60 วิ (ตรงกับ Healthchecks ที่รับ ping 1 ครั้ง/นาที) —
+    interval สั้นแค่ไหนก็ส่ง heartbeat แค่นาทีละครั้ง
+
+### เพิ่ม (Tests)
+
+- `test_heartbeat`: อัปเดตกรอบเวลา 30 → 60 วิ (กันซ้ำ 60 วิ / ส่งใหม่เมื่อเกิน 60 วิ) (150 เทสต์)
+
 ## [2.2.3] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
 
 ### แก้บั๊ก (Fixes)

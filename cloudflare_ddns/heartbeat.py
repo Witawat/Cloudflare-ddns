@@ -23,8 +23,9 @@ HEARTBEAT_TIMEOUT = 10
 _WARN_INTERVAL = 600
 _last_warn_time = 0.0
 # กันส่งถี่เกินไปต่อ URL (เช่น โปรแกรมรันซ้ำหลาย instance / คอนฟิกผิด) —
-# ถ้าห่างจากครั้งก่อน < 30 วิ จะข้าม (Healthchecks จำกัด ping ต่อนาที)
-MIN_PING_INTERVAL = 30
+# ถ้าห่างจากครั้งก่อน < 60 วิ จะข้าม (Healthchecks จำกัด ping ต่อนาที —
+# interval_seconds ที่สั้นกว่า 60 ก็ยังส่ง heartbeat แค่นาทีละครั้ง)
+MIN_PING_INTERVAL = 60
 _last_sent = {}
 
 

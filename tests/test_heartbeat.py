@@ -39,22 +39,22 @@ class TestHeartbeatPing(unittest.TestCase):
         heartbeat._ping = lambda url, timeout=10: (calls.append(url), (True, ""))[1]
         self.addCleanup(setattr, heartbeat, "_ping", orig)
 
-    def test_ส่งรอบแรกแล้ว_30วิ_ยังไม่ครบ_ข้ามซ้ำ(self):
+    def test_ส่งรอบแรกแล้ว_60วิ_ยังไม่ครบ_ข้ามซ้ำ(self):
         calls = []
         self._patch_ping(calls)
         heartbeat.send_ping(self.cfg)
         heartbeat.send_ping(self.cfg)
         self.assertEqual(len(calls), 1)
 
-    def test_เกิน_30วิ_ส่งใหม่ได้(self):
+    def test_เกิน_60วิ_ส่งใหม่ได้(self):
         calls = []
         self._patch_ping(calls)
         heartbeat.send_ping(self.cfg)
-        # จำลองเวลาเลย 30 วิ (instance ใหม่: memory ว่าง + state ไฟล์ลดลง)
+        # จำลองเวลาเลย 60 วิ (instance ใหม่: memory ว่าง + state ไฟล์ลดลง)
         heartbeat._last_sent.clear()
         state = heartbeat._load_state(self.cfg.path)
         for key in state:
-            state[key] -= 40
+            state[key] -= 70
         heartbeat._save_state(self.cfg.path, state)
         heartbeat.send_ping(self.cfg)
         self.assertEqual(len(calls), 2)
