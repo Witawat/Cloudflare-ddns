@@ -2597,7 +2597,7 @@ i18nApply();
   });
 })();
 
-/* ============ ขนาดอักษร (A−/A+ — เหมือน zoom 100/125/150%) ============ */
+/* ============ ขนาดหน้าเว็บ (A−/A+ — zoom 100/125/150% เหมือน browser zoom) ============ */
 
 const FS_LEVELS = [100, 125, 150];
 let fsLevel = (() => {
@@ -2606,7 +2606,8 @@ let fsLevel = (() => {
 })();
 
 function applyFontScale() {
-  document.documentElement.style.setProperty("--fs-scale", String(fsLevel / 100));
+  // ใช้ CSS zoom — ขยายทั้งหน้า (ตัวอักษร + กรอบ + ระยะห่าง) เหมือน browser zoom จริง
+  document.documentElement.style.zoom = String(fsLevel / 100);
   localStorage.setItem("cfddns_fs", String(fsLevel));
   const minus = $("fsMinus"), plus = $("fsPlus");
   if (minus) minus.disabled = fsLevel <= FS_LEVELS[0];

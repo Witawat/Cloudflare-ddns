@@ -26,10 +26,9 @@
   --danger-light: oklch(0.92 0.065 25);
   --z-sticky: 10;
   --z-toast: 40;
-  --fs-scale: 1;
 }
 * { box-sizing: border-box; }
-html { font-size: calc(clamp(14px, 0.75rem + 0.55vw, 17px) * var(--fs-scale)); }
+html { font-size: clamp(14px, 0.75rem + 0.55vw, 17px); }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
   font-family: "Segoe UI", system-ui, sans-serif; font-size: 1rem; line-height: 1.5;
