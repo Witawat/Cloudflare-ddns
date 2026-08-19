@@ -2,6 +2,22 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.2.2] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
+
+### แก้บั๊ก (Fixes)
+
+- **Heartbeats ยังส่งเบิ้ลแม้ v2.2.1 (ต้นตอจริง)**: `run_forever` คำนวณ wait ผิด —
+  `wait = max(min(interval - elapsed, 5), 1)` ตัดรอไว้สูงสุด 5 วิ → loop วน `run_once`
+  ทุก ~5 วิเสมอ (ไม่ว่าตั้ง interval เท่าไร) → heartbeat ถูก MIN_PING_INTERVAL (30 วิ) กัน
+  = ส่งจริงทุก 30 วิ = **2 ครั้ง/นาที ทุกนาที** (ตรงกับ log healthchecks เป๊ะ)
+  - แก้: รอจนครบ interval จริง (เช็ค stop_event ทุก ≤5 วิ — service ยังหยุดไว ไม่บล็อก SCM 30 วิ)
+  - ผลข้างเคียงที่แก้ด้วย: run_once ไม่วนถี่เกิน → ตรวจ IP/เรียก API ตามรอบที่ตั้งจริง (ไม่เปลือง rate limit)
+
+### เพิ่ม (Tests)
+
+- `RunForeverWaitTest` (test_ddns): loop ต้องรอครบ interval (จำลอง fake clock —
+  run_once ห่างกัน ~interval ไม่ใช่ 5 วิ) (150 เทสต์)
+
 ## [2.2.1] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
 
 ### แก้บั๊ก (Fixes)

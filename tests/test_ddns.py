@@ -162,5 +162,49 @@ class PeriodicUpdateCheckTest(unittest.TestCase):
         self.mock_check.assert_called_once()
 
 
+class RunForeverWaitTest(unittest.TestCase):
+    """บั๊ก 2.2.0-2.2.1: wait = max(min(interval-elapsed, 5), 1) ทำให้วน run_once ทุก ~5 วิ
+    -> heartbeat เบิ้ล 2 ครั้ง/นาที — ต้องรอครบ interval จริง (เช็ค stop ทุก ≤5 วิ)"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "config.ini")
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write(MINIMAL_INI.replace("interval_seconds = 60", "interval_seconds = 15"))
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_loop_waits_full_interval_not_5s(self):
+        clock = [1000.0]
+        run_times = []
+
+        class FakeStop:
+            def __init__(self):
+                self._set = False
+
+            def wait(self, timeout):
+                clock[0] += timeout
+                return self._set
+
+            def set(self):
+                self._set = True
+
+        stop = FakeStop()
+
+        def fake_run_once(self):
+            run_times.append(clock[0])
+            if len(run_times) >= 2:
+                stop.set()
+            return []
+
+        with mock.patch.object(ddns.time, "monotonic", lambda: clock[0]), \
+                mock.patch.object(ddns.time, "sleep", lambda s: clock.__setitem__(0, clock[0] + s)), \
+                mock.patch.object(ddns.DDNSEngine, "run_once", fake_run_once):
+            ddns.run_forever(self.path, dry_run=True, stop_event=stop)
+
+        self.assertGreaterEqual(len(run_times), 2)
+        gap = run_times[1] - run_times[0]
+        self.assertGreaterEqual(gap, 14, f"run_once ต้องห่างกัน ~interval (15 วิ) ไม่ใช่ 5 วิ (ตอนนี้ {gap})")
+
+
 if __name__ == "__main__":
     unittest.main()

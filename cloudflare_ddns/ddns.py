@@ -576,22 +576,35 @@ def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_
         except Exception as exc:
             log.warning("daily report error: %s", exc)
 
-        wait = max(min(interval - elapsed, 5), 1)
+        wait = max(interval - elapsed, 1)
+        stopped = False
         if stop_event is not None:
-            if stop_event.wait(wait):
-                log.info("หยุด loop ตามคำสั่ง")
-                if not dry_run:
-                    duration = time.monotonic() - loop_started
-                    hours, rem = divmod(int(duration), 3600)
-                    minutes = rem // 60
-                    notify.notify(
-                        notifier.EVENT_STOP,
-                        i18n.t(getattr(notify, "lang", "th") or "th", "ddns.stop_msg").format(
-                            hours, minutes, round_count
-                        ),
-                    )
-                    notify.flush()
-                    heartbeat.send_ping(config_mod.Config(config_path), ok=False, stopped=True)
-                break
+            # รอจนครบ interval จริง (เดิม min(...,5) ทำให้วน run_once ทุก 5 วิ =
+            # heartbeat เบิ้ล 2 ครั้ง/นาที) — แต่เช็ค stop_event ทุก ≤5 วิ
+            # เพื่อให้ service หยุดไว (ไม่บล็อก SCM 30 วิ)
+            deadline = time.monotonic() + wait
+            while True:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    break
+                if stop_event.wait(min(left, 5.0)):
+                    stopped = True
+                    break
         else:
             time.sleep(wait)
+
+        if stopped:
+            log.info("หยุด loop ตามคำสั่ง")
+            if not dry_run:
+                duration = time.monotonic() - loop_started
+                hours, rem = divmod(int(duration), 3600)
+                minutes = rem // 60
+                notify.notify(
+                    notifier.EVENT_STOP,
+                    i18n.t(getattr(notify, "lang", "th") or "th", "ddns.stop_msg").format(
+                        hours, minutes, round_count
+                    ),
+                )
+                notify.flush()
+                heartbeat.send_ping(config_mod.Config(config_path), ok=False, stopped=True)
+            break
