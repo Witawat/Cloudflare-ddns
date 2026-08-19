@@ -8,6 +8,9 @@ config.ini.bak
 config.ini.bak[0-9]
 state.json
 notify_queue.json
+heartbeat_state.json
+instance.lock
+heartbeat.lock
 logs/
 cloudflared.exe
 tunnel.pid

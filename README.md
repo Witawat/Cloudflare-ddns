@@ -139,6 +139,7 @@ cloudflared_path =                ; เว้นว่าง = ดาวน์�
 - **wizard ครั้งแรก** ขึ้นเองอัตโนมัติเมื่อ config ไม่ครบ + wizard Tunnel แยก
 - ตั้ง `webui_password` ได้ในฟอร์ม (ต้อง login หลังตั้ง) · **กันสุ่มรหัสผ่าน** (ผิด 5 ครั้งติด → ล็อก 5 นาที) · **รหัสเก็บเป็น hash** · **กัน CSRF (ตรวจ Origin) + security headers** · **กู้รหัสผ่านได้ 3 ทาง** (ฟอร์ม / `reset-password` / Telegram opt-in) · responsive มือถือ
 - **ปุ่มทดสอบ heartbeat** + **ปุ่มเช็คอัปเดต cloudflared** ในฟอร์มตั้งค่า
+- **กันรันซ้ำ instance** (เปิด exe/run/service ตัวที่ 2 จะแจ้งเตือนแล้วปิดตัวเอง) + **heartbeat กันส่งซ้ำข้าม process** — ไม่มี ping เบิ้ลอีก
 
 ## config.ini
 

@@ -98,6 +98,11 @@ def queue_path_for(config_path=None):
     return os.path.join(data_dir_for(config_path), "notify_queue.json")
 
 
+def heartbeat_state_path_for(config_path=None):
+    """ไฟล์จดเวลาส่ง heartbeat ล่าสุด (ข้าม process) — กันส่งเบิ้ลเมื่อรัน 2 instance"""
+    return os.path.join(data_dir_for(config_path), "heartbeat_state.json")
+
+
 def log_dir_for(config_path=None):
     return os.path.join(data_dir_for(config_path), "logs")
 

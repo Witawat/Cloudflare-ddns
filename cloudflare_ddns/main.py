@@ -219,9 +219,13 @@ def cmd_setup(args):
 
 
 def cmd_run(args):
+    from . import instance_lock
     from . import service as service_mod
 
     cfg = config_mod.Config(args.config)
+    if not instance_lock.acquire_instance_lock(args.config):
+        print("✗ มีโปรแกรม/service รันอยู่แล้ว (instance เดียวเท่านั้น) — ปิดตัวเดิมก่อน แล้วลองใหม่")
+        return 1
     setup_console_logging()
     print_banner()
     service_mod.setup_file_logging(cfg.log_dir)
@@ -414,12 +418,16 @@ def cmd_webui(args):
 def cmd_default(args):
     """รันโดยไม่ใส่คำสั่ง: Web UI + DDNS loop + Cloudflare Tunnel พร้อมกัน (เทียบเท่า service).
     กด exe ครั้งเดียวทำงานเต็มรูปแบบ — ปิดด้วย Ctrl+C (หยุดทุกอย่าง + แจ้ง Telegram 'หยุดทำงาน')"""
+    from . import instance_lock
     from . import service as service_mod
     from . import webui
 
     setup_console_logging()
     print_banner()
     cfg = config_mod.Config(args.config)
+    if not instance_lock.acquire_instance_lock(args.config):
+        print("✗ มีโปรแกรม/service รันอยู่แล้ว (instance เดียวเท่านั้น) — ปิดตัวเดิมก่อน แล้วลองใหม่")
+        return 1
     errors = cfg.validate()
     if errors:
         print("ยังไม่ได้ตั้งค่า — กำลังเปิดหน้าตั้งค่า (wizard)...")

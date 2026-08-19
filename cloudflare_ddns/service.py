@@ -83,6 +83,12 @@ def _make_service_class():
             os.environ["CFDDNS_RUNNING_AS_SERVICE"] = "1"
             cfg = config_mod.Config(config_mod.DEFAULT_CONFIG_PATH)
             setup_file_logging(cfg.log_dir)
+            # กันรันซ้ำ (service + exe/run อีกตัว) — ถ้ามี instance อื่นอยู่แล้ว ไม่เริ่ม loop
+            from . import instance_lock
+
+            if not instance_lock.acquire_instance_lock(config_mod.DEFAULT_CONFIG_PATH):
+                log.warning("มีโปรแกรม/service instance อื่นรันอยู่แล้ว — service ไม่เริ่ม loop ซ้ำ (กัน heartbeat ส่งเบิ้ล)")
+                return
             log.info("service เริ่มทำงาน (interval=%ss)", cfg.interval_seconds)
 
             # เปิด Web UI ก่อน (เร็ว ไม่บล็อก SCM timeout) - เข้าผ่าน 127.0.0.1:8123 ได้ตลอด

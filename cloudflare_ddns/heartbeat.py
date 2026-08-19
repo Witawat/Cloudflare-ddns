@@ -4,13 +4,16 @@
 - Uptime Kuma:      URL push monitor — ต่อ ?status=down&msg=... เมื่อล้มเหลว/ปิด
 """
 
+import json
 import logging
+import os
 import time
 import urllib.error
 import urllib.request
 
 from . import config as config_mod
 from . import i18n
+from . import instance_lock
 
 log = logging.getLogger("cloudflare-ddns")
 
@@ -23,6 +26,28 @@ _last_warn_time = 0.0
 # ถ้าห่างจากครั้งก่อน < 30 วิ จะข้าม (Healthchecks จำกัด ping ต่อนาที)
 MIN_PING_INTERVAL = 30
 _last_sent = {}
+
+
+def _load_state(config_path):
+    """อ่านเวลาส่ง heartbeat ล่าสุดจากไฟล์ (ข้าม process) — กันรันซ้ำ 2 instance ส่งเบิ้ล"""
+    path = config_mod.heartbeat_state_path_for(config_path)
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_state(config_path, data):
+    path = config_mod.heartbeat_state_path_for(config_path)
+    text = json.dumps(data, ensure_ascii=False)
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            if handle.read() == text:
+                return
+    except OSError:
+        pass
+    config_mod.atomic_write_text(path, text)
 
 
 def _ping(url, timeout=HEARTBEAT_TIMEOUT):
@@ -63,6 +88,9 @@ def send_ping(cfg, ok=True, stopped=False):
     ok=True  = รอบทำงานปกติ (ping URL ตรง ๆ)
     ok=False = รอบมีปัญหา (ส่งสัญญาณ fail)
     stopped  = โปรแกรมกำลังหยุด (ส่งสัญญาณ exit)
+
+    กันส่งซ้ำข้าม process: ครอบ file lock ช่วงตรวจ-ส่ง-เขียน (อีก instance ที่ lock
+    ไม่ได้จะข้ามรอบนี้) + จดเวลาล่าสุดลง heartbeat_state.json (อ่านจากทุก process)
     """
     global _last_warn_time
     lang = getattr(cfg, "language", "th") or "th"
@@ -72,23 +100,32 @@ def send_ping(cfg, ok=True, stopped=False):
             urls.append(value.strip())
     if not urls:
         return
-    for url in urls:
-        target = _signal_url(url, "exit", lang) if stopped else (_signal_url(url, "fail", lang) if not ok else url)
-        now = time.time()
-        last = _last_sent.get(target, 0)
-        if not stopped and now - last < MIN_PING_INTERVAL:
-            log.debug("ข้าม heartbeat (ถี่เกิน %d วิ): %s", MIN_PING_INTERVAL, target)
-            continue
-        ok_sent, error = _ping(target)
-        if ok_sent:
-            _last_sent[target] = now
-            log.debug("heartbeat สำเร็จ: %s", target)
-            continue
-        if now - _last_warn_time >= _WARN_INTERVAL:
-            _last_warn_time = now
-            log.warning("heartbeat ส่งไม่ได้: %s (%s)", target, error)
-        else:
-            log.debug("heartbeat ส่งไม่ได้ (ซ้ำ): %s (%s)", target, error)
+    config_path = getattr(cfg, "path", "") or ""
+    lock_path = os.path.join(config_mod.data_dir_for(config_path), "heartbeat.lock")
+    with instance_lock.file_lock(lock_path) as lock:
+        if not lock.locked:
+            log.debug("ข้าม heartbeat (lock ถูกครอบ — instance อื่นกำลังส่ง)")
+            return
+        state = _load_state(config_path)
+        for url in urls:
+            target = _signal_url(url, "exit", lang) if stopped else (_signal_url(url, "fail", lang) if not ok else url)
+            now = time.time()
+            last = max(state.get(target, 0), _last_sent.get(target, 0))
+            if not stopped and now - last < MIN_PING_INTERVAL:
+                log.debug("ข้าม heartbeat (ถี่เกิน %d วิ): %s", MIN_PING_INTERVAL, target)
+                continue
+            ok_sent, error = _ping(target)
+            if ok_sent:
+                state[target] = now
+                _last_sent[target] = now
+                log.debug("heartbeat สำเร็จ: %s", target)
+                continue
+            if now - _last_warn_time >= _WARN_INTERVAL:
+                _last_warn_time = now
+                log.warning("heartbeat ส่งไม่ได้: %s (%s)", target, error)
+            else:
+                log.debug("heartbeat ส่งไม่ได้ (ซ้ำ): %s (%s)", target, error)
+        _save_state(config_path, state)
 
 
 def send_test(cfg):

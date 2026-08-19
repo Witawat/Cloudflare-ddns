@@ -2,6 +2,18 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.2.1] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
+
+### แก้บั๊ก (Fixes)
+
+- **Healthchecks ส่ง ping เบิ้ล (2 ครั้ง/นาที)**: เกิดจากการรันโปรแกรมซ้ำ 2 instance พร้อมกัน (เช่น service + เปิด exe ด้วยมือ) — แต่ละ process กันส่งซ้ำของตัวเองได้ (memory) แต่กันข้าม process ไม่ได้ แก้ 2 ชั้น:
+  - **กันรันซ้ำ instance**: เพิ่ม `instance.lock` (file lock ข้าม process + session — เห็นกันทั้ง service ใน session 0 และ exe ผู้ใช้ใน session 1) — เปิด exe/run/service ตัวที่ 2 จะแจ้งเตือนแล้วปิดตัวเอง ไม่เริ่ม loop ซ้ำ
+  - **heartbeat กันซ้ำข้าม process**: ครอบ file lock ช่วงตรวจ-ส่ง-เขียน + จดเวลาส่งล่าสุดลง `heartbeat_state.json` (ข้าง config) — อ่านจากทุก process กันส่งซ้ำแม้พลาดจาก instance lock
+
+### เพิ่ม (Tests)
+
+- `test_heartbeat.py`: กันส่งซ้ำ 30 วิ / กันซ้ำข้าม process (state ไฟล์ + lock ถูกครอบ) / fail-exit signal / instance lock ครอบ-ปลด (149 เทสต์)
+
 ## [2.2.0] — 2026-08-18 (bumped — ยังไม่ปล่อย release)
 
 ### เพิ่ม (Features)
