@@ -71,8 +71,24 @@ p { margin: 0; }
 }
 .lang-btn:hover { background: var(--surface-2); }
 .lang-btn.active { background: var(--accent); color: var(--accent-ink); }
+/* มือถือ: topbar กันล้นขอบ — ลด padding, brand ย่อ, ปุ่มเรียง 2 แถว
+   แถว 1: สถานะ (ซ้าย) + รีเฟรช (ขวา) · แถว 2: ภาษา + ขนาดอักษร */
 @media (max-width: 560px) {
-  .lang-switch { order: -1; }
+  .topbar { padding: 10px 12px; gap: 8px; }
+  .brand { gap: 8px; width: 100%; }
+  .brand-dot { width: 30px; height: 30px; }
+  .brand .sub { display: none; }
+  .top-right {
+    width: 100%; gap: 6px; flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .top-right #pill { order: 1; margin-right: auto; }
+  .top-right #refresh { order: 1; }
+  .top-right .lang-switch { order: 2; }
+  .top-right .fs-switch { order: 2; }
+  .top-right .pill { font-size: 0.75rem; padding: 3px 8px; }
+  #verpill { display: none; }
+  #update-pill { display: none; }
 }
 .pill {
   font-size: 0.85rem; font-weight: 600; padding: 5px 12px; border-radius: 999px;
