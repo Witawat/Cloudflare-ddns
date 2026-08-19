@@ -362,6 +362,8 @@ const I18N = {
     "html.117": "ความถี่ส่ง heartbeat ขั้นต่ำ (วินาที 5-3600 — Healthchecks รับ ~1 ครั้ง/นาที ใช้ 60)",
     "html.118": " log ละเอียด (pid + heartbeat) สำหรับหาสาเหตุ",
     "html.119": "โปรโตคอลเชื่อม Cloudflare (quic = เร็วสุด แต่ ISP บางรายบล็อก UDP → ใช้ http2)",
+    "html.120": "ลดขนาดอักษร",
+    "html.121": "เพิ่มขนาดอักษร",
     "html.089": "แจ้งเตือน Telegram",
     "html.090": "Bot token (จาก @BotFather)",
     "html.091": "Chat ID (เว้น = wizard/notify-test หาให้)",
@@ -485,6 +487,8 @@ const I18N = {
     "html.117": "Min heartbeat interval (seconds 5-3600 — Healthchecks accepts ~1/min, use 60)",
     "html.118": " Detail log (pid + heartbeat) for troubleshooting",
     "html.119": "Cloudflare connection protocol (quic = fastest, but some ISPs block UDP → use http2)",
+    "html.120": "Decrease font size",
+    "html.121": "Increase font size",
     "html.089": "Telegram notifications",
     "html.090": "Bot token (from @BotFather)",
     "html.091": "Chat ID (empty = wizard/notify-test finds it)",
@@ -2591,6 +2595,38 @@ i18nApply();
     btn.classList.toggle("active", btn.dataset.lang === LANG);
     btn.addEventListener("click", () => { if (btn.dataset.lang !== LANG) setLang(btn.dataset.lang); });
   });
+})();
+
+/* ============ ขนาดอักษร (A−/A+ — เหมือน zoom 100/125/150%) ============ */
+
+const FS_LEVELS = [100, 125, 150];
+let fsLevel = (() => {
+  const saved = parseInt(localStorage.getItem("cfddns_fs") || "100", 10);
+  return FS_LEVELS.includes(saved) ? saved : 100;
+})();
+
+function applyFontScale() {
+  document.documentElement.style.setProperty("--fs-scale", String(fsLevel / 100));
+  localStorage.setItem("cfddns_fs", String(fsLevel));
+  const minus = $("fsMinus"), plus = $("fsPlus");
+  if (minus) minus.disabled = fsLevel <= FS_LEVELS[0];
+  if (plus) plus.disabled = fsLevel >= FS_LEVELS[FS_LEVELS.length - 1];
+}
+
+function fsStep(delta) {
+  const idx = FS_LEVELS.indexOf(fsLevel);
+  const next = Math.max(0, Math.min(FS_LEVELS.length - 1, idx + delta));
+  if (next !== idx) { fsLevel = FS_LEVELS[next]; applyFontScale(); }
+}
+
+(function initFsSwitch() {
+  const minus = $("fsMinus"), plus = $("fsPlus");
+  if (!minus || !plus) return;
+  minus.title = t("html.120");
+  plus.title = t("html.121");
+  minus.addEventListener("click", () => fsStep(-1));
+  plus.addEventListener("click", () => fsStep(1));
+  applyFontScale();
 })();
 
 loadStatus();

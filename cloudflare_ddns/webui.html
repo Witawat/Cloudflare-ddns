@@ -26,9 +26,10 @@
   --danger-light: oklch(0.92 0.065 25);
   --z-sticky: 10;
   --z-toast: 40;
+  --fs-scale: 1;
 }
 * { box-sizing: border-box; }
-html { font-size: clamp(14px, 0.75rem + 0.55vw, 17px); }
+html { font-size: calc(clamp(14px, 0.75rem + 0.55vw, 17px) * var(--fs-scale)); }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
   font-family: "Segoe UI", system-ui, sans-serif; font-size: 1rem; line-height: 1.5;
@@ -57,6 +58,13 @@ p { margin: 0; }
 }
 .brand .sub { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
 .top-right { display: flex; align-items: center; gap: 10px; }
+.fs-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; flex: none; }
+.fs-btn {
+  border: 0; background: var(--surface); color: var(--ink-2); cursor: pointer;
+  font-size: 0.8rem; font-weight: 700; padding: 4px 10px; line-height: 1.2;
+}
+.fs-btn:hover { background: var(--surface-2); }
+.fs-btn:disabled { opacity: 0.4; cursor: default; }
 .lang-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; flex: none; }
 .lang-btn {
   border: 0; background: var(--surface); color: var(--ink-2); cursor: pointer;
@@ -334,6 +342,10 @@ __LOGIN__
     <a id="update-pill" class="pill" href="#" target="_blank" rel="noopener" style="display:none;font-size:0.75rem;padding:3px 10px;text-decoration:none;color:var(--warn);background:var(--warn-soft);border-color:color-mix(in oklch, var(--warn) 30%, transparent)"><span data-i18n="html.003">มีเวอร์ชันใหม่</span></a>
     <span id="lang-switch" class="lang-switch">
       <button class="lang-btn" data-lang="th">TH</button><button class="lang-btn" data-lang="en">EN</button>
+    </span>
+    <span id="fs-switch" class="fs-switch" title="ขนาดอักษร">
+      <button id="fsMinus" class="fs-btn" type="button" title="ลดขนาดอักษร">A−</button>
+      <button id="fsPlus" class="fs-btn" type="button" title="เพิ่มขนาดอักษร">A+</button>
     </span>
     <button id="refresh" class="btn-secondary"><span data-i18n="html.004">รีเฟรช</span></button>
   </div>
