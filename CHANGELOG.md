@@ -2,6 +2,20 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.2.3] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
+
+### แก้บั๊ก (Fixes)
+
+- **heartbeat log ไม่มีประโยชน์ตอนหาเบิ้ล**: เดิม log การส่ง/ข้าม heartbeat เป็น DEBUG
+  (ไฟล์ log ตั้ง INFO — มองไม่เห็น) + formatter ไม่มี pid — แยกไม่ออกว่า 2 instance รันหรือไม่
+  - ย้ายเป็น INFO: "heartbeat: ส่ง OK — <url>" / "ข้าม (ส่งล่าสุดเมื่อ X วิ)" / "lock ถูกครอบ"
+  - formatter เพิ่ม `pid=` — เห็นทันทีว่า log มาจาก process ไหน (2 pid ต่างกัน = 2 instance)
+  - log ตอนเริ่ม loop: pid + config path + interval — รู้ว่า instance ไหนใช้ config อะไร
+
+### เพิ่ม (Tests)
+
+- (150 เทสต์ — ไม่เปลี่ยน logic มีแต่ log)
+
 ## [2.2.2] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
 
 ### แก้บั๊ก (Fixes)

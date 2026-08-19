@@ -15,6 +15,7 @@
 - file_lock(path)                     context manager ครอบสั้น ๆ (กันอ่าน-เขียนพร้อมกัน)
 """
 
+import logging
 import os
 
 try:
@@ -23,6 +24,8 @@ except ImportError:  # ไม่ใช่ Windows (dev บน mac/linux) — ป
     msvcrt = None
 
 from . import config as config_mod
+
+log = logging.getLogger("cloudflare-ddns")
 
 _log_lock_fd = None
 
@@ -60,6 +63,7 @@ def acquire_instance_lock(config_path=None):
                 os.close(fd)
             except OSError:
                 pass
+        log.warning("กันรันซ้ำ: มี instance อื่นรันอยู่แล้ว (lock ถูกครอบ) — ไม่เริ่ม loop ซ้ำ")
         return False
 
 

@@ -26,7 +26,8 @@ def setup_file_logging(log_dir=None):
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     formatter = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+        "%(asctime)s [%(levelname)s] pid=%(process)d %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
     for handler in list(root.handlers):
         if isinstance(handler, TimedRotatingFileHandler):

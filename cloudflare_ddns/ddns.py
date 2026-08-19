@@ -498,7 +498,12 @@ def _periodic_update_check(cfg, config_path):
 
 def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_event=None):
     """ลูปหลัก: รันทุก interval ตาม config (อ่าน config ใหม่ทุกรอบ)."""
-    log.info("เริ่ม DDNS loop (dry_run=%s)", dry_run)
+    import os as _os
+
+    log.info(
+        "เริ่ม DDNS loop (pid=%d, config=%s, interval=%ds, dry_run=%s)",
+        _os.getpid(), config_path, int(config_mod.Config(config_path).interval_seconds), dry_run,
+    )
     config_mod.migrate_legacy_data()
     cfg0 = config_mod.Config(config_path)
     notify = notifier.TelegramNotifier.from_config(cfg0)
