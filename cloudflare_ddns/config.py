@@ -231,6 +231,7 @@ class Config:
         self.reject_cloudflare_ips = True
         self.healthchecks_url = ""
         self.uptimekuma_url = ""
+        self.heartbeat_min_interval = 60
         self.webui_port = 8123
         self.webui_host = "127.0.0.1"
         self.webui_password = ""
@@ -285,6 +286,7 @@ class Config:
         self.reject_cloudflare_ips = self._as_bool(section, "reject_cloudflare_ips", True)
         self.healthchecks_url = section.get("healthchecks_url", "").strip()
         self.uptimekuma_url = section.get("uptimekuma_url", "").strip()
+        self.heartbeat_min_interval = self._as_float(section, "heartbeat_min_interval", 60)
         self.webui_port = max(1, min(65535, int(self._as_float(section, "webui_port", 8123))))
         self.webui_host = section.get("webui_host", "127.0.0.1").strip() or "127.0.0.1"
         self.webui_password = section.get("webui_password", "").strip()
@@ -401,6 +403,8 @@ class Config:
         ):
             if value and not value.startswith(("http://", "https://")):
                 errors.append(f"{key} ต้องเป็น URL เต็ม (http/https): {value}")
+        if not (5 <= self.heartbeat_min_interval <= 3600):
+            errors.append(f"heartbeat_min_interval ต้องอยู่ระหว่าง 5-3600 วินาที (ตอนนี้: {self.heartbeat_min_interval})")
         if self.tunnel_hosts:
             import json as _json
 
@@ -487,6 +491,7 @@ class Config:
         self.reject_cloudflare_ips = self._as_bool(section, "reject_cloudflare_ips", True)
         self.healthchecks_url = section.get("healthchecks_url", "").strip()
         self.uptimekuma_url = section.get("uptimekuma_url", "").strip()
+        self.heartbeat_min_interval = self._as_float(section, "heartbeat_min_interval", 60)
         self.webui_port = max(1, min(65535, int(self._as_float(section, "webui_port", 8123))))
         self.webui_host = section.get("webui_host", "127.0.0.1").strip() or "127.0.0.1"
         self.webui_password = section.get("webui_password", "").strip()

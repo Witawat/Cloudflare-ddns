@@ -92,6 +92,25 @@ zone = example.com
         cfg = config_mod.Config(self.path)
         self.assertTrue(any("daily_report_time" in e for e in cfg.validate()))
 
+    def test_heartbeat_min_interval_default_60(self):
+        write_ini(self.path, MINIMAL_INI)
+        cfg = config_mod.Config(self.path)
+        self.assertEqual(cfg.heartbeat_min_interval, 60)
+
+    def test_heartbeat_min_interval_read_from_file(self):
+        write_ini(self.path, MINIMAL_INI.replace(
+            "[cloudflare]", "[cloudflare]\nheartbeat_min_interval = 15"
+        ))
+        cfg = config_mod.Config(self.path)
+        self.assertEqual(cfg.heartbeat_min_interval, 15)
+
+    def test_heartbeat_min_interval_out_of_range_fails_validate(self):
+        write_ini(self.path, MINIMAL_INI.replace(
+            "[cloudflare]", "[cloudflare]\nheartbeat_min_interval = 1"
+        ))
+        cfg = config_mod.Config(self.path)
+        self.assertTrue(any("heartbeat_min_interval" in e for e in cfg.validate()))
+
 
 class RotateBackupTest(unittest.TestCase):
     def setUp(self):

@@ -590,6 +590,9 @@ __LOGIN__
         <input id="kuma_url" type="text" class="mono" autocomplete="off" placeholder="https://kuma.example.com/api/push/xxxx">
       </label>
     </div>
+    <label class="field" style="max-width:320px"><span data-i18n="html.117">ความถี่ส่ง heartbeat ขั้นต่ำ (วินาที 5-3600 — Healthchecks รับ ~1 ครั้ง/นาที ใช้ 60)</span>
+      <input id="hb_min_interval" type="number" min="5" max="3600" step="1">
+    </label>
 
     <h3><span data-i18n="html.089">แจ้งเตือน Telegram</span></h3>
     <div class="grid2">

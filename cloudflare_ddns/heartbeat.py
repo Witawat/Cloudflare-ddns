@@ -95,6 +95,11 @@ def send_ping(cfg, ok=True, stopped=False):
     """
     global _last_warn_time
     lang = getattr(cfg, "language", "th") or "th"
+    # ความถี่ขั้นต่ำระหว่าง ping 2 ครั้ง (วินาที) — ตั้งได้ใน config (default 60 —
+    # Healthchecks รับ ~1 ครั้ง/นาที; Kuma รับถี่กว่าได้)
+    min_interval = float(getattr(cfg, "heartbeat_min_interval", 0) or MIN_PING_INTERVAL)
+    if min_interval < 5:
+        min_interval = MIN_PING_INTERVAL
     urls = []
     for value in (getattr(cfg, "healthchecks_url", ""), getattr(cfg, "uptimekuma_url", "")):
         if value and value.strip():
@@ -112,8 +117,8 @@ def send_ping(cfg, ok=True, stopped=False):
             target = _signal_url(url, "exit", lang) if stopped else (_signal_url(url, "fail", lang) if not ok else url)
             now = time.time()
             last = max(state.get(target, 0), _last_sent.get(target, 0))
-            if not stopped and now - last < MIN_PING_INTERVAL:
-                log.info("heartbeat: ข้าม %s (ส่งล่าสุดเมื่อ %.0f วิที่แล้ว — ต้องห่าง ≥%d วิ)", target, now - last, MIN_PING_INTERVAL)
+            if not stopped and now - last < min_interval:
+                log.info("heartbeat: ข้าม %s (ส่งล่าสุดเมื่อ %.0f วิที่แล้ว — ต้องห่าง ≥%d วิ)", target, now - last, int(min_interval))
                 continue
             ok_sent, error = _ping(target)
             if ok_sent:

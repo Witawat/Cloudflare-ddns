@@ -359,6 +359,7 @@ const I18N = {
     "html.086": "ส่งสัญญาณ \"ยังทำงาน\" ทุกรอบให้บริการเฝ้าดู — รู้ว่าเครื่อง/program ตายหรือไม่จากนอกบ้าน (กรอก URL อันใดอันหนึ่งหรือทั้งคู่)",
     "html.087": "ทดสอบส่ง heartbeat",
     "html.088": "Healthchecks.io ping URL (ฟรี: healthchecks.io)",
+    "html.117": "ความถี่ส่ง heartbeat ขั้นต่ำ (วินาที 5-3600 — Healthchecks รับ ~1 ครั้ง/นาที ใช้ 60)",
     "html.089": "แจ้งเตือน Telegram",
     "html.090": "Bot token (จาก @BotFather)",
     "html.091": "Chat ID (เว้น = wizard/notify-test หาให้)",
@@ -479,6 +480,7 @@ const I18N = {
     "html.086": "Send an \"I'm alive\" signal every round to a monitor — so you know from outside if the machine/program is dead (fill either or both URLs)",
     "html.087": "Test heartbeat",
     "html.088": "Healthchecks.io ping URL (free: healthchecks.io)",
+    "html.117": "Min heartbeat interval (seconds 5-3600 — Healthchecks accepts ~1/min, use 60)",
     "html.089": "Telegram notifications",
     "html.090": "Bot token (from @BotFather)",
     "html.091": "Chat ID (empty = wizard/notify-test finds it)",
@@ -1130,6 +1132,7 @@ async function loadConfig() {
     $("reject_cf_ips").checked = c.cloudflare.reject_cloudflare_ips !== false;
     $("hc_url").value = c.cloudflare.healthchecks_url || "";
     $("kuma_url").value = c.cloudflare.uptimekuma_url || "";
+    $("hb_min_interval").value = c.cloudflare.heartbeat_min_interval || 60;
     $("webui_password").value = "";
     currentWebuiPassword = c.cloudflare.webui_password;
     $("pwClear").style.display = currentWebuiPassword ? "" : "none";
@@ -1244,6 +1247,7 @@ async function saveConfig() {
       reject_cloudflare_ips: $("reject_cf_ips").checked,
       healthchecks_url: $("hc_url").value.trim(),
       uptimekuma_url: $("kuma_url").value.trim(),
+      heartbeat_min_interval: Math.max(5, Math.min(3600, Math.floor(+$("hb_min_interval").value || 60))),
       webui_port: Math.max(1, Math.min(65535, Math.floor(+$("webui_port").value || currentWebuiPort))),
       webui_host: $("webui_host").value.trim() || "127.0.0.1",
       webui_password: pwValue,
@@ -2368,6 +2372,7 @@ function renderWizard() {
           reject_cloudflare_ips: existing.cloudflare.reject_cloudflare_ips !== false,
           healthchecks_url: existing.cloudflare.healthchecks_url || "",
           uptimekuma_url: existing.cloudflare.uptimekuma_url || "",
+          heartbeat_min_interval: existing.cloudflare.heartbeat_min_interval || 60,
           webui_port: existing.cloudflare.webui_port || 8123,
           webui_host: existing.cloudflare.webui_host || "127.0.0.1",
           webui_password: existing.cloudflare.webui_password || "",

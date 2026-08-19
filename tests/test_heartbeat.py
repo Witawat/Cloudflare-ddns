@@ -106,6 +106,30 @@ class TestHeartbeatPing(unittest.TestCase):
             os.path.join(self.tmp, "heartbeat_state.json"),
         )
 
+    def test_ใช้ค่าความถี่จากconfig(self):
+        """heartbeat_min_interval = 5 -> ส่งซ้ำได้เมื่อห่าง 6 วิ (ไม่ใช่ 60)"""
+        cfg = _make_cfg(self.tmp)
+        cfg.heartbeat_min_interval = 5
+        calls = []
+        self._patch_ping(calls)
+        heartbeat.send_ping(cfg)
+        heartbeat._last_sent.clear()
+        state = heartbeat._load_state(cfg.path)
+        for key in state:
+            state[key] -= 6
+        heartbeat._save_state(cfg.path, state)
+        heartbeat.send_ping(cfg)
+        self.assertEqual(len(calls), 2)
+
+    def test_ค่าconfigต่ำกว่า5_fall_back_60(self):
+        cfg = _make_cfg(self.tmp)
+        cfg.heartbeat_min_interval = 1
+        calls = []
+        self._patch_ping(calls)
+        heartbeat.send_ping(cfg)
+        heartbeat.send_ping(cfg)
+        self.assertEqual(len(calls), 1)
+
 
 class TestInstanceLock(unittest.TestCase):
     def setUp(self):

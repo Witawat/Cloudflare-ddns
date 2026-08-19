@@ -236,6 +236,7 @@ ip_consensus          ต้องมี provider ตรวจ IP ≥ 2 รา�
 reject_cloudflare_ips   กัน IP ของ Cloudflare (anycast) ถูกเขียนลง record (ค่าเริ่มต้น true)
 healthchecks_url     Heartbeat: ping URL ของ Healthchecks.io (ว่าง = ปิด)
 uptimekuma_url       Heartbeat: push URL ของ Uptime Kuma (ว่าง = ปิด)
+heartbeat_min_interval  Heartbeat: ความถี่ขั้นต่ำระหว่าง ping 2 ครั้ง (วินาที 5-3600, default 60 — Healthchecks รับ ~1 ครั้ง/นาที; Kuma รับถี่กว่าได้)
 webui_port           8123
 webui_host           127.0.0.1 (0.0.0.0 = เข้าจากเครื่องอื่นใน LAN ได้ — ต้องตั้งรหัสผ่าน + เปิด firewall)
 webui_password       ว่าง = ไม่ต้อง login (เก็บเป็น hash อัตโนมัติ — ลืม = รัน `reset-password`)

@@ -411,6 +411,11 @@ class DictToIniTest(unittest.TestCase):
         text = webui._dict_to_ini(payload, self.path)
         self.assertIn("webui_password =", text)
 
+    def test_heartbeat_min_interval_roundtrip(self):
+        payload = {"cloudflare": {"heartbeat_min_interval": 15}, "telegram": {}, "tunnel": {}, "records": []}
+        text = webui._dict_to_ini(payload, self.path)
+        self.assertIn("heartbeat_min_interval = 15", text)
+
 
 class MigratePasswordHashTest(unittest.TestCase):
     """config เก่าที่เก็บ plaintext -> ต้องย้ายเป็น hash เสมอ (แม้ config ยังตั้งไม่ครบ)"""

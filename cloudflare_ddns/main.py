@@ -173,6 +173,7 @@ def cmd_setup(args):
         "interval_seconds": "60",
         "use_ipv4": "true",
         "use_ipv6": "true",
+        "heartbeat_min_interval": "60",
         "webui_port": "8123",
         "webui_password": "",
         "telegram_bot_token": "",

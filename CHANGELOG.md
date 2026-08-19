@@ -2,6 +2,22 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.3.0] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
+
+### เพิ่ม (Features)
+
+- **ตั้งค่าความถี่ส่ง heartbeat เองได้** (`heartbeat_min_interval` วินาที 5-3600, default 60):
+  - ฟอร์ม Heartbeat มีช่อง "ความถี่ส่ง heartbeat ขั้นต่ำ" — Healthchecks รับ ~1 ครั้ง/นาที (ใช้ 60)
+    ส่วน Uptime Kuma รับถี่กว่าได้ (เช่น 15)
+  - config ใหม่: `heartbeat_min_interval` ใน config.example.ini + wizard + validate (ช่วง 5-3600)
+  - ค่าต่ำกว่า 5 → fall back 60 (กันยิงถี่เกินจนโดนแบน)
+
+### เพิ่ม (Tests)
+
+- `test_config`: default 60 / อ่านจากไฟล์ / ออกจากช่วง fails validate
+- `test_webui_security`: _dict_to_ini เขียน field ครบ
+- `test_heartbeat`: ใช้ค่าจาก config (5 วิส่งซ้ำได้) / ค่า 1 → fall back 60 (156 เทสต์)
+
 ## [2.2.4] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
 
 ### แก้บั๊ก (Fixes)
