@@ -151,6 +151,7 @@ class TunnelStartKillStaleTest(unittest.TestCase):
 
         with mock.patch.object(mgr, "_find_stale_cloudflared", return_value=[111, 222]), \
                 mock.patch.object(mgr, "_kill_pid", side_effect=fake_kill), \
+                mock.patch.object(tunnel_mod, "ensure_installed", return_value=(True, "ok")), \
                 mock.patch.object(tunnel_mod.subprocess, "Popen") as popen:
             popen.return_value = mock.Mock(pid=333)
             ok, msg = mgr.start(self.cfg)
@@ -163,6 +164,7 @@ class TunnelStartKillStaleTest(unittest.TestCase):
         mgr = tunnel_mod.TunnelManager(self.cfg_path)
         self.cfg.tunnel_protocol = "http2"
         with mock.patch.object(mgr, "_find_stale_cloudflared", return_value=[]), \
+                mock.patch.object(tunnel_mod, "ensure_installed", return_value=(True, "ok")), \
                 mock.patch.object(tunnel_mod.subprocess, "Popen") as popen:
             popen.return_value = mock.Mock(pid=444)
             mgr.start(self.cfg)
@@ -175,6 +177,7 @@ class TunnelStartKillStaleTest(unittest.TestCase):
         mgr = tunnel_mod.TunnelManager(self.cfg_path)
         self.cfg.tunnel_protocol = "auto"
         with mock.patch.object(mgr, "_find_stale_cloudflared", return_value=[]), \
+                mock.patch.object(tunnel_mod, "ensure_installed", return_value=(True, "ok")), \
                 mock.patch.object(tunnel_mod.subprocess, "Popen") as popen:
             popen.return_value = mock.Mock(pid=555)
             mgr.start(self.cfg)
@@ -184,16 +187,40 @@ class TunnelStartKillStaleTest(unittest.TestCase):
     def test_stop_รอ_process_ตายก่อนล้างpid(self):
         mgr = tunnel_mod.TunnelManager(self.cfg_path)
         proc = mock.Mock()
-        proc.poll.return_value = None
+        proc.pid = 12345
+        proc.poll.return_value = None  # ยังรัน -> terminate + wait
         mgr._proc = proc
         mgr._pid = 999
-        with mock.patch.object(tunnel_mod, "_pid_alive", side_effect=[True, False]), \
+        # proc_pid(12345) ยัง alive (ต้อง taskkill) · pid ไฟล์(999) ตายแล้ว
+        with mock.patch.object(tunnel_mod, "_pid_alive", side_effect=lambda pid: pid == 12345), \
                 mock.patch.object(tunnel_mod, "_process_is_cloudflared", return_value=True), \
-                mock.patch.object(tunnel_mod.subprocess, "run"), \
+                mock.patch.object(tunnel_mod.subprocess, "run") as run, \
                 mock.patch.object(tunnel_mod.time, "sleep"):
             ok, msg = mgr.stop()
         self.assertTrue(ok)
         proc.wait.assert_called_once()
+        # taskkill ถูกเรียก (ฆ่า proc_pid 12345 ที่ยัง alive)
+        self.assertTrue(run.called)
+        args = run.call_args[0][0]
+        self.assertIn("12345", args)
+
+    def test_stop_ฆ่าproc_pid_ที่ไม่ยอมตาย(self):
+        """stop(): proc ยัง alive หลัง wait(6) -> ต้อง taskkill proc.pid (ตัวที่รันจริง)"""
+        mgr = tunnel_mod.TunnelManager(self.cfg_path)
+        proc = mock.Mock()
+        proc.pid = 55555
+        proc.poll.return_value = None
+        mgr._proc = proc
+        mgr._pid = None
+        # proc_pid(55555) ยัง alive ตลอด -> taskkill ต้องถูกเรียก
+        with mock.patch.object(tunnel_mod, "_pid_alive", side_effect=lambda pid: pid == 55555) as alive, \
+                mock.patch.object(tunnel_mod.subprocess, "run") as run, \
+                mock.patch.object(tunnel_mod.time, "sleep"):
+            ok, msg = mgr.stop()
+        self.assertTrue(ok)
+        self.assertGreaterEqual(alive.call_count, 2)  # ตรวจ proc_pid + รอตาย
+        calls = [c[0][0] for c in run.call_args_list]
+        self.assertTrue(any("55555" in c for c in calls))
 
 
 if __name__ == "__main__":

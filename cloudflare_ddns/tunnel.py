@@ -393,6 +393,7 @@ class TunnelManager:
         กัน restart ไวเกินแล้ว cloudflared เก่ายังค้าง -> tunnel ซ้อน/ไม่กลับมา
         """
         stopped = False
+        proc_pid = self._proc.pid if self._proc is not None else None
         if self._proc is not None and self._proc.poll() is None:
             try:
                 self._proc.terminate()
@@ -404,7 +405,20 @@ class TunnelManager:
                     self._proc.wait(timeout=6)
                 except Exception:
                     pass
+        # ฆ่า process ที่เราสร้างเองถ้ายังไม่ตาย (self._proc.pid — เชื่อถือได้ว่าเป็น cloudflared)
+        if proc_pid and _pid_alive(proc_pid):
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(proc_pid), "/F"],
+                    capture_output=True,
+                    timeout=10,
+                )
+                stopped = True
+            except Exception as exc:
+                log.warning("taskkill cloudflared (pid %s) ไม่ได้: %s", proc_pid, exc)
+        if self._proc is not None:
             self._proc = None
+        # pid จากไฟล์ (รอบก่อน/process อื่น) — ตรวจก่อน kill กัน pid reuse ผิดตัว
         if _pid_alive(self._pid):
             if not _process_is_cloudflared(self._pid):
                 log.warning(
@@ -425,7 +439,7 @@ class TunnelManager:
             # รอให้ process ตายจริง (กัน service restart ไวเกิน -> เก่ายังค้าง)
             deadline = time.time() + 6
             while time.time() < deadline:
-                if not _pid_alive(self._pid):
+                if not _pid_alive(self._pid) and not (proc_pid and _pid_alive(proc_pid)):
                     break
                 time.sleep(0.5)
         self._clear_pid()

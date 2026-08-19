@@ -221,7 +221,7 @@ class TunnelAutoRestartTest(unittest.TestCase):
     def test_ไม่เริ่มเมื่อปิดtunnel(self):
         self.cfg.tunnel_enabled = False
         with mock.patch.dict(sys.modules, {"cloudflare_ddns.tunnel": mock.Mock()}) as mods, \
-                mock.patch.object(__import__("cloudflare_ddns"), "tunnel", mods["cloudflare_ddns.tunnel"]):
+                mock.patch.object(__import__("cloudflare_ddns"), "tunnel", mods["cloudflare_ddns.tunnel"], create=True):
             tun = mods["cloudflare_ddns.tunnel"]
             ddns._ensure_tunnel_running(self.cfg, self.path)
             tun.TunnelManager.assert_not_called()
@@ -229,7 +229,7 @@ class TunnelAutoRestartTest(unittest.TestCase):
     def test_เริ่มใหม่เมื่อtunnelตาย(self):
         self.cfg.tunnel_enabled = True
         with mock.patch.dict(sys.modules, {"cloudflare_ddns.tunnel": mock.Mock()}) as mods, \
-                mock.patch.object(__import__("cloudflare_ddns"), "tunnel", mods["cloudflare_ddns.tunnel"]):
+                mock.patch.object(__import__("cloudflare_ddns"), "tunnel", mods["cloudflare_ddns.tunnel"], create=True):
             tun = mods["cloudflare_ddns.tunnel"]
             mgr = tun.TunnelManager.return_value
             mgr.status.return_value = {"running": False}
@@ -240,12 +240,38 @@ class TunnelAutoRestartTest(unittest.TestCase):
     def test_ไม่เริ่มเมื่อtunnelยังรัน(self):
         self.cfg.tunnel_enabled = True
         with mock.patch.dict(sys.modules, {"cloudflare_ddns.tunnel": mock.Mock()}) as mods, \
-                mock.patch.object(__import__("cloudflare_ddns"), "tunnel", mods["cloudflare_ddns.tunnel"]):
+                mock.patch.object(__import__("cloudflare_ddns"), "tunnel", mods["cloudflare_ddns.tunnel"], create=True):
             tun = mods["cloudflare_ddns.tunnel"]
             mgr = tun.TunnelManager.return_value
             mgr.status.return_value = {"running": True}
             ddns._ensure_tunnel_running(self.cfg, self.path)
             mgr.start.assert_not_called()
+
+    def test_กันstartซ้อน_doublecheck_running(self):
+        """ใน lock แล้ว status เป็น running (async thread start ไปก่อน) -> ต้องไม่ start ซ้ำ"""
+        self.cfg.tunnel_enabled = True
+        with mock.patch.dict(sys.modules, {"cloudflare_ddns.tunnel": mock.Mock()}) as mods, \
+                mock.patch.object(__import__("cloudflare_ddns"), "tunnel", mods["cloudflare_ddns.tunnel"], create=True):
+            tun = mods["cloudflare_ddns.tunnel"]
+            mgr = tun.TunnelManager.return_value
+            mgr.status.return_value = {"running": True}  # ใน lock เห็น running -> ข้าม
+            ddns._ensure_tunnel_running(self.cfg, self.path)
+            mgr.start.assert_not_called()
+
+    def test_กันstartซ้อน_lock_ครอบการเริ่ม(self):
+        """เรียก 2 ครั้งห่างกัน (sequential) -> start ได้ทั้ง 2 (ต่างเวลา ไม่ใช่ซ้อนพร้อมกัน)"""
+        self.cfg.tunnel_enabled = True
+        with mock.patch.dict(sys.modules, {"cloudflare_ddns.tunnel": mock.Mock()}) as mods, \
+                mock.patch.object(__import__("cloudflare_ddns"), "tunnel", mods["cloudflare_ddns.tunnel"], create=True):
+            tun = mods["cloudflare_ddns.tunnel"]
+            mgr = tun.TunnelManager.return_value
+            mgr.status.return_value = {"running": False}
+            mgr.start.return_value = (True, "เริ่ม tunnel แล้ว")
+            ddns._ensure_tunnel_running(self.cfg, self.path)
+            # ผ่าน 30 วิ (reset) -> เรียกอีกครั้งได้
+            ddns._tunnel_check_at = 0.0
+            ddns._ensure_tunnel_running(self.cfg, self.path)
+            self.assertEqual(mgr.start.call_count, 2)
 
 
 if __name__ == "__main__":

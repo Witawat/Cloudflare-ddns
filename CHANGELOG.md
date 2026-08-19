@@ -2,6 +2,26 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.4.1] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
+
+### แก้บั๊ก (Fixes)
+
+- **service หยุดไวเกินตอน cloudflared ดาวน์โหลดครั้งแรก**: เดิมรอ async tunnel thread แค่ 1 วิ —
+  ถ้ากำลังดาวน์โหลด (30+ วิ) ตอนหยุด service → `stop()` เรียกก่อน start เสร็จ → cloudflared ค้าง
+  แก้: `join(timeout=60)` รอ thread เริ่มให้เสร็จจริงก่อนหยุด
+- **tunnel.stop() ไม่ฆ่า process ที่รันจริง**: เดิม taskkill เฉพาะ pid จากไฟล์ (อาจเป็น pid เก่า) —
+  ถ้า cloudflared ตัวจริงไม่ยอมตายหลัง wait(6) → ค้าง แก้: ฆ่าทั้ง `self._proc.pid` + pid ไฟล์
+- **instance lock ชน → service เงียบ**: ตอนมี instance อื่นรันอยู่ service return โดยไม่แจ้ง SCM →
+  แก้: รายงาน `SERVICE_STOPPED` ก่อนจบ (SCM ไม่ค้างสถานะ)
+- **tunnel start ซ้อนตอน boot**: async thread + DDNS loop ตรวจพร้อมกันอาจ start cloudflared 2 ตัว
+  → แก้: `_ensure_tunnel_running` ครอบ `threading.Lock` + double-check status ใน lock
+
+### เพิ่ม (Tests)
+
+- `test_service.py` ใหม่: lock ชนแจ้ง SCM STOPPED / join thread ก่อน stop tunnel (ลำดับ)
+- `test_tunnel`: stop ฆ่า proc.pid ที่ไม่ยอมตาย / mock ensure_installed (ไม่ดาวน์โหลดจริง)
+- `test_ddns`: double-check running ใน lock / start 2 ครั้งห่างกัน (175 เทสต์)
+
 ## [2.4.0] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
 
 ### เพิ่ม (Features)

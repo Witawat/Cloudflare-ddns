@@ -99,6 +99,11 @@ def _make_service_class():
 
             if not instance_lock.acquire_instance_lock(config_mod.DEFAULT_CONFIG_PATH):
                 log.warning("มีโปรแกรม/service instance อื่นรันอยู่แล้ว — service ไม่เริ่ม loop ซ้ำ (กัน heartbeat ส่งเบิ้ล)")
+                # แจ้ง SCM ว่า service จบแบบหยุด (กัน SCM ค้างสถานะ STARTING/ค้างคา)
+                try:
+                    self.ReportServiceStatus(win32service.SERVICE_STOPPED)
+                except Exception:
+                    pass
                 return
             log.info("service เริ่มทำงาน (interval=%ss)", cfg.interval_seconds)
 
@@ -116,15 +121,17 @@ def _make_service_class():
             # เริ่ม Cloudflare Tunnel (อาจต้องดาวน์โหลด cloudflared ครั้งแรก -> รันแบบ async
             # ไม่ให้บล็อกการตอบสนอง SCM เกิน 30 วิ)
             tunnel_mgr = None
+            tunnel_thread = None
             try:
                 if cfg.tunnel_enabled:
                     from . import tunnel as tunnel_mod
 
                     tunnel_mgr = tunnel_mod.TunnelManager(config_mod.DEFAULT_CONFIG_PATH)
-                    threading.Thread(
+                    tunnel_thread = threading.Thread(
                         target=lambda: self._start_tunnel_async(tunnel_mgr, cfg),
                         daemon=True,
-                    ).start()
+                    )
+                    tunnel_thread.start()
             except Exception as exc:
                 log.warning("เริ่ม Cloudflare Tunnel ไม่ได้: %s", exc)
 
@@ -135,10 +142,10 @@ def _make_service_class():
                     stop_event=self._stop_event,
                 )
             finally:
-                # รอ thread เริ่ม tunnel ให้ทันก่อนหยุด (กัน cloudflared ค้าง
-                # ถ้ายังอยู่ในช่วงดาวน์โหลด/start ไม่ทันบันทึก pid)
-                if tunnel_mgr is not None:
-                    time.sleep(1.0)
+                # รอ thread เริ่ม tunnel ให้เสร็จจริงก่อนหยุด (กัน cloudflared ค้าง
+                # ถ้ายังอยู่ในช่วงดาวน์โหลด/start ไม่ทันบันทึก pid — รอได้สูงสุด ~60 วิ)
+                if tunnel_thread is not None:
+                    tunnel_thread.join(timeout=60)
                 if tunnel_mgr is not None:
                     try:
                         tunnel_mgr.stop()

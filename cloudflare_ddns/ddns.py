@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -498,6 +499,8 @@ def _periodic_update_check(cfg, config_path):
 
 _tunnel_check_at = 0.0
 TUNNEL_CHECK_INTERVAL = 30  # ตรวจ tunnel ตาย/ไม่รัน ทุก 30 วิ — ตายแล้วเริ่มใหม่เอง
+# กัน start ซ้อน: async thread (service boot) + loop ตรวจพร้อมกัน -> เริ่ม cloudflared 2 ตัว
+_tunnel_start_lock = threading.Lock()
 
 
 def _ensure_tunnel_running(cfg, config_path):
@@ -512,19 +515,20 @@ def _ensure_tunnel_running(cfg, config_path):
     if now - _tunnel_check_at < TUNNEL_CHECK_INTERVAL:
         return
     _tunnel_check_at = now
-    try:
-        from . import tunnel as tunnel_mod
+    with _tunnel_start_lock:
+        try:
+            from . import tunnel as tunnel_mod
 
-        mgr = tunnel_mod.TunnelManager(config_path)
-        status = mgr.status(cfg)
-        if status.get("running"):
-            return
-        log.warning("Cloudflare Tunnel ไม่รันอยู่ — เริ่มใหม่เอง")
-        result = mgr.start(cfg)
-        message = result[1] if isinstance(result, (tuple, list)) else str(result)
-        log.info("Cloudflare Tunnel: %s", message)
-    except Exception as exc:
-        log.warning("ตรวจ/เริ่ม tunnel ใหม่ไม่ได้: %s", exc)
+            mgr = tunnel_mod.TunnelManager(config_path)
+            # double-check: อีก thread (async boot) อาจ start ไปแล้วระหว่างรอ lock
+            if mgr.status(cfg).get("running"):
+                return
+            log.warning("Cloudflare Tunnel ไม่รันอยู่ — เริ่มใหม่เอง")
+            result = mgr.start(cfg)
+            message = result[1] if isinstance(result, (tuple, list)) else str(result)
+            log.info("Cloudflare Tunnel: %s", message)
+        except Exception as exc:
+            log.warning("ตรวจ/เริ่ม tunnel ใหม่ไม่ได้: %s", exc)
 
 
 def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_event=None):
