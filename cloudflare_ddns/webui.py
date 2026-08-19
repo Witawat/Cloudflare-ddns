@@ -224,6 +224,7 @@ def _cfg_to_dict(cfg):
             "healthchecks_url": cfg.healthchecks_url,
             "uptimekuma_url": cfg.uptimekuma_url,
             "heartbeat_min_interval": cfg.heartbeat_min_interval,
+            "detail_log": cfg.detail_log,
             "webui_port": cfg.webui_port,
             "webui_host": cfg.webui_host,
             "webui_password": cfg.webui_password,
@@ -290,6 +291,7 @@ def _dict_to_ini(data, config_path=""):
     kv("healthchecks_url", str(cf.get("healthchecks_url", "")).strip())
     kv("uptimekuma_url", str(cf.get("uptimekuma_url", "")).strip())
     kv("heartbeat_min_interval", _as_int(cf.get("heartbeat_min_interval", 60), 60))
+    kv("detail_log", str(bool(cf.get("detail_log", False))).lower())
     kv("webui_port", _as_int(cf.get("webui_port", 8123), 8123))
     kv("webui_host", str(cf.get("webui_host", "127.0.0.1")).strip() or "127.0.0.1")
     pw = str(cf.get("webui_password", "")).strip()

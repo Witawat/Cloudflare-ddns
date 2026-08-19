@@ -2,6 +2,20 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.3.1] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
+
+### เพิ่ม (Features)
+
+- **log ละเอียดเปิด/ปิดได้** (`detail_log = false` default ปิด): ช่อง "log ละเอียด (pid + heartbeat) สำหรับหาสาเหตุ" ในฟอร์ม —
+  เมื่อเปิด: ทุกบรรทัด log มี pid + บันทึก heartbeat ส่ง/ข้ามทุกครั้ง (ใช้หาสาเหตุ เช่น heartbeat เบิ้ล)
+  เมื่อปิด (default): log สะอาดเหมือนเดิม ไม่มี pid ไม่มี heartbeat ทุกรอบ
+
+### เพิ่ม (Tests)
+
+- `test_config`: detail_log default false / อ่านจากไฟล์
+- `test_webui_security`: _dict_to_ini เขียน detail_log true/false
+- `test_heartbeat`: formatter มี pid เมื่อ detail=True, ไม่มีเมื่อ detail=False (160 เทสต์)
+
 ## [2.3.0] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
 
 ### เพิ่ม (Features)

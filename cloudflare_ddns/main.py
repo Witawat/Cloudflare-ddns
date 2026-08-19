@@ -174,6 +174,7 @@ def cmd_setup(args):
         "use_ipv4": "true",
         "use_ipv6": "true",
         "heartbeat_min_interval": "60",
+        "detail_log": "false",
         "webui_port": "8123",
         "webui_password": "",
         "telegram_bot_token": "",
@@ -229,7 +230,7 @@ def cmd_run(args):
         return 1
     setup_console_logging()
     print_banner()
-    service_mod.setup_file_logging(cfg.log_dir)
+    service_mod.setup_file_logging(cfg.log_dir, detail=cfg.detail_log)
     ddns.run_forever(args.config, dry_run=False)
 
 
@@ -434,7 +435,7 @@ def cmd_default(args):
         print("ยังไม่ได้ตั้งค่า — กำลังเปิดหน้าตั้งค่า (wizard)...")
     else:
         print("เปิด Web UI + DDNS loop + Tunnel (ปิดด้วย Ctrl+C)")
-    service_mod.setup_file_logging(cfg.log_dir)
+    service_mod.setup_file_logging(cfg.log_dir, detail=cfg.detail_log)
 
     web_ui = None
     try:

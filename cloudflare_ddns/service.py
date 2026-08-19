@@ -19,16 +19,26 @@ SERVICE_DESCRIPTION = (
 log = logging.getLogger("cloudflare-ddns")
 
 
-def setup_file_logging(log_dir=None):
-    """log ไปไฟล์รายวัน (ใช้ทั้งตอน run foreground และตอนเป็น service)."""
+def setup_file_logging(log_dir=None, detail=False):
+    """log ไปไฟล์รายวัน (ใช้ทั้งตอน run foreground และตอนเป็น service).
+
+    detail=True: ทุกบรรทัดมี pid + ระดับ INFO ละเอียดขึ้น (ใช้หาสาเหตุ —
+    เช่น heartbeat เบิ้ล) — ปิด default (log สะอาด)
+    """
     log_dir = log_dir or config_mod.DEFAULT_LOG_DIR
     os.makedirs(log_dir, exist_ok=True)
     root = logging.getLogger()
     root.setLevel(logging.INFO)
-    formatter = logging.Formatter(
-        "%(asctime)s [%(levelname)s] pid=%(process)d %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    if detail:
+        formatter = logging.Formatter(
+            "%(asctime)s [%(levelname)s] pid=%(process)d %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    else:
+        formatter = logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
     for handler in list(root.handlers):
         if isinstance(handler, TimedRotatingFileHandler):
             root.removeHandler(handler)
@@ -83,7 +93,7 @@ def _make_service_class():
             # บอก webui ว่า process นี้รันใน service (ใช้ตัดสินใจอนุญาต/ปฏิเสธปุ่มควบคุม service)
             os.environ["CFDDNS_RUNNING_AS_SERVICE"] = "1"
             cfg = config_mod.Config(config_mod.DEFAULT_CONFIG_PATH)
-            setup_file_logging(cfg.log_dir)
+            setup_file_logging(cfg.log_dir, detail=cfg.detail_log)
             # กันรันซ้ำ (service + exe/run อีกตัว) — ถ้ามี instance อื่นอยู่แล้ว ไม่เริ่ม loop
             from . import instance_lock
 

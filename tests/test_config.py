@@ -111,6 +111,18 @@ zone = example.com
         cfg = config_mod.Config(self.path)
         self.assertTrue(any("heartbeat_min_interval" in e for e in cfg.validate()))
 
+    def test_detail_log_default_false(self):
+        write_ini(self.path, MINIMAL_INI)
+        cfg = config_mod.Config(self.path)
+        self.assertFalse(cfg.detail_log)
+
+    def test_detail_log_read_from_file(self):
+        write_ini(self.path, MINIMAL_INI.replace(
+            "[cloudflare]", "[cloudflare]\ndetail_log = true"
+        ))
+        cfg = config_mod.Config(self.path)
+        self.assertTrue(cfg.detail_log)
+
 
 class RotateBackupTest(unittest.TestCase):
     def setUp(self):

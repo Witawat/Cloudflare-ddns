@@ -416,6 +416,14 @@ class DictToIniTest(unittest.TestCase):
         text = webui._dict_to_ini(payload, self.path)
         self.assertIn("heartbeat_min_interval = 15", text)
 
+    def test_detail_log_roundtrip(self):
+        payload = {"cloudflare": {"detail_log": True}, "telegram": {}, "tunnel": {}, "records": []}
+        text = webui._dict_to_ini(payload, self.path)
+        self.assertIn("detail_log = true", text)
+        payload_off = {"cloudflare": {"detail_log": False}, "telegram": {}, "tunnel": {}, "records": []}
+        text_off = webui._dict_to_ini(payload_off, self.path)
+        self.assertIn("detail_log = false", text_off)
+
 
 class MigratePasswordHashTest(unittest.TestCase):
     """config เก่าที่เก็บ plaintext -> ต้องย้ายเป็น hash เสมอ (แม้ config ยังตั้งไม่ครบ)"""

@@ -130,6 +130,31 @@ class TestHeartbeatPing(unittest.TestCase):
         heartbeat.send_ping(cfg)
         self.assertEqual(len(calls), 1)
 
+    def test_detail_log_pid_ในformatter(self):
+        """detail_log=True -> formatter ไฟล์ log ต้องมี pid"""
+        from cloudflare_ddns import service as service_mod
+        import logging
+
+        tmp_log = os.path.join(self.tmp, "logs")
+        service_mod.setup_file_logging(tmp_log, detail=True)
+        try:
+            handler = [h for h in logging.getLogger().handlers if isinstance(h, logging.FileHandler)]
+            fmt = handler[-1].formatter._fmt if handler else ""
+            self.assertIn("%(process)d", fmt)
+        finally:
+            for h in list(logging.getLogger().handlers):
+                if isinstance(h, logging.FileHandler):
+                    logging.getLogger().removeHandler(h)
+        service_mod.setup_file_logging(tmp_log, detail=False)
+        try:
+            handler = [h for h in logging.getLogger().handlers if isinstance(h, logging.FileHandler)]
+            fmt = handler[-1].formatter._fmt if handler else ""
+            self.assertNotIn("%(process)d", fmt)
+        finally:
+            for h in list(logging.getLogger().handlers):
+                if isinstance(h, logging.FileHandler):
+                    logging.getLogger().removeHandler(h)
+
 
 class TestInstanceLock(unittest.TestCase):
     def setUp(self):

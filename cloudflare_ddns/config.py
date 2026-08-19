@@ -236,6 +236,8 @@ class Config:
         self.webui_host = "127.0.0.1"
         self.webui_password = ""
         self.log_dir = DEFAULT_LOG_DIR
+        # log ละเอียด (pid ทุกบรรทัด + บันทึก heartbeat ส่ง/ข้าม) — ใช้หาสาเหตุ; ปิด default
+        self.detail_log = False
         self.telegram_bot_token = ""
         self.telegram_chat_id = ""
         self.notify_start = True
@@ -291,6 +293,7 @@ class Config:
         self.webui_host = section.get("webui_host", "127.0.0.1").strip() or "127.0.0.1"
         self.webui_password = section.get("webui_password", "").strip()
         self.log_dir = section.get("log_dir", "").strip() or log_dir_for(self.path)
+        self.detail_log = self._as_bool(section, "detail_log", False)
 
         # แจ้งเตือน Telegram
         self.telegram_bot_token = section.get("telegram_bot_token", "").strip()
@@ -496,6 +499,7 @@ class Config:
         self.webui_host = section.get("webui_host", "127.0.0.1").strip() or "127.0.0.1"
         self.webui_password = section.get("webui_password", "").strip()
         self.log_dir = section.get("log_dir", "").strip() or log_dir_for(self.path)
+        self.detail_log = self._as_bool(section, "detail_log", False)
 
         self.telegram_bot_token = section.get("telegram_bot_token", "").strip()
         self.telegram_chat_id = section.get("telegram_chat_id", "").strip()

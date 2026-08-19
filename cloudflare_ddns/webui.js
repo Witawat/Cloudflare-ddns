@@ -360,6 +360,7 @@ const I18N = {
     "html.087": "ทดสอบส่ง heartbeat",
     "html.088": "Healthchecks.io ping URL (ฟรี: healthchecks.io)",
     "html.117": "ความถี่ส่ง heartbeat ขั้นต่ำ (วินาที 5-3600 — Healthchecks รับ ~1 ครั้ง/นาที ใช้ 60)",
+    "html.118": " log ละเอียด (pid + heartbeat) สำหรับหาสาเหตุ",
     "html.089": "แจ้งเตือน Telegram",
     "html.090": "Bot token (จาก @BotFather)",
     "html.091": "Chat ID (เว้น = wizard/notify-test หาให้)",
@@ -481,6 +482,7 @@ const I18N = {
     "html.087": "Test heartbeat",
     "html.088": "Healthchecks.io ping URL (free: healthchecks.io)",
     "html.117": "Min heartbeat interval (seconds 5-3600 — Healthchecks accepts ~1/min, use 60)",
+    "html.118": " Detail log (pid + heartbeat) for troubleshooting",
     "html.089": "Telegram notifications",
     "html.090": "Bot token (from @BotFather)",
     "html.091": "Chat ID (empty = wizard/notify-test finds it)",
@@ -1140,6 +1142,7 @@ async function loadConfig() {
     currentWebuiPort = c.cloudflare.webui_port || 8123;
     $("webui_host").value = c.cloudflare.webui_host || "127.0.0.1";
     $("log_dir").value = c.cloudflare.log_dir || "";
+    $("detail_log").checked = !!c.cloudflare.detail_log;
     $("tg_token").value = c.telegram.bot_token;
     $("tg_chat").value = c.telegram.chat_id;
     $("notify_start").checked = !!c.telegram.notify_start;
@@ -1252,6 +1255,7 @@ async function saveConfig() {
       webui_host: $("webui_host").value.trim() || "127.0.0.1",
       webui_password: pwValue,
       log_dir: $("log_dir").value.trim(),
+      detail_log: $("detail_log").checked,
     },
     telegram: {
       bot_token: $("tg_token").value.trim(),
@@ -2377,6 +2381,7 @@ function renderWizard() {
           webui_host: existing.cloudflare.webui_host || "127.0.0.1",
           webui_password: existing.cloudflare.webui_password || "",
           log_dir: existing.cloudflare.log_dir || "",
+          detail_log: existing.cloudflare.detail_log === true,
         },
         telegram: {
           bot_token: (wzData.tg && wzData.tg.token) || tgl.bot_token || "",

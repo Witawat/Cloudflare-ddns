@@ -160,6 +160,7 @@ reject_cloudflare_ips = true
 healthchecks_url =             ; https://hc-ping.com/xxxx (Healthchecks.io)
 uptimekuma_url =               ; https://kuma.../api/push/xxxx (Uptime Kuma)
 heartbeat_min_interval = 60    ; ความถี่ขั้นต่ำระหว่าง ping (5-3600 — Healthchecks ใช้ 60, Kuma ใช้ 15 ได้)
+detail_log = false             ; log ละเอียด (pid + heartbeat ส่ง/ข้าม) — เปิดตอนหาสาเหตุ
 webui_port = 8123
 ; 127.0.0.1 = เฉพาะเครื่องนี้ · 0.0.0.0 = เข้าจากเครื่องอื่นใน LAN ได้ (ตั้งรหัสผ่าน + เปิด firewall)
 webui_host = 127.0.0.1

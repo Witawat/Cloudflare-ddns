@@ -106,11 +106,14 @@ def send_ping(cfg, ok=True, stopped=False):
             urls.append(value.strip())
     if not urls:
         return
+    # บันทึกการส่ง/ข้ามทุกครั้งเฉพาะเมื่อ detail_log เปิด (ใช้หาสาเหตุ — ปิด default)
+    detail = bool(getattr(cfg, "detail_log", False))
+    dlog = log.info if detail else log.debug
     config_path = getattr(cfg, "path", "") or ""
     lock_path = os.path.join(config_mod.data_dir_for(config_path), "heartbeat.lock")
     with instance_lock.file_lock(lock_path) as lock:
         if not lock.locked:
-            log.info("heartbeat: ข้าม (lock ถูกครอบ — instance อื่นกำลังส่ง) — %s", urls)
+            dlog("heartbeat: ข้าม (lock ถูกครอบ — instance อื่นกำลังส่ง) — %s", urls)
             return
         state = _load_state(config_path)
         for url in urls:
@@ -118,13 +121,13 @@ def send_ping(cfg, ok=True, stopped=False):
             now = time.time()
             last = max(state.get(target, 0), _last_sent.get(target, 0))
             if not stopped and now - last < min_interval:
-                log.info("heartbeat: ข้าม %s (ส่งล่าสุดเมื่อ %.0f วิที่แล้ว — ต้องห่าง ≥%d วิ)", target, now - last, int(min_interval))
+                dlog("heartbeat: ข้าม %s (ส่งล่าสุดเมื่อ %.0f วิที่แล้ว — ต้องห่าง ≥%d วิ)", target, now - last, int(min_interval))
                 continue
             ok_sent, error = _ping(target)
             if ok_sent:
                 state[target] = now
                 _last_sent[target] = now
-                log.info("heartbeat: ส่ง OK — %s", target)
+                dlog("heartbeat: ส่ง OK — %s", target)
                 continue
             if now - _last_warn_time >= _WARN_INTERVAL:
                 _last_warn_time = now
