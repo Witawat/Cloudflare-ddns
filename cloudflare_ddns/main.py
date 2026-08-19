@@ -417,6 +417,44 @@ def cmd_webui(args):
     ui.serve_forever()
 
 
+def _install_console_close_handler(stop_event, loop_thread, tunnel_mgr, web_ui):
+    """จับการกด X (CTRL_CLOSE_EVENT) — ปิดโปรแกรมอย่างถูกต้อง (หยุด tunnel/webui ก่อน)
+
+    ถ้าไม่จับ: Windows ฆ่า process ทันทีตอนกด X -> finally ไม่ทำงาน -> cloudflared (child)
+    ค้างเป็น process หลอน — ต้อง taskkill เองทุกครั้ง. ใช้ win32api (pywin32 — มีอยู่แล้ว)
+    """
+    try:
+        import win32api
+    except ImportError:
+        return False  # ไม่ใช่ Windows/ไม่มี pywin32 — ปล่อยให้ Ctrl+C ตามเดิม
+
+    def _handler(ctrl_type):
+        if ctrl_type == win32api.CTRL_CLOSE_EVENT:
+            log.info("กดปิดหน้าต่าง (X) — กำลังปิดโปรแกรมอย่างถูกต้อง...")
+            stop_event.set()
+            if loop_thread is not None:
+                loop_thread.join(timeout=4)
+            if tunnel_mgr is not None:
+                try:
+                    tunnel_mgr.stop()
+                except Exception as exc:
+                    log.warning("หยุด Cloudflare Tunnel ไม่ได้: %s", exc)
+            if web_ui is not None:
+                try:
+                    web_ui.stop()
+                except Exception:
+                    pass
+            return True
+        return False
+
+    try:
+        win32api.SetConsoleCtrlHandler(_handler, True)
+        return True
+    except Exception as exc:
+        log.warning("ติดตั้ง handler ปิดหน้าต่างไม่ได้: %s", exc)
+        return False
+
+
 def cmd_default(args):
     """รันโดยไม่ใส่คำสั่ง: Web UI + DDNS loop + Cloudflare Tunnel พร้อมกัน (เทียบเท่า service).
     กด exe ครั้งเดียวทำงานเต็มรูปแบบ — ปิดด้วย Ctrl+C (หยุดทุกอย่าง + แจ้ง Telegram 'หยุดทำงาน')"""
@@ -474,6 +512,8 @@ def cmd_default(args):
         daemon=True,
     )
     loop_thread.start()
+    # จับกด X (ปิดหน้าต่าง) — ปิดอย่างถูกต้อง (หยุด tunnel/webui) ไม่ให้ cloudflared ค้าง
+    _install_console_close_handler(stop_event, loop_thread, tunnel_mgr, web_ui)
     try:
         while loop_thread.is_alive():
             stop_event.wait(1)

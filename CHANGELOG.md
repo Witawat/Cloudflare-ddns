@@ -2,6 +2,19 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.5.0] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
+
+### เพิ่ม (Features)
+
+- **กด X (ปิดหน้าต่าง) ตอนรัน exe ตรง ๆ → ปิดโปรแกรมอย่างถูกต้อง**: เดิมปิดได้แค่ Ctrl+C —
+  กด X ที่มุมขวาบน Windows ฆ่า process ทันที → finally ไม่ทำงาน → **cloudflared (tunnel) ค้างเป็น
+  process หลอน** ต้อง taskkill เอง แก้: จับ `CTRL_CLOSE_EVENT` (win32api.SetConsoleCtrlHandler)
+  → หยุด DDNS loop + tunnel + webui ก่อนปิด (เดียวกับ Ctrl+C)
+
+### เพิ่ม (Tests)
+
+- `test_main`: กด X → set stop_event + stop tunnel + stop webui + คืน True / ไม่มี win32api → ไม่ติดตั้ง (177 เทสต์)
+
 ## [2.4.2] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
 
 ### แก้บั๊ก (Fixes)

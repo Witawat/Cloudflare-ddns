@@ -4,6 +4,7 @@ import contextlib
 import io
 import os
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -62,6 +63,43 @@ class ResetPasswordTest(unittest.TestCase):
         with mock.patch("getpass.getpass", return_value="x"):
             result = run_reset(args)
         self.assertEqual(result, 1)
+
+
+class ConsoleCloseHandlerTest(unittest.TestCase):
+    """กด X (CTRL_CLOSE_EVENT) -> ต้องหยุด loop + tunnel + webui อย่างถูกต้อง"""
+
+    def test_กดX_หยุดทุกอย่าง_และคืนTrue(self):
+        stop_event = threading.Event()
+        loop_thread = mock.Mock()
+        tunnel_mgr = mock.Mock()
+        web_ui = mock.Mock()
+        registered = {}
+
+        fake_win32api = mock.Mock()
+        fake_win32api.CTRL_CLOSE_EVENT = 2
+        fake_win32api.SetConsoleCtrlHandler.side_effect = lambda fn, add: registered.setdefault("fn", fn)
+
+        with mock.patch.dict("sys.modules", {"win32api": fake_win32api}):
+            ok = main._install_console_close_handler(stop_event, loop_thread, tunnel_mgr, web_ui)
+        self.assertTrue(ok)
+        self.assertIn("fn", registered)
+
+        # จำลอง Windows ส่ง CTRL_CLOSE_EVENT (กด X)
+        result = registered["fn"](2)
+        self.assertTrue(result)
+        self.assertTrue(stop_event.is_set())
+        loop_thread.join.assert_called_once()
+        tunnel_mgr.stop.assert_called_once()
+        web_ui.stop.assert_called_once()
+
+    def test_ไม่มีwin32api_ไม่ติดตั้ง(self):
+        with mock.patch.dict("sys.modules", {"win32api": None}):
+            # จำลอง import win32api ล้มเหลว
+            with mock.patch("builtins.__import__", side_effect=ImportError("no win32api")):
+                ok = main._install_console_close_handler(
+                    threading.Event(), None, None, None
+                )
+        self.assertFalse(ok)
 
 
 if __name__ == "__main__":
