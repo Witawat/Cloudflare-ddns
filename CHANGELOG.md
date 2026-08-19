@@ -2,6 +2,27 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.3.2] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
+
+### แก้บั๊ก (Fixes)
+
+- **รี service แล้ว tunnel ไม่กลับมา (ต้องหยุด/เริ่มเอง)**: cloudflared เก่าค้าง (pid ค้าง/
+  tasklist ตรวจไม่ทัน) → service ใหม่เห็น "running" ค้าง ไม่เริ่มใหม่ แก้ 2 ชั้น:
+  - `start()` ฆ่า cloudflared เก่าค้างทุกราย (pid ไฟล์ + tasklist) ก่อนเริ่มใหม่เสมอ
+  - `stop()` รอ process ตายจริง (สูงสุด 6 วิ) ก่อนล้าง pid — restart ไวแล้วไม่ทับซ้อน
+- **เข้าจาก tunnel มี error (LAN ปกติ)**: จาก log cloudflared — QUIC/UDP ไป Cloudflare
+  ถูกบล็อกบางเส้นทาง (connIndex วน "failed to run the datagram handler") →
+  เพิ่ม config `tunnel_protocol = auto | quic | http2` (default auto) — ถ้า ISP บล็อก
+  UDP ให้เลือก http2 (TCP 443) tunnel จะเสถียร
+- **tunnel ตายแล้วไม่กลับมาเอง**: เพิ่ม `_ensure_tunnel_running` ใน DDNS loop —
+  ตรวจทุก 30 วิ ถ้า tunnel_enabled แต่ไม่รัน → เริ่มใหม่เอง (ไม่ต้องกดเอง)
+
+### เพิ่ม (Tests)
+
+- `test_tunnel`: start ฆ่าเก่าค้าง / ส่ง --protocol http2 เมื่อตั้ง / ไม่ส่งเมื่อ auto / stop รอตายจริง
+- `test_config`: tunnel_protocol default auto / อ่านจากไฟล์ / ค่าผิด fails validate
+- `test_ddns`: _ensure_tunnel_running — ตายเริ่มใหม่ / รันอยู่ไม่แตะ / ปิดไม่เริ่ม (170 เทสต์)
+
 ## [2.3.1] — 2026-08-19 (bumped — ยังไม่ปล่อย release)
 
 ### เพิ่ม (Features)

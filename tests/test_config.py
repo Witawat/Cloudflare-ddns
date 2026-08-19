@@ -123,6 +123,25 @@ zone = example.com
         cfg = config_mod.Config(self.path)
         self.assertTrue(cfg.detail_log)
 
+    def test_tunnel_protocol_default_auto(self):
+        write_ini(self.path, MINIMAL_INI)
+        cfg = config_mod.Config(self.path)
+        self.assertEqual(cfg.tunnel_protocol, "auto")
+
+    def test_tunnel_protocol_read_from_file(self):
+        write_ini(self.path, MINIMAL_INI.replace(
+            "[cloudflare]", "[cloudflare]\ntunnel_protocol = http2"
+        ))
+        cfg = config_mod.Config(self.path)
+        self.assertEqual(cfg.tunnel_protocol, "http2")
+
+    def test_tunnel_protocol_invalid_fails_validate(self):
+        write_ini(self.path, MINIMAL_INI.replace(
+            "[cloudflare]", "[cloudflare]\ntunnel_protocol = tcp"
+        ))
+        cfg = config_mod.Config(self.path)
+        self.assertTrue(any("tunnel_protocol" in e for e in cfg.validate()))
+
 
 class RotateBackupTest(unittest.TestCase):
     def setUp(self):

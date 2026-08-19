@@ -361,6 +361,7 @@ const I18N = {
     "html.088": "Healthchecks.io ping URL (ฟรี: healthchecks.io)",
     "html.117": "ความถี่ส่ง heartbeat ขั้นต่ำ (วินาที 5-3600 — Healthchecks รับ ~1 ครั้ง/นาที ใช้ 60)",
     "html.118": " log ละเอียด (pid + heartbeat) สำหรับหาสาเหตุ",
+    "html.119": "โปรโตคอลเชื่อม Cloudflare (quic = เร็วสุด แต่ ISP บางรายบล็อก UDP → ใช้ http2)",
     "html.089": "แจ้งเตือน Telegram",
     "html.090": "Bot token (จาก @BotFather)",
     "html.091": "Chat ID (เว้น = wizard/notify-test หาให้)",
@@ -483,6 +484,7 @@ const I18N = {
     "html.088": "Healthchecks.io ping URL (free: healthchecks.io)",
     "html.117": "Min heartbeat interval (seconds 5-3600 — Healthchecks accepts ~1/min, use 60)",
     "html.118": " Detail log (pid + heartbeat) for troubleshooting",
+    "html.119": "Cloudflare connection protocol (quic = fastest, but some ISPs block UDP → use http2)",
     "html.089": "Telegram notifications",
     "html.090": "Bot token (from @BotFather)",
     "html.091": "Chat ID (empty = wizard/notify-test finds it)",
@@ -1159,6 +1161,7 @@ async function loadConfig() {
     $("tunnel_enabled").checked = !!c.tunnel.enabled;
     $("tunnel_token").value = c.tunnel.token;
     $("cloudflared_path").value = c.tunnel.cloudflared_path || "";
+    $("tunnel_protocol").value = c.tunnel.protocol || "auto";
     tunnelHostsData = c.tunnel.hosts || [];
     recordsData = c.records.map(r => ({ ...r }));
     renderRecordsEditor();
@@ -1276,6 +1279,7 @@ async function saveConfig() {
       enabled: $("tunnel_enabled").checked,
       token: $("tunnel_token").value.trim(),
       cloudflared_path: $("cloudflared_path").value.trim(),
+      protocol: $("tunnel_protocol").value || "auto",
       hosts: tunnelHostsData,
     },
     records: recordsData,
@@ -2003,7 +2007,7 @@ function renderTunnelWizard() {
         const r = await fetch("/config.json");
         const cfg = await r.json();
         const oldTun = cfg.tunnel || {};
-        cfg.tunnel = { enabled: true, token: twzData.token, cloudflared_path: oldTun.cloudflared_path || "", hosts: oldTun.hosts || [] };
+        cfg.tunnel = { enabled: true, token: twzData.token, cloudflared_path: oldTun.cloudflared_path || "", protocol: oldTun.protocol || "auto", hosts: oldTun.hosts || [] };
         const s = await fetch("/save-config", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2402,6 +2406,7 @@ function renderWizard() {
           enabled: !!tun.enabled,
           token: tun.token || "",
           cloudflared_path: tun.cloudflared_path || "",
+          protocol: tun.protocol || "auto",
           hosts: tun.hosts || [],
         },
         records: wzData.records,

@@ -275,11 +275,21 @@ class TunnelManager:
         return last[:300]
 
     def start(self, cfg):
-        """เริ่ม cloudflared tunnel run --token คืน (ok, message)."""
+        """เริ่ม cloudflared tunnel run --token คืน (ok, message).
+
+        ถ้ามี cloudflared เก่าค้าง (pid ค้าง/service restart ไม่ทันตาย) -> ฆ่าทิ้งก่อน
+        แล้วเริ่มใหม่ — กันสถานะ running ค้างทำให้ tunnel ไม่กลับมาหลัง restart service
+        """
         if not getattr(cfg, "tunnel_enabled", False):
             return False, "ปิดใช้งาน tunnel ใน config (tunnel_enabled = true)"
-        if self.status(cfg)["running"]:
-            return True, f"tunnel รันอยู่แล้ว (pid {self.status(cfg)['pid']})"
+        # ฆ่า cloudflared เก่าที่ค้างทุกตัว (pid ไฟล์ + process จริง) ก่อนเริ่มใหม่
+        # — เดิม return "รันอยู่แล้ว" ทิ้งไว้ -> restart service แล้ว tunnel ไม่กลับมา
+        stale = self._find_stale_cloudflared(cfg)
+        if stale:
+            log.warning("พบ cloudflared ค้าง %s ตัว — ฆ่าก่อนเริ่มใหม่: %s", len(stale), stale)
+            for pid in stale:
+                self._kill_pid(pid)
+            time.sleep(1.0)
         if not getattr(cfg, "tunnel_token", "").strip():
             return False, "ไม่พบ tunnel_token (สร้างได้ที่ Zero Trust → Networks → Tunnels)"
         was_installed = is_installed(cfg)
@@ -310,6 +320,10 @@ class TunnelManager:
             "--token",
             cfg.tunnel_token.strip(),
         ]
+        # เลือกโปรโตคอลเชื่อม Cloudflare (กัน QUIC/UDP ถูกบล็อก -> ใช้ http2 แทน)
+        protocol = str(getattr(cfg, "tunnel_protocol", "") or "").strip().lower()
+        if protocol in ("quic", "http2"):
+            args.extend(["--protocol", protocol])
         try:
             self._proc = subprocess.Popen(
                 args,
@@ -320,7 +334,7 @@ class TunnelManager:
         except OSError as exc:
             return False, f"เริ่ม cloudflared ไม่ได้: {exc}"
         self._save_pid(self._proc.pid)
-        log.info("เริ่ม Cloudflare Tunnel แล้ว (pid %s)", self._proc.pid)
+        log.info("เริ่ม Cloudflare Tunnel แล้ว (pid %s, protocol=%s)", self._proc.pid, protocol or "auto")
         hosts = getattr(cfg, "tunnel_hosts", [])
         lines = [f"🌐 Tunnel เริ่มทำงาน (pid {self._proc.pid})"]
         if hosts:
@@ -335,8 +349,49 @@ class TunnelManager:
         self._notify(cfg, notifier.EVENT_START, "\n".join(lines))
         return True, f"เริ่ม tunnel แล้ว (pid {self._proc.pid})"
 
-    def stop(self):
-        """หยุด cloudflared คืน (ok, message)."""
+    def _find_stale_cloudflared(self, cfg=None):
+        """หา pid ของ cloudflared.exe ที่ค้างอยู่ (pid ไฟล์ + tasklist) —
+        คืน list ของ pid ที่ควรฆ่าก่อนเริ่มใหม่"""
+        found = []
+        # 1. pid จากไฟล์ (ถ้ายัง alive และเป็น cloudflared จริง)
+        pid = self._load_pid()
+        if pid and _pid_alive(pid) and _process_is_cloudflared(pid):
+            found.append(pid)
+        # 2. tasklist หา cloudflared.exe ที่รันอยู่ (กัน pid reuse/ซ่อน)
+        try:
+            result = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq cloudflared.exe", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                timeout=10,
+                text=True,
+            )
+            for line in (result.stdout or "").splitlines():
+                parts = [p.strip().strip('"') for p in line.split(",")]
+                if len(parts) >= 2 and parts[0].lower() == "cloudflared.exe" and parts[1].isdigit():
+                    p = int(parts[1])
+                    if p not in found and p != (self._proc.pid if self._proc else None):
+                        found.append(p)
+        except Exception:
+            pass
+        return found
+
+    def _kill_pid(self, pid):
+        """taskkill ตาม pid (ไม่ตรวจว่าเป็น cloudflared ซ้ำ — เรียกจาก _find_stale เท่านั้น)"""
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/F"],
+                capture_output=True,
+                timeout=10,
+            )
+        except Exception as exc:
+            log.warning("taskkill pid %s ไม่ได้: %s", pid, exc)
+
+    def stop(self, wait=True):
+        """หยุด cloudflared คืน (ok, message).
+
+        wait=True (default): รอ process ตายจริง (สูงสุด ~6 วิ) ก่อนล้าง pid —
+        กัน restart ไวเกินแล้ว cloudflared เก่ายังค้าง -> tunnel ซ้อน/ไม่กลับมา
+        """
         stopped = False
         if self._proc is not None and self._proc.poll() is None:
             try:
@@ -344,6 +399,11 @@ class TunnelManager:
                 stopped = True
             except OSError:
                 pass
+            if wait:
+                try:
+                    self._proc.wait(timeout=6)
+                except Exception:
+                    pass
             self._proc = None
         if _pid_alive(self._pid):
             if not _process_is_cloudflared(self._pid):
@@ -361,6 +421,13 @@ class TunnelManager:
                     stopped = True
                 except Exception as exc:
                     log.warning("taskkill cloudflared (pid %s) ไม่ได้: %s", self._pid, exc)
+        if wait and stopped:
+            # รอให้ process ตายจริง (กัน service restart ไวเกิน -> เก่ายังค้าง)
+            deadline = time.time() + 6
+            while time.time() < deadline:
+                if not _pid_alive(self._pid):
+                    break
+                time.sleep(0.5)
         self._clear_pid()
         self._pid = None
         if stopped:

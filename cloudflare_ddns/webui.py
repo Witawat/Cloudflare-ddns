@@ -249,6 +249,7 @@ def _cfg_to_dict(cfg):
             "enabled": cfg.tunnel_enabled,
             "token": cfg.tunnel_token,
             "cloudflared_path": cfg.cloudflared_path,
+            "protocol": cfg.tunnel_protocol,
             "hosts": cfg.tunnel_hosts,
         },
         "records": [
@@ -318,6 +319,7 @@ def _dict_to_ini(data, config_path=""):
     kv("tunnel_enabled", str(bool(tu.get("enabled", False))).lower())
     kv("tunnel_token", str(tu.get("token", "")).strip())
     kv("cloudflared_path", str(tu.get("cloudflared_path", "")).strip())
+    kv("tunnel_protocol", str(tu.get("protocol", "auto") or "auto").strip().lower())
     kv("tunnel_hosts", json.dumps(tu.get("hosts", []), ensure_ascii=False))
     lines.append("")
     for rec in data.get("records", []):

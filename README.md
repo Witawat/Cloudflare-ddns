@@ -79,6 +79,7 @@ install.bat                   REM ติดตั้ง service (ใช้ exe �
 tunnel_enabled = true
 tunnel_token = eyJhIjoi...        ; จาก Zero Trust > Networks > Tunnels
 cloudflared_path =                ; เว้นว่าง = ดาวน์โหลด cloudflared.exe ข้าง exe อัตโนมัติ
+tunnel_protocol = auto            ; auto | quic | http2 — ถ้า ISP บล็อก UDP ให้ใช้ http2 (TCP 443)
 ```
 
 **วิธีเริ่ม (แนะนำใช้ wizard ในเว็บ):** การ์ด Cloudflare Tunnel → "ตั้งค่า Tunnel (wizard)" → วาง token (ตรวจสอบให้จริง) → ใส่ชื่อ + โดเมน + **ชนิด** + บริการ → "ผูกกับ tunnel" — โปรแกรมตั้ง DNS (CNAME → tunnel) + tunnel config ให้เอง → เข้า `https://ชื่อ.โดเมน.com` ได้ทันที — ดู/**แก้ไข**/ลบ hostname ได้ด้วยปุ่ม "ดู hostname ที่ผูกแล้ว" — **คู่มือละเอียด: [docs/TUNNEL.md](docs/TUNNEL.md)**

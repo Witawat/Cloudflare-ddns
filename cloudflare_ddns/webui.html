@@ -645,6 +645,13 @@ __LOGIN__
       <label class="field"><span data-i18n="html.105">ที่อยู่ cloudflared.exe (เว้นว่าง = ดาวน์โหลดข้าง exe อัตโนมัติ)</span>
         <input id="cloudflared_path" type="text" class="mono" autocomplete="off" placeholder="(อัตโนมัติ)">
       </label>
+      <label class="field" title="quic = เร็วสุด แต่ ISP บางรายบล็อก UDP 443 → tunnel หลุด; http2 = เสถียรกว่าเมื่อถูกบล็อก"><span data-i18n="html.119">โปรโตคอลเชื่อม Cloudflare</span>
+        <select id="tunnel_protocol">
+          <option value="auto">auto (แนะนำ)</option>
+          <option value="quic">quic</option>
+          <option value="http2">http2</option>
+        </select>
+      </label>
     </div>
 
     <h3>DNS records</h3>

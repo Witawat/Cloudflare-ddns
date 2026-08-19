@@ -249,6 +249,7 @@ notify_round         ส่งสรุปผลทุกรอบ DDNS ทา�
 daily_report / daily_report_time            สรุปรายวัน (HH:MM)
 telegram_allow_reset กู้รหัสผ่านหน้าเว็บผ่าน Telegram (false = ปิด — เปิดก่อนใช้ ดู "ลืมรหัส" ใน TROUBLESHOOTING)
 tunnel_enabled / tunnel_token / cloudflared_path / tunnel_hosts (JSON — "ซิงค์จาก Cloudflare" เขียนให้)
+tunnel_protocol      auto | quic | http2 (default auto) — ISP บล็อก UDP/QUIC → ใช้ http2
 
 [record:ชื่อ]
 zone = โดเมน (เว้น = เดาให้)

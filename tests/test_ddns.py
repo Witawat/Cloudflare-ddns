@@ -206,5 +206,47 @@ class RunForeverWaitTest(unittest.TestCase):
         self.assertGreaterEqual(gap, 14, f"run_once ต้องห่างกัน ~interval (15 วิ) ไม่ใช่ 5 วิ (ตอนนี้ {gap})")
 
 
+class TunnelAutoRestartTest(unittest.TestCase):
+    """_ensure_tunnel_running: tunnel ตาย -> เริ่มใหม่เอง"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "config.ini")
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write(MINIMAL_INI)
+        self.addCleanup(self.tmp.cleanup)
+        self.cfg = config_mod.Config(self.path)
+        ddns._tunnel_check_at = 0.0
+
+    def test_ไม่เริ่มเมื่อปิดtunnel(self):
+        self.cfg.tunnel_enabled = False
+        with mock.patch.dict(sys.modules, {"cloudflare_ddns.tunnel": mock.Mock()}) as mods, \
+                mock.patch.object(__import__("cloudflare_ddns"), "tunnel", mods["cloudflare_ddns.tunnel"]):
+            tun = mods["cloudflare_ddns.tunnel"]
+            ddns._ensure_tunnel_running(self.cfg, self.path)
+            tun.TunnelManager.assert_not_called()
+
+    def test_เริ่มใหม่เมื่อtunnelตาย(self):
+        self.cfg.tunnel_enabled = True
+        with mock.patch.dict(sys.modules, {"cloudflare_ddns.tunnel": mock.Mock()}) as mods, \
+                mock.patch.object(__import__("cloudflare_ddns"), "tunnel", mods["cloudflare_ddns.tunnel"]):
+            tun = mods["cloudflare_ddns.tunnel"]
+            mgr = tun.TunnelManager.return_value
+            mgr.status.return_value = {"running": False}
+            mgr.start.return_value = (True, "เริ่ม tunnel แล้ว")
+            ddns._ensure_tunnel_running(self.cfg, self.path)
+            mgr.start.assert_called_once_with(self.cfg)
+
+    def test_ไม่เริ่มเมื่อtunnelยังรัน(self):
+        self.cfg.tunnel_enabled = True
+        with mock.patch.dict(sys.modules, {"cloudflare_ddns.tunnel": mock.Mock()}) as mods, \
+                mock.patch.object(__import__("cloudflare_ddns"), "tunnel", mods["cloudflare_ddns.tunnel"]):
+            tun = mods["cloudflare_ddns.tunnel"]
+            mgr = tun.TunnelManager.return_value
+            mgr.status.return_value = {"running": True}
+            ddns._ensure_tunnel_running(self.cfg, self.path)
+            mgr.start.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

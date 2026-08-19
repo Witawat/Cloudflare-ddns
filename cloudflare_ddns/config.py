@@ -258,6 +258,9 @@ class Config:
         self.tunnel_enabled = False
         self.tunnel_token = ""
         self.cloudflared_path = ""
+        # โปรโตคอลเชื่อม Cloudflare: auto | quic | http2 (auto default — ถ้า ISP บล็อก
+        # QUIC/UDP ให้ใช้ http2 — tunnel จะเสถียรกว่า)
+        self.tunnel_protocol = "auto"
         self.tunnel_hosts = []
         self.records = []
         self.last_error = ""
@@ -314,6 +317,7 @@ class Config:
         self.tunnel_enabled = self._as_bool(section, "tunnel_enabled", False)
         self.tunnel_token = section.get("tunnel_token", "").strip()
         self.cloudflared_path = section.get("cloudflared_path", "").strip()
+        self.tunnel_protocol = (section.get("tunnel_protocol", "auto").strip().lower() or "auto")
         self.tunnel_hosts = self._parse_tunnel_hosts(section.get("tunnel_hosts", ""))
 
         self.records = []
@@ -408,6 +412,8 @@ class Config:
                 errors.append(f"{key} ต้องเป็น URL เต็ม (http/https): {value}")
         if not (5 <= self.heartbeat_min_interval <= 3600):
             errors.append(f"heartbeat_min_interval ต้องอยู่ระหว่าง 5-3600 วินาที (ตอนนี้: {self.heartbeat_min_interval})")
+        if self.tunnel_protocol not in ("auto", "quic", "http2"):
+            errors.append(f"tunnel_protocol ไม่รู้จัก: {self.tunnel_protocol} (ต้องเป็น auto/quic/http2)")
         if self.tunnel_hosts:
             import json as _json
 
@@ -519,6 +525,7 @@ class Config:
         self.tunnel_enabled = self._as_bool(section, "tunnel_enabled", False)
         self.tunnel_token = section.get("tunnel_token", "").strip()
         self.cloudflared_path = section.get("cloudflared_path", "").strip()
+        self.tunnel_protocol = (section.get("tunnel_protocol", "auto").strip().lower() or "auto")
         self.tunnel_hosts = self._parse_tunnel_hosts(section.get("tunnel_hosts", ""))
 
         self.records = []

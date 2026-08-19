@@ -128,5 +128,73 @@ class TunnelLogFilterTest(unittest.TestCase):
         self.assertLess(size, tunnel_mod.TUNNEL_LOG_MAX)
 
 
+class TunnelStartKillStaleTest(unittest.TestCase):
+    """start() ฆ่า cloudflared เก่าค้างก่อนเริ่มใหม่ (กัน restart service แล้ว tunnel ไม่กลับมา)"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cfg_path = os.path.join(self.tmp.name, "config.ini")
+        with open(self.cfg_path, "w", encoding="utf-8") as handle:
+            handle.write("[cloudflare]\napi_token = t\n\n[record:h.example.com]\nname = h\nzone = example.com\n")
+        self.addCleanup(self.tmp.cleanup)
+        self.cfg = config_mod.Config(self.cfg_path)
+        self.cfg.tunnel_enabled = True
+        self.cfg.tunnel_token = "tok123"
+
+    @mock.patch.object(tunnel_mod, "is_installed", return_value=True)
+    def test_ฆ่าเก่าค้างก่อนเริ่มใหม่(self, _installed):
+        mgr = tunnel_mod.TunnelManager(self.cfg_path)
+        killed = []
+
+        def fake_kill(pid):
+            killed.append(pid)
+
+        with mock.patch.object(mgr, "_find_stale_cloudflared", return_value=[111, 222]), \
+                mock.patch.object(mgr, "_kill_pid", side_effect=fake_kill), \
+                mock.patch.object(tunnel_mod.subprocess, "Popen") as popen:
+            popen.return_value = mock.Mock(pid=333)
+            ok, msg = mgr.start(self.cfg)
+        self.assertTrue(ok)
+        self.assertEqual(killed, [111, 222])
+        self.assertEqual(mgr._proc.pid, 333)
+
+    @mock.patch.object(tunnel_mod, "is_installed", return_value=True)
+    def test_ส่ง_protocol_http2_เมื่อตั้งไว้(self, _installed):
+        mgr = tunnel_mod.TunnelManager(self.cfg_path)
+        self.cfg.tunnel_protocol = "http2"
+        with mock.patch.object(mgr, "_find_stale_cloudflared", return_value=[]), \
+                mock.patch.object(tunnel_mod.subprocess, "Popen") as popen:
+            popen.return_value = mock.Mock(pid=444)
+            mgr.start(self.cfg)
+        args = popen.call_args[0][0]
+        self.assertIn("--protocol", args)
+        self.assertEqual(args[args.index("--protocol") + 1], "http2")
+
+    @mock.patch.object(tunnel_mod, "is_installed", return_value=True)
+    def test_ไม่ส่ง_protocol_เมื่อauto(self, _installed):
+        mgr = tunnel_mod.TunnelManager(self.cfg_path)
+        self.cfg.tunnel_protocol = "auto"
+        with mock.patch.object(mgr, "_find_stale_cloudflared", return_value=[]), \
+                mock.patch.object(tunnel_mod.subprocess, "Popen") as popen:
+            popen.return_value = mock.Mock(pid=555)
+            mgr.start(self.cfg)
+        args = popen.call_args[0][0]
+        self.assertNotIn("--protocol", args)
+
+    def test_stop_รอ_process_ตายก่อนล้างpid(self):
+        mgr = tunnel_mod.TunnelManager(self.cfg_path)
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        mgr._proc = proc
+        mgr._pid = 999
+        with mock.patch.object(tunnel_mod, "_pid_alive", side_effect=[True, False]), \
+                mock.patch.object(tunnel_mod, "_process_is_cloudflared", return_value=True), \
+                mock.patch.object(tunnel_mod.subprocess, "run"), \
+                mock.patch.object(tunnel_mod.time, "sleep"):
+            ok, msg = mgr.stop()
+        self.assertTrue(ok)
+        proc.wait.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

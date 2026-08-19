@@ -496,6 +496,37 @@ def _periodic_update_check(cfg, config_path):
         log.debug("periodic update check: %s", exc)
 
 
+_tunnel_check_at = 0.0
+TUNNEL_CHECK_INTERVAL = 30  # ตรวจ tunnel ตาย/ไม่รัน ทุก 30 วิ — ตายแล้วเริ่มใหม่เอง
+
+
+def _ensure_tunnel_running(cfg, config_path):
+    """Cloudflare Tunnel ตาย (crash/ถูกปิดจากนอก) -> เริ่มใหม่เอง — ไม่ต้องมานั่งกดเอง
+
+    เช็คทุก 30 วิ (ไม่ใช่ทุกรอบ loop — กันสแปม start) — ข้ามถ้าไม่ได้เปิด tunnel_enabled
+    """
+    global _tunnel_check_at
+    if not getattr(cfg, "tunnel_enabled", False):
+        return
+    now = time.time()
+    if now - _tunnel_check_at < TUNNEL_CHECK_INTERVAL:
+        return
+    _tunnel_check_at = now
+    try:
+        from . import tunnel as tunnel_mod
+
+        mgr = tunnel_mod.TunnelManager(config_path)
+        status = mgr.status(cfg)
+        if status.get("running"):
+            return
+        log.warning("Cloudflare Tunnel ไม่รันอยู่ — เริ่มใหม่เอง")
+        result = mgr.start(cfg)
+        message = result[1] if isinstance(result, (tuple, list)) else str(result)
+        log.info("Cloudflare Tunnel: %s", message)
+    except Exception as exc:
+        log.warning("ตรวจ/เริ่ม tunnel ใหม่ไม่ได้: %s", exc)
+
+
 def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_event=None):
     """ลูปหลัก: รันทุก interval ตาม config (อ่าน config ใหม่ทุกรอบ)."""
     import os as _os
@@ -556,6 +587,10 @@ def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_
         # เช็คเวอร์ชันใหม่เป็นระยะ (ทุก 24 ชม.) — service รันยาว ๆ ก็รู้ว่ามีรุ่นใหม่
         if not dry_run:
             _periodic_update_check(cfg, config_path)
+
+        # tunnel ตาย -> เริ่มใหม่เอง (ทุก 30 วิ) — ไม่ต้องมานั่งกดเริ่มเองตอน service restart
+        if not dry_run:
+            _ensure_tunnel_running(cfg, config_path)
 
         # สรุปผลทุกรอบ (ไม่บังคับ — เปิดด้วย notify_round = true)
         try:
