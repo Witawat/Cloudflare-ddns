@@ -188,6 +188,9 @@ POST /open-data-folder   เปิดโฟลเดอร์ข้อมูล 
 - Cloudflare API: จับ `CloudflareRateLimit` (429) แยกจาก `CloudflareError` — rate limit → ข้ามรอบไม่ retry
 - tunnel token = JWT: `_decode_tunnel_token()` แยก `a` (account) / `t` (tunnel) จาก payload
 - ข้อมูล runtime ทั้งหมดอยู่ข้าง exe (`config_mod.DEFAULT_DATA_DIR`) — `migrate_legacy_data()` ย้ายจาก ProgramData ให้ครั้งเดียว
+- **docstring = Google Style ภาษาไทย** — ทุกฟังก์ชัน/method มีส่วน `Args:` / `Returns:` / `Raises:` / `หมายเหตุ:` ตามที่จำเป็น (ทำครบทั้ง 12 ไฟล์แล้ว — ฟังก์ชัน/ไฟล์ใหม่ต้องทำตาม อย่าเขียน docstring บรรทัดเดียว)
+- **type hints (PEP 484) ทุกฟังก์ชัน** — parameter + `->` return type; ใช้ builtin generics (`list[str]`, `dict[str, int]`) ได้ (Python 3.11+); `import` ที่อ้างถึง Config class ใช้ forward ref string `cfg: "config_mod.Config"` กัน circular import; local variable ที่ไม่ชัดเจนใช้ annotation (`items: List[str] = []`) ด้วย
+- **module-level constants/state dict annotate type ด้วย** (เช่น `_last_sent: Dict[str, float] = {}`) — ใช้ `typing` import: `Any/Dict/List/Optional/Tuple/Union/Callable`
 
 ## 8. สคริปต์ตรวจที่ควรมี
 
