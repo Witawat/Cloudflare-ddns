@@ -24,6 +24,7 @@ import os
 import re
 import socket
 import sys
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from . import __version__
 
@@ -45,10 +46,13 @@ LEGACY_DATA_DIR = os.path.join(
 )
 
 
-def migrate_legacy_data(config_path=None):
+def migrate_legacy_data(config_path: Optional[str] = None) -> None:
     """ย้ายข้อมูลจากโฟลเดอร์ ProgramData เดิมมาข้าง config ที่ใช้ (ครั้งเดียว, idempotent).
 
     ย้าย: state.json, notify_queue.json และโฟลเดอร์ logs/ ทั้งหมด
+
+    Args:
+        config_path: path ของ config.ini (None = ค่า default) — ใช้หาข้อมูลเก่าจะย้ายไปไหน
     """
     data_dir = data_dir_for(config_path)
     if LEGACY_DATA_DIR == data_dir:
@@ -79,38 +83,79 @@ DEFAULT_INTERVAL = 60
 MIN_INTERVAL = 15
 
 
-def data_dir_for(config_path=None):
+def data_dir_for(config_path: Optional[str] = None) -> str:
     """โฟลเดอร์ข้อมูล runtime (state/queue/log) — อยู่ข้าง config.ini ที่ใช้จริง.
 
     config.ini ถูกวางข้าง exe เสมอ (ตามเอกสารการติดตั้ง) → data จึงอยู่ข้าง exe
     โดยอัตโนมัติ ไม่ว่า exe จะอยู่ที่ไหน — รันหลาย config = ข้อมูลแยกชุด ไม่ทับกัน.
+
+    Args:
+        config_path: path ของ config.ini (None = ค่า default)
+
+    Returns:
+        str: path ของโฟลเดอร์ข้อมูล runtime
     """
     if not config_path:
         return DEFAULT_DATA_DIR
     return os.path.dirname(os.path.abspath(config_path))
 
 
-def state_path_for(config_path=None):
+def state_path_for(config_path: Optional[str] = None) -> str:
+    """คืน path ของ state.json (ข้อมูลสถานะ record/ประวัติ).
+
+    Args:
+        config_path: path ของ config.ini (None = ค่า default)
+
+    Returns:
+        str: path เต็มของ state.json
+    """
     return os.path.join(data_dir_for(config_path), "state.json")
 
 
-def queue_path_for(config_path=None):
+def queue_path_for(config_path: Optional[str] = None) -> str:
+    """คืน path ของ notify_queue.json (คิวข้อความ Telegram รอส่ง).
+
+    Args:
+        config_path: path ของ config.ini (None = ค่า default)
+
+    Returns:
+        str: path เต็มของ notify_queue.json
+    """
     return os.path.join(data_dir_for(config_path), "notify_queue.json")
 
 
-def heartbeat_state_path_for(config_path=None):
-    """ไฟล์จดเวลาส่ง heartbeat ล่าสุด (ข้าม process) — กันส่งเบิ้ลเมื่อรัน 2 instance"""
+def heartbeat_state_path_for(config_path: Optional[str] = None) -> str:
+    """ไฟล์จดเวลาส่ง heartbeat ล่าสุด (ข้าม process) — กันส่งเบิ้ลเมื่อรัน 2 instance.
+
+    Args:
+        config_path: path ของ config.ini (None = ค่า default)
+
+    Returns:
+        str: path เต็มของ heartbeat_state.json
+    """
     return os.path.join(data_dir_for(config_path), "heartbeat_state.json")
 
 
-def log_dir_for(config_path=None):
+def log_dir_for(config_path: Optional[str] = None) -> str:
+    """คืนโฟลเดอร์เก็บ log (อยู่ข้าง data dir).
+
+    Args:
+        config_path: path ของ config.ini (None = ค่า default)
+
+    Returns:
+        str: path ของโฟลเดอร์ logs
+    """
     return os.path.join(data_dir_for(config_path), "logs")
 
 _hostname_cache = ""
 
 
-def _hostname():
-    """ชื่อเครื่อง (แคช) — ใช้ระบุที่มาใน User-Agent/log"""
+def _hostname() -> str:
+    """ชื่อเครื่อง (แคช) — ใช้ระบุที่มาใน User-Agent/log.
+
+    Returns:
+        str: ชื่อเครื่อง หรือ "?" ถ้าหาไม่ได้
+    """
     global _hostname_cache
     if not _hostname_cache:
         try:
@@ -120,23 +165,40 @@ def _hostname():
     return _hostname_cache
 
 
-def user_agent():
-    """User-Agent พร้อมชื่อเครื่อง — ฝั่งบริการ (Healthchecks/Cloudflare/provider) ดู log แล้วรู้ว่าเครื่องไหนส่ง"""
+def user_agent() -> str:
+    """User-Agent พร้อมชื่อเครื่อง — ฝั่งบริการ (Healthchecks/Cloudflare/provider) ดู log แล้วรู้ว่าเครื่องไหนส่ง.
+
+    Returns:
+        str: ข้อความ User-Agent ที่ใช้กับทุก request
+    """
     return f"cloudflare-ddns-updater/{__version__} ({_hostname()})"
 
 
-def password_hash(pw, config_path=None):
-    """hash รหัสผ่านหน้าเว็บ (sha256 + salt จาก path config) — กันเก็บ password ตรงใน config/cookie"""
+def password_hash(pw: str, config_path: Optional[str] = None) -> str:
+    """hash รหัสผ่านหน้าเว็บ (sha256 + salt จาก path config) — กันเก็บ password ตรงใน config/cookie.
+
+    Args:
+        pw: รหัสผ่านที่จะ hash
+        config_path: path ของ config.ini (ใช้เป็น salt — None = ค่า default)
+
+    Returns:
+        str: hash 64 ตัวอักษร hex
+    """
     import hashlib
 
     salt = ("cfddns|" + os.path.abspath(config_path or "")).encode("utf-8")
     return hashlib.sha256(salt + str(pw).encode("utf-8")).hexdigest()
 
 
-def rotate_backup(path, keep=3):
+def rotate_backup(path: str, keep: int = 3) -> bool:
     """หมุน backup ของไฟล์ (path.bak, path.2.bak, ..., path.<keep>.bak) — เรียกก่อนเขียนทับไฟล์หลัก.
 
-    คืน True ถ้าสำเร็จ/ไม่มีไฟล์หลัก, False ถ้าพลาด (ยังเขียนทับไฟล์หลักต่อได้)
+    Args:
+        path: path ของไฟล์หลัก
+        keep: จำนวน backup ที่จะเก็บ
+
+    Returns:
+        bool: True ถ้าสำเร็จ/ไม่มีไฟล์หลัก, False ถ้าพลาด (ยังเขียนทับไฟล์หลักต่อได้)
     """
     if not os.path.isfile(path):
         return True
@@ -154,10 +216,18 @@ def rotate_backup(path, keep=3):
         return False
 
 
-def atomic_write_text(path, text):
-    """เขียนไฟล์ข้อความแบบ atomic (temp + os.replace) — คืน True/False.
+def atomic_write_text(path: str, text: str) -> bool:
+    """เขียนไฟล์ข้อความแบบ atomic (temp + os.replace).
 
-    ใช้กับงานที่ต้องเขียนได้เสมอ (เช่น กู้รหัสผ่าน) — ไม่ผ่าน validate เหมือน save_text
+    Args:
+        path: path ปลายทางที่จะเขียน
+        text: เนื้อหาที่จะเขียน
+
+    Returns:
+        bool: True = เขียนสำเร็จ, False = เขียนไม่ได้
+
+    หมายเหตุ:
+        ใช้กับงานที่ต้องเขียนได้เสมอ (เช่น กู้รหัสผ่าน) — ไม่ผ่าน validate เหมือน save_text
     """
     try:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -170,8 +240,15 @@ def atomic_write_text(path, text):
         return False
 
 
-def password_is_hash(value):
-    """ค่าเป็น hash 64 hex หรือไม่ (config เก่าที่ยังเก็บ plaintext = ไม่ใช่)"""
+def password_is_hash(value: Any) -> bool:
+    """ค่าเป็น hash 64 hex หรือไม่ (config เก่าที่ยังเก็บ plaintext = ไม่ใช่).
+
+    Args:
+        value: ค่าที่จะตรวจ (จะแปลงเป็น str ก่อน)
+
+    Returns:
+        bool: True ถ้าเป็น hash 64 hex
+    """
     value = str(value or "")
     return len(value) == 64 and all(c in "0123456789abcdef" for c in value)
 
@@ -179,12 +256,19 @@ def password_is_hash(value):
 RECORD_SECTION_RE = re.compile(r"^record:(.+)$", re.IGNORECASE)
 
 
-def fqdn_name(name, zone):
+def fqdn_name(name: str, zone: str) -> str:
     """รวมชื่อ record กับ zone ให้เป็นชื่อเต็ม (home + example.com -> home.example.com).
 
     - "@" -> zone
     - ชื่อที่ลงท้ายด้วย .zone อยู่แล้ว -> ใช้ตรง
     - ชื่อสั้น -> เติม .zone ให้
+
+    Args:
+        name: ชื่อ record (เช่น "home")
+        zone: ชื่อ zone (เช่น "example.com")
+
+    Returns:
+        str: FQDN เต็มของ record หรือ "" เมื่อชื่อว่าง
     """
     name = (name or "").strip().rstrip(".")
     zone = (zone or "").strip().rstrip(".")
@@ -204,7 +288,19 @@ class ConfigError(Exception):
 
 
 class RecordConfig:
-    def __init__(self, name, zone="", proxied=False, ttl=60, ipv4=True, ipv6=True):
+    """ค่าของ record หนึ่งตัว (จาก section [record:ชื่อ])."""
+
+    def __init__(self, name: str, zone: str = "", proxied: bool = False, ttl: int = 60, ipv4: bool = True, ipv6: bool = True) -> None:
+        """สร้างค่า record.
+
+        Args:
+            name: ชื่อ record
+            zone: ชื่อ zone
+            proxied: เปิด Cloudflare proxy หรือไม่
+            ttl: ค่า TTL (วินาที)
+            ipv4: อัปเดต record A หรือไม่
+            ipv6: อัปเดต record AAAA หรือไม่
+        """
         self.name = name.strip().rstrip(".")
         self.zone = zone.strip().rstrip(".")
         self.proxied = bool(proxied)
@@ -213,14 +309,23 @@ class RecordConfig:
         self.ipv6 = bool(ipv6)
 
     @property
-    def key(self):
+    def key(self) -> str:
+        """str: ชื่อ record ตัวพิมพ์เล็ก (ใช้เป็น key กันซ้ำ)."""
         return self.name.lower()
 
 
 class Config:
-    """ห่อ configparser พร้อมค่าที่ดึงออกมาใช้งานแล้ว"""
+    """ห่อ configparser พร้อมค่าที่ดึงออกมาใช้งานแล้ว.
 
-    def __init__(self, path=DEFAULT_CONFIG_PATH):
+    อ่าน/เขียน/validate config.ini — ค่าทุกตัวถูกดึงออกมาเป็น attribute ใช้ตรง ๆ.
+    """
+
+    def __init__(self, path: str = DEFAULT_CONFIG_PATH) -> None:
+        """สร้าง Config แล้วโหลดค่าจากไฟล์ทันที.
+
+        Args:
+            path: path ของ config.ini (default = DEFAULT_CONFIG_PATH)
+        """
         self.path = path
         self.parser = configparser.ConfigParser(interpolation=None)
         self.api_token = ""
@@ -262,12 +367,16 @@ class Config:
         # QUIC/UDP ให้ใช้ http2 — tunnel จะเสถียรกว่า)
         self.tunnel_protocol = "auto"
         self.tunnel_hosts = []
-        self.records = []
+        self.records: List[RecordConfig] = []
         self.last_error = ""
         self.reload()
 
-    def reload(self):
-        """อ่าน config จากไฟล์ใหม่ (เรียกซ้ำได้ทุก loop เพื่อรับค่าใหม่ทันที)"""
+    def reload(self) -> "Config":
+        """อ่าน config จากไฟล์ใหม่ (เรียกซ้ำได้ทุก loop เพื่อรับค่าใหม่ทันที).
+
+        Returns:
+            Config: ตัว self (ใช้ลูกโซ่ได้) — ตั้ง self.last_error ถ้าอ่านไม่ได้
+        """
         self.parser = configparser.ConfigParser(interpolation=None)
         self.last_error = ""
         if not os.path.isfile(self.path):
@@ -338,24 +447,59 @@ class Config:
             )
         return self
 
-    def _section(self, name):
+    def _section(self, name: str) -> Union[configparser.SectionProxy, Dict[str, Any]]:
+        """คืน section ของ config หรือ dict ว่างถ้าไม่มี.
+
+        Args:
+            name: ชื่อ section เช่น "cloudflare"
+
+        Returns:
+            SectionProxy | dict: section ที่พบ หรือ {} ถ้าไม่มี
+        """
         if self.parser.has_section(name):
             return self.parser[name]
         return {}
 
-    def _as_bool(self, section, key, default):
+    def _as_bool(self, section: Union[configparser.SectionProxy, Dict[str, Any]], key: str, default: bool) -> bool:
+        """อ่านค่า bool จาก section (1/yes/true/on = True) พร้อม default.
+
+        Args:
+            section: section ของ config
+            key: ชื่อคีย์
+            default: ค่า default ถ้าไม่มีคีย์
+
+        Returns:
+            bool: ค่าที่อ่านได้ หรือ default
+        """
         if key not in section:
             return default
         return section.get(key, "").strip().lower() in ("1", "yes", "true", "on")
 
-    def _as_float(self, section, key, default):
+    def _as_float(self, section: Union[configparser.SectionProxy, Dict[str, Any]], key: str, default: float) -> float:
+        """อ่านค่า float จาก section พร้อม default (ค่าเสีย -> default).
+
+        Args:
+            section: section ของ config
+            key: ชื่อคีย์
+            default: ค่า default ถ้าไม่มีคีย์หรือค่าผิด
+
+        Returns:
+            float: ค่าที่อ่านได้ หรือ default
+        """
         try:
             return float(section.get(key, str(default)))
         except (ValueError, TypeError):
             return default
 
-    def _parse_tunnel_hosts(self, raw):
-        """parse tunnel_hosts (JSON list) -> list[dict]; คืน [] ถ้าไม่ถูกต้อง"""
+    def _parse_tunnel_hosts(self, raw: str) -> List[Dict[str, str]]:
+        """parse tunnel_hosts (JSON list) -> list[dict]; คืน [] ถ้าไม่ถูกต้อง.
+
+        Args:
+            raw: ข้อความ JSON ของ tunnel_hosts จาก config
+
+        Returns:
+            list[dict[str, str]]: รายการ host ที่ถูกต้อง (hostname/path/protocol/service)
+        """
         import json as _json
 
         raw = (raw or "").strip()
@@ -367,7 +511,7 @@ class Config:
             return []
         if not isinstance(items, list):
             return []
-        out = []
+        out: List[Dict[str, str]] = []
         for item in items:
             if isinstance(item, dict) and item.get("hostname"):
                 out.append(
@@ -380,9 +524,13 @@ class Config:
                 )
         return out
 
-    def validate(self):
-        """คืน list ของข้อผิดพลาด ถ้าว่าง = config ใช้ได้"""
-        errors = []
+    def validate(self) -> List[str]:
+        """ตรวจ config ทั้งหมดก่อนใช้งาน/บันทึก.
+
+        Returns:
+            list[str]: รายการข้อผิดพลาด (ว่าง = config ใช้ได้)
+        """
+        errors: List[str] = []
         if not self.api_token:
             errors.append("ไม่พบ api_token ใน [cloudflare] (รัน setup เพื่อตั้งค่า)")
         if not self.records:
@@ -440,18 +588,26 @@ class Config:
                 errors.append(f"ttl ของ {rec.name} น้อยกว่า 60 (ขั้นต่ำที่ Cloudflare รองรับ)")
         return errors
 
-    def raw_text(self):
-        """คืนเนื้อหา config ทั้งไฟล์ (สำหรับ Web UI)"""
+    def raw_text(self) -> str:
+        """คืนเนื้อหา config ทั้งไฟล์ (สำหรับ Web UI).
+
+        Returns:
+            str: เนื้อหา config.ini หรือ "" ถ้าอ่านไม่ได้
+        """
         try:
             with open(self.path, "r", encoding="utf-8-sig") as handle:
                 return handle.read()
         except OSError:
             return ""
 
-    def save_text(self, text):
-        """ตรวจสอบแล้วเขียน config ใหม่ทั้งไฟล์ (สำหรับ Web UI / wizard)
+    def save_text(self, text: str) -> Tuple[bool, str]:
+        """ตรวจสอบแล้วเขียน config ใหม่ทั้งไฟล์ (สำหรับ Web UI / wizard).
 
-        คืน (ok, message) - ตรวจก่อนเขียนว่า parse ได้และ validate ผ่าน
+        Args:
+            text: เนื้อหา config ใหม่ทั้งไฟล์
+
+        Returns:
+            tuple[bool, str]: (สำเร็จหรือไม่, ข้อความผลลัพธ์) — ตรวจก่อนเขียนว่า parse ได้และ validate ผ่าน
         """
         parser = configparser.ConfigParser(interpolation=None)
         try:
@@ -488,7 +644,8 @@ class Config:
         self.reload()
         return True, "บันทึก config สำเร็จ"
 
-    def _load_from_parser(self):
+    def _load_from_parser(self) -> None:
+        """โหลดค่าทุก field จาก self.parser (ใช้ทั้ง reload และ probe ใน save_text)."""
         section = self._section("cloudflare")
         self.api_token = section.get("api_token", "").strip()
         self.interval_seconds = self._as_float(

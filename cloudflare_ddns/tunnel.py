@@ -9,6 +9,7 @@ import os
 import subprocess
 import time
 import urllib.request
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import config as config_mod
 from . import notifier
@@ -26,12 +27,16 @@ TUNNEL_LOG = "tunnel.log"
 TUNNEL_LOG_MAX = 5 * 1024 * 1024
 TUNNEL_LOG_KEEP = 1024 * 1024
 
-_version_cache = {"time": 0.0, "version": ""}
-_latest_cache = {"time": 0.0, "version": ""}
+_version_cache: Dict[str, Any] = {"time": 0.0, "version": ""}
+_latest_cache: Dict[str, Any] = {"time": 0.0, "version": ""}
 
 
-def latest_release():
-    """เวอร์ชัน cloudflared ล่าสุดจาก GitHub releases (cache 6 ชม.) — '' ถ้าเช็คไม่ได้"""
+def latest_release() -> str:
+    """เวอร์ชัน cloudflared ล่าสุดจาก GitHub releases (cache 6 ชม.).
+
+    Returns:
+        str: หมายเลขเวอร์ชันล่าสุด หรือ '' ถ้าเช็คไม่ได้
+    """
     import json
 
     now = time.time()
@@ -58,8 +63,15 @@ def latest_release():
     return ""
 
 
-def cloudflared_version(cfg=None):
-    """เวอร์ชัน cloudflared (cache 5 นาที) — คืน '' ถ้ายังไม่ติดตั้ง/อ่านไม่ได้"""
+def cloudflared_version(cfg: Optional["config_mod.Config"] = None) -> str:
+    """เวอร์ชัน cloudflared (cache 5 นาที).
+
+    Args:
+        cfg: Config ที่อ่านแล้ว (ใช้หา path ของ cloudflared) — None = ค่า default
+
+    Returns:
+        str: เวอร์ชันที่อ่านได้ หรือ '' ถ้ายังไม่ติดตั้ง/อ่านไม่ได้
+    """
     now = time.time()
     if _version_cache["version"] and now - _version_cache["time"] < 300:
         return _version_cache["version"]
@@ -87,7 +99,15 @@ def cloudflared_version(cfg=None):
     return ""
 
 
-def cloudflared_path(cfg=None):
+def cloudflared_path(cfg: Optional["config_mod.Config"] = None) -> str:
+    """หาตำแหน่ง cloudflared.exe (config ระบุเอง -> data dir ข้าง config -> default).
+
+    Args:
+        cfg: Config ที่อ่านแล้ว (None = ใช้ค่า default)
+
+    Returns:
+        str: path เต็มของ cloudflared.exe
+    """
     if cfg and getattr(cfg, "cloudflared_path", "").strip():
         return cfg.cloudflared_path.strip()
     if cfg and getattr(cfg, "path", None):
@@ -95,20 +115,37 @@ def cloudflared_path(cfg=None):
     return os.path.join(config_mod.DEFAULT_DATA_DIR, "cloudflared.exe")
 
 
-def _pid_path(config_path=None):
+def _pid_path(config_path: Optional[str] = None) -> str:
+    """คืน path ของ tunnel.pid (อยู่ข้าง data dir)."""
     return os.path.join(config_mod.data_dir_for(config_path), PID_FILE)
 
 
-def _log_path(config_path=None):
+def _log_path(config_path: Optional[str] = None) -> str:
+    """คืน path ของ tunnel.log (อยู่ข้าง data dir)."""
     return os.path.join(config_mod.data_dir_for(config_path), TUNNEL_LOG)
 
 
-def is_installed(cfg=None):
+def is_installed(cfg: Optional["config_mod.Config"] = None) -> bool:
+    """cloudflared.exe ถูกติดตั้งแล้วหรือไม่.
+
+    Args:
+        cfg: Config ที่อ่านแล้ว (None = ใช้ค่า default)
+
+    Returns:
+        bool: True ถ้ามีไฟล์ cloudflared.exe
+    """
     return os.path.isfile(cloudflared_path(cfg))
 
 
-def ensure_installed(cfg=None):
-    """ดาวน์โหลด cloudflared.exe (Windows amd64) ถ้ายังไม่มี. คืน (ok, message)."""
+def ensure_installed(cfg: Optional["config_mod.Config"] = None) -> Tuple[bool, str]:
+    """ดาวน์โหลด cloudflared.exe (Windows amd64) ถ้ายังไม่มี.
+
+    Args:
+        cfg: Config ที่อ่านแล้ว (ใช้หา path) — None = ใช้ค่า default
+
+    Returns:
+        tuple[bool, str]: (สำเร็จหรือไม่, ข้อความผลลัพธ์)
+    """
     path = cloudflared_path(cfg)
     if os.path.isfile(path):
         return True, f"มี cloudflared แล้ว ({path})"
@@ -137,7 +174,15 @@ def ensure_installed(cfg=None):
         return False, f"ดาวน์โหลด cloudflared ไม่ได้: {exc}"
 
 
-def _pid_alive(pid):
+def _pid_alive(pid: Optional[int]) -> bool:
+    """pid ยังมี process รันอยู่หรือไม่ (os.kill(pid, 0) — ไม่ฆ่าจริง).
+
+    Args:
+        pid: process id ที่จะตรวจ
+
+    Returns:
+        bool: True ถ้า process ยังอยู่ (หรือเป็นของคนอื่น admin)
+    """
     if not pid:
         return False
     try:
@@ -152,8 +197,15 @@ def _pid_alive(pid):
         return False
 
 
-def _process_is_cloudflared(pid):
-    """เช็คว่า pid นั้นเป็น cloudflared.exe จริงหรือไม่ (กัน kill ผิด process ตอน pid reuse)"""
+def _process_is_cloudflared(pid: int) -> bool:
+    """เช็คว่า pid นั้นเป็น cloudflared.exe จริงหรือไม่ (กัน kill ผิด process ตอน pid reuse).
+
+    Args:
+        pid: process id ที่จะตรวจ
+
+    Returns:
+        bool: True ถ้าเป็น cloudflared.exe (หรือตรวจไม่ได้ — ถือว่าใช่)
+    """
     try:
         result = subprocess.run(
             ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
@@ -168,19 +220,36 @@ def _process_is_cloudflared(pid):
 
 
 class TunnelManager:
-    def __init__(self, config_path=None):
-        self.config_path = config_path
-        self._proc = None
-        self._pid = self._load_pid()
+    """จัดการ cycle ชีวิตของ cloudflared: เริ่ม/หยุด/สถานะ/pid/log."""
 
-    def _load_pid(self):
+    def __init__(self, config_path: Optional[str] = None) -> None:
+        """สร้าง manager พร้อมอ่าน pid ล่าสุดจากไฟล์.
+
+        Args:
+            config_path: path ของ config.ini (ใช้หาตำแหน่ง pid/log)
+        """
+        self.config_path = config_path
+        self._proc: Optional[subprocess.Popen] = None
+        self._pid: Optional[int] = self._load_pid()
+
+    def _load_pid(self) -> Optional[int]:
+        """อ่าน pid จาก tunnel.pid.
+
+        Returns:
+            int | None: pid ที่อ่านได้ หรือ None ถ้าไม่มีไฟล์/ค่าผิด
+        """
         try:
             with open(_pid_path(self.config_path), "r", encoding="utf-8") as handle:
                 return int(handle.read().strip())
         except (OSError, ValueError):
             return None
 
-    def _save_pid(self, pid):
+    def _save_pid(self, pid: int) -> None:
+        """เขียน pid ลง tunnel.pid แบบ atomic.
+
+        Args:
+            pid: process id ของ cloudflared
+        """
         try:
             os.makedirs(config_mod.data_dir_for(self.config_path), exist_ok=True)
             tmp = _pid_path(self.config_path) + ".tmp"
@@ -190,14 +259,23 @@ class TunnelManager:
         except OSError as exc:
             log.warning("บันทึก tunnel pid ไม่ได้: %s", exc)
 
-    def _clear_pid(self):
+    def _clear_pid(self) -> None:
+        """ลบ tunnel.pid (ตอนหยุด)."""
         try:
             if os.path.isfile(_pid_path(self.config_path)):
                 os.remove(_pid_path(self.config_path))
         except OSError:
             pass
 
-    def status(self, cfg):
+    def status(self, cfg: "config_mod.Config") -> Dict[str, Any]:
+        """สถานะปัจจุบันของ tunnel.
+
+        Args:
+            cfg: Config ที่อ่านแล้ว
+
+        Returns:
+            dict: สถานะ — enabled/installed/running/pid/path/version/log_exists/last_error
+        """
         # re-read pid จากไฟล์ทุกครั้ง — cloudflared อาจถูกเริ่ม/หยุดโดย process อื่น
         # (service restart / webui รอบอื่น / command line) — กันเห็นสถานะค้างเก่า
         self._pid = self._load_pid()
@@ -219,11 +297,20 @@ class TunnelManager:
             "last_error": self.last_error(),
         }
 
-    def log_tail(self, limit=30, max_bytes=16384, only_errors=False):
+    def log_tail(self, limit: int = 30, max_bytes: int = 16384, only_errors: bool = False) -> str:
         """อ่าน tail ของ cloudflared log — จำกัดขนาด (กันไฟล์ใหญ่) + กรองเฉพาะ error ได้.
 
-        - ไฟล์ > TUNNEL_LOG_MAX -> truncate เหลือ TUNNEL_LOG_KEEP (กันบวม ขณะ cloudflared เขียนต่อ)
-        - only_errors=True -> อ่านท้าย 64KB แล้วกรองเฉพาะบรรทัด level error/warn
+        Args:
+            limit: จำนวนบรรทัดสูงสุดที่จะคืน
+            max_bytes: ขนาดสูงสุดที่จะอ่านจากท้ายไฟล์ (bytes)
+            only_errors: True = อ่านท้าย 64KB แล้วกรองเฉพาะบรรทัด level error/warn
+
+        Returns:
+            str: ข้อความ log ที่อ่านได้ (หรือ '' เมื่ออ่านไม่ได้)
+
+        หมายเหตุ:
+            - ไฟล์ > TUNNEL_LOG_MAX -> truncate เหลือ TUNNEL_LOG_KEEP (กันบวม ขณะ cloudflared เขียนต่อ)
+            - only_errors=True -> อ่านท้าย 64KB แล้วกรองเฉพาะบรรทัด level error/warn
         """
         path = _log_path(self.config_path)
         try:
@@ -251,7 +338,7 @@ class TunnelManager:
                 lines = handle.readlines()
             if only_errors:
                 # cloudflared log เป็น JSON ต่อบรรทัด — กรอง level error/warn + ข้อความ error ตรง
-                err_lines = []
+                err_lines: List[str] = []
                 for line in lines:
                     low = line.lower()
                     if ('"level":"error"' in low or '"level":"warn"' in low
@@ -262,8 +349,15 @@ class TunnelManager:
         except OSError:
             return ""
 
-    def last_error(self, limit=60):
-        """หาบรรทัด error ล่าสุดจาก cloudflared log (เช่น token ผิด/เชื่อมต่อไม่ได้)."""
+    def last_error(self, limit: int = 60) -> str:
+        """หาบรรทัด error ล่าสุดจาก cloudflared log (เช่น token ผิด/เชื่อมต่อไม่ได้).
+
+        Args:
+            limit: จำนวนบรรทัดที่จะตรวจ (ผ่าน log_tail)
+
+        Returns:
+            str: ข้อความ error บรรทัดล่าสุด (จำกัด 300 ตัวอักษร) หรือ ''
+        """
         tail = self.log_tail(limit=limit)
         if not tail:
             return ""
@@ -274,11 +368,17 @@ class TunnelManager:
                 last = line.strip()
         return last[:300]
 
-    def start(self, cfg):
-        """เริ่ม cloudflared tunnel run --token คืน (ok, message).
+    def start(self, cfg: "config_mod.Config") -> Tuple[bool, str]:
+        """เริ่ม cloudflared tunnel run --token.
 
         ถ้ามี cloudflared เก่าค้าง (pid ค้าง/service restart ไม่ทันตาย) -> ฆ่าทิ้งก่อน
-        แล้วเริ่มใหม่ — กันสถานะ running ค้างทำให้ tunnel ไม่กลับมาหลัง restart service
+        แล้วเริ่มใหม่ — กันสถานะ running ค้างทำให้ tunnel ไม่กลับมาหลัง restart service.
+
+        Args:
+            cfg: Config ที่อ่านแล้ว
+
+        Returns:
+            tuple[bool, str]: (เริ่มสำเร็จหรือไม่, ข้อความผลลัพธ์)
         """
         if not getattr(cfg, "tunnel_enabled", False):
             return False, "ปิดใช้งาน tunnel ใน config (tunnel_enabled = true)"
@@ -349,10 +449,16 @@ class TunnelManager:
         self._notify(cfg, notifier.EVENT_START, "\n".join(lines))
         return True, f"เริ่ม tunnel แล้ว (pid {self._proc.pid})"
 
-    def _find_stale_cloudflared(self, cfg=None):
-        """หา pid ของ cloudflared.exe ที่ค้างอยู่ (pid ไฟล์ + tasklist) —
-        คืน list ของ pid ที่ควรฆ่าก่อนเริ่มใหม่"""
-        found = []
+    def _find_stale_cloudflared(self, cfg: Optional["config_mod.Config"] = None) -> List[int]:
+        """หา pid ของ cloudflared.exe ที่ค้างอยู่ (pid ไฟล์ + tasklist).
+
+        Args:
+            cfg: Config ที่อ่านแล้ว (ไม่ค่อยใช้ — กัน forward compat)
+
+        Returns:
+            list[int]: list ของ pid ที่ควรฆ่าก่อนเริ่มใหม่
+        """
+        found: List[int] = []
         # 1. pid จากไฟล์ (ถ้ายัง alive และเป็น cloudflared จริง)
         pid = self._load_pid()
         if pid and _pid_alive(pid) and _process_is_cloudflared(pid):
@@ -375,8 +481,12 @@ class TunnelManager:
             pass
         return found
 
-    def _kill_pid(self, pid):
-        """taskkill ตาม pid (ไม่ตรวจว่าเป็น cloudflared ซ้ำ — เรียกจาก _find_stale เท่านั้น)"""
+    def _kill_pid(self, pid: int) -> None:
+        """taskkill ตาม pid (ไม่ตรวจว่าเป็น cloudflared ซ้ำ — เรียกจาก _find_stale เท่านั้น).
+
+        Args:
+            pid: process id ที่จะ kill
+        """
         try:
             subprocess.run(
                 ["taskkill", "/PID", str(pid), "/F"],
@@ -386,11 +496,15 @@ class TunnelManager:
         except Exception as exc:
             log.warning("taskkill pid %s ไม่ได้: %s", pid, exc)
 
-    def stop(self, wait=True):
-        """หยุด cloudflared คืน (ok, message).
+    def stop(self, wait: bool = True) -> Tuple[bool, str]:
+        """หยุด cloudflared.
 
-        wait=True (default): รอ process ตายจริง (สูงสุด ~6 วิ) ก่อนล้าง pid —
-        กัน restart ไวเกินแล้ว cloudflared เก่ายังค้าง -> tunnel ซ้อน/ไม่กลับมา
+        Args:
+            wait: True = รอ process ตายจริง (สูงสุด ~6 วิ) ก่อนล้าง pid —
+                กัน restart ไวเกินแล้ว cloudflared เก่ายังค้าง -> tunnel ซ้อน/ไม่กลับมา
+
+        Returns:
+            tuple[bool, str]: (สำเร็จหรือไม่, ข้อความผลลัพธ์)
         """
         stopped = False
         proc_pid = self._proc.pid if self._proc is not None else None
@@ -452,8 +566,14 @@ class TunnelManager:
             return True, "หยุด tunnel แล้ว"
         return True, "tunnel ไม่ได้รันอยู่"
 
-    def _notify(self, cfg, event, text):
-        """ส่งแจ้งเตือน Telegram (ถ้าตั้งค่าไว้) — ไม่ล้มเหลวถ้า Telegram พัง"""
+    def _notify(self, cfg: "config_mod.Config", event: str, text: str) -> None:
+        """ส่งแจ้งเตือน Telegram (ถ้าตั้งค่าไว้) — ไม่ล้มเหลวถ้า Telegram พัง.
+
+        Args:
+            cfg: Config ที่อ่านแล้ว
+            event: ประเภทเหตุการณ์ (EVENT_START/EVENT_STOP ฯลฯ)
+            text: ข้อความที่จะส่ง
+        """
         try:
             from .notifier import TelegramNotifier
 

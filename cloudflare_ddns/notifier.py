@@ -13,6 +13,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import config as config_mod
 from . import i18n
@@ -26,7 +27,7 @@ MAX_QUEUE = 50
 _queue_lock = threading.Lock()
 # error ซ้ำข้อความเดิมภายใน 10 นาที -> ไม่ส่งซ้ำ (key = event|detail ไม่รวม timestamp)
 ERROR_DEDUPE_SECONDS = 600
-_error_dedupe = {}
+_error_dedupe: Dict[str, float] = {}
 
 # ประเภทเหตุการณ์
 EVENT_START = "start"
@@ -40,10 +41,30 @@ API_URL = "https://api.telegram.org/bot{token}/sendMessage"
 
 
 class TelegramNotifier:
-    def __init__(self, bot_token="", chat_id="", events=None, config_path=None, name="", lang="th"):
+    """ส่งแจ้งเตือนผ่าน Telegram — มีคิวสำรอง + กันสแปม error ซ้ำ."""
+
+    def __init__(
+        self,
+        bot_token: str = "",
+        chat_id: str = "",
+        events: Optional[Dict[str, bool]] = None,
+        config_path: Optional[str] = None,
+        name: str = "",
+        lang: str = "th",
+    ) -> None:
+        """สร้าง notifier สำหรับช่อง Telegram.
+
+        Args:
+            bot_token: token ของ bot
+            chat_id: chat id ปลายทาง (ตัวเลข)
+            events: dict เปิด/ปิดการแจ้งเตือนแต่ละเหตุการณ์ (key = EVENT_*)
+            config_path: path ของ config.ini (ใช้หาตำแหน่งคิว)
+            name: ชื่อเครื่อง (กำกับท้ายข้อความ) — ว่าง = ใช้ hostname
+            lang: ภาษา (th/en)
+        """
         self.bot_token = (bot_token or "").strip()
         self.chat_id = str(chat_id or "").strip()
-        self.events = events or {}
+        self.events: Dict[str, bool] = events or {}
         self._last_dedupe_key = ""
         self.name = name or ""
         self.lang = lang if lang in ("th", "en") else "th"
@@ -51,11 +72,20 @@ class TelegramNotifier:
         self.queue_path = config_mod.queue_path_for(config_path)
 
     @property
-    def enabled(self):
+    def enabled(self) -> bool:
+        """bool: พร้อมส่งหรือไม่ (มีทั้ง token และ chat_id)."""
         return bool(self.bot_token and self.chat_id)
 
     @classmethod
-    def from_config(cls, cfg):
+    def from_config(cls, cfg: "config_mod.Config") -> "TelegramNotifier":
+        """สร้าง notifier จาก Config (ดึง token/chat_id/การเปิดปิดแต่ละเหตุการณ์).
+
+        Args:
+            cfg: Config ที่อ่านแล้ว
+
+        Returns:
+            TelegramNotifier: instance ที่ตั้งค่าตาม config
+        """
         return cls(
             bot_token=cfg.telegram_bot_token,
             chat_id=cfg.telegram_chat_id,
@@ -72,13 +102,28 @@ class TelegramNotifier:
             lang=getattr(cfg, "language", "th") or "th",
         )
 
-    def event_enabled(self, event):
+    def event_enabled(self, event: str) -> bool:
+        """เหตุการณ์นี้เปิดการแจ้งเตือนอยู่หรือไม่.
+
+        Args:
+            event: ชื่อเหตุการณ์ (EVENT_*)
+
+        Returns:
+            bool: True ถ้าเปิด (default True)
+        """
         return self.events.get(event, True)
 
     # ---- ส่งจริง ----
 
-    def send_raw(self, text):
-        """ส่งข้อความตรง ๆ คืน (ok, error_message) ไม่ยุ่งกับ queue."""
+    def send_raw(self, text: str) -> Tuple[bool, str]:
+        """ส่งข้อความตรง ๆ ไม่ยุ่งกับ queue.
+
+        Args:
+            text: ข้อความที่จะส่ง
+
+        Returns:
+            tuple[bool, str]: (ส่งสำเร็จหรือไม่, ข้อความ error — ว่างเมื่อสำเร็จ)
+        """
         if not self.enabled:
             return False, i18n.t(self.lang, "tg.not_enabled")
         payload = json.dumps(
@@ -103,8 +148,13 @@ class TelegramNotifier:
 
     # ---- จุดเรียกจากภายนอก ----
 
-    def notify(self, event, text):
-        """แจ้งเหตุการณ์: สร้างข้อความ -> ตรวจ enable -> กันซ้ำ -> เก็บคิว."""
+    def notify(self, event: str, text: str) -> None:
+        """แจ้งเหตุการณ์: สร้างข้อความ -> ตรวจ enable -> กันซ้ำ -> เก็บคิว.
+
+        Args:
+            event: ชื่อเหตุการณ์ (EVENT_*)
+            text: เนื้อหาเหตุการณ์ (จะถูก wrap ด้วย build_message)
+        """
         if not self.enabled:
             return
         if not self.event_enabled(event):
@@ -125,7 +175,12 @@ class TelegramNotifier:
             _error_dedupe[dedupe_key] = time.time()
         self._enqueue(message)
 
-    def _enqueue(self, text):
+    def _enqueue(self, text: str) -> None:
+        """เพิ่มข้อความลงคิว (กันคิวเกิน MAX_QUEUE — ตัดข้อความเก่าทิ้ง).
+
+        Args:
+            text: ข้อความที่จะเก็บในคิว
+        """
         with _queue_lock:
             items = load_queue(self.queue_path)
             items.append(text)
@@ -138,14 +193,21 @@ class TelegramNotifier:
 
     # ---- queue ----
 
-    def flush(self, max_seconds=60):
-        """พยายามส่งคิวทั้งหมด (จำกัดเวลา max_seconds กัน block นาน) คืน (sent, failed)."""
+    def flush(self, max_seconds: int = 60) -> Tuple[int, int]:
+        """พยายามส่งคิวทั้งหมด (จำกัดเวลา max_seconds กัน block นาน).
+
+        Args:
+            max_seconds: เวลาสูงสุดที่ใช้ flush (วินาที)
+
+        Returns:
+            tuple[int, int]: (จำนวนที่ส่งสำเร็จ, จำนวนที่เหลือในคิว)
+        """
         with _queue_lock:
             items = load_queue(self.queue_path)
             if not items:
                 return 0, 0
             sent = 0
-            remaining = []
+            remaining: List[str] = []
             started = time.monotonic()
             for text in items:
                 if time.monotonic() - started > max_seconds:
@@ -166,7 +228,15 @@ class TelegramNotifier:
 
 # ---- ฟังก์ชันระดับโมดูล ----
 
-def load_queue(path=None):
+def load_queue(path: Optional[str] = None) -> List[str]:
+    """อ่านคิวข้อความจากไฟล์ (กรองข้อความว่างออกและบันทึกทับ).
+
+    Args:
+        path: path ของ notify_queue.json (None = ค่า default)
+
+    Returns:
+        list[str]: รายการข้อความในคิว (หรือ [] ถ้าอ่านไม่ได้)
+    """
     path = path or QUEUE_PATH
     try:
         with open(path, "r", encoding="utf-8") as handle:
@@ -187,7 +257,13 @@ def load_queue(path=None):
         return []
 
 
-def save_queue(items, path=None):
+def save_queue(items: List[str], path: Optional[str] = None) -> None:
+    """เขียนคิวข้อความกลับไฟล์แบบ atomic (เฉพาะเนื้อหาเปลี่ยน).
+
+    Args:
+        items: รายการข้อความใหม่
+        path: path ของ notify_queue.json (None = ค่า default)
+    """
     path = path or QUEUE_PATH
     os.makedirs(os.path.dirname(path), exist_ok=True)
     try:
@@ -212,37 +288,58 @@ def save_queue(items, path=None):
         log.warning("บันทึกคิวแจ้งเตือนไม่ได้: %s", exc)
 
 
-def queue_size(path=None):
+def queue_size(path: Optional[str] = None) -> int:
+    """จำนวนข้อความในคิว.
+
+    Args:
+        path: path ของ notify_queue.json (None = ค่า default)
+
+    Returns:
+        int: จำนวนข้อความ
+    """
     return len(load_queue(path))
 
 
-def clear_queue(path=None):
-    """ล้างคิวทั้งหมด (ปุ่มใน Web UI)"""
+def clear_queue(path: Optional[str] = None) -> None:
+    """ล้างคิวทั้งหมด (ปุ่มใน Web UI).
+
+    Args:
+        path: path ของ notify_queue.json (None = ค่า default)
+    """
     save_queue([], path)
 
 
 # ---- กู้รหัสผ่านหน้าเว็บผ่าน Telegram (opt-in: telegram_allow_reset = true) ----
 
 _reset_cooldown = 600  # reset ได้ 1 ครั้งต่อ 10 นาที
-_reset_state = {"awaiting_confirm": False, "last_ask": 0.0}
+_reset_state: Dict[str, Any] = {"awaiting_confirm": False, "last_ask": 0.0}
 
 # ยืนยันคำสั่งอันตราย (/run /restart /tunnel stop) — ต้องพิมพ์ yes ภายใน 2 นาที
 _danger_confirm_seconds = 120
-_danger_state = {"command": "", "text": "", "expires": 0}
-_updates_offset = {}  # token -> offset (ยืนยันแล้ว = update_id < offset) — กันรับซ้ำ/กันขโมยคำสั่งของเครื่องอื่น
-_handled_updates = {}  # token -> set(update_id ที่จัดการแล้ว) — กันตอบซ้ำตอนถูกบล็อกโดยคำสั่งเครื่องอื่น
+_danger_state: Dict[str, Any] = {"command": "", "text": "", "expires": 0}
+_updates_offset: Dict[str, int] = {}  # token -> offset (ยืนยันแล้ว = update_id < offset) — กันรับซ้ำ/กันขโมยคำสั่งของเครื่องอื่น
+_handled_updates: Dict[str, Any] = {}  # token -> set(update_id ที่จัดการแล้ว) — กันตอบซ้ำตอนถูกบล็อกโดยคำสั่งเครื่องอื่น
 _tg_foreign_stale = 300  # คำสั่งของเครื่องอื่นที่ค้างเกิน 5 นาที (เครื่องเป้าออฟไลน์) -> ทิ้ง ไม่บล็อกคิวทั้ง bot
-_last_reset_time = {}
+_last_reset_time: Dict[str, float] = {}
 
 
-def _tg_updates(token, offset, timeout=10):
+def _tg_updates(token: str, offset: int, timeout: int = 10) -> List[Dict[str, Any]]:
     """เรียก getUpdates คืน list ของ updates (short polling — กัน bot lock หลาย instance).
 
-    - timeout=0 (short polling): ไม่ถือ connection ค้าง -> หลายโปรแกรมใช้ bot เดียวกัน
-      poll พร้อมกันได้ (long polling จะโดน Telegram ตัดด้วย 409 "terminated by other getUpdates")
-    - 409: รอสักครู่แล้วลองใหม่ — ถ้ายังติดให้ข้ามรอบนี้ไปก่อน (รอรอบหน้าลองใหม่
-      ไม่ไปลบ webhook เพราะอาจกระทบเครื่องอื่นที่ใช้ webhook)
-    - 429: flood wait — รอตาม retry_after แล้วข้ามรอบ (ไม่ยิงซ้ำถี่)
+    Args:
+        token: bot token
+        offset: update_id เริ่มต้น (กันรับซ้ำ)
+        timeout: เวลารอสูงสุด (วินาที)
+
+    Returns:
+        list[dict]: รายการ updates หรือ [] ถ้า error
+
+    หมายเหตุ:
+        - timeout=0 (short polling): ไม่ถือ connection ค้าง -> หลายโปรแกรมใช้ bot เดียวกัน
+          poll พร้อมกันได้ (long polling จะโดน Telegram ตัดด้วย 409 "terminated by other getUpdates")
+        - 409: รอสักครู่แล้วลองใหม่ — ถ้ายังติดให้ข้ามรอบนี้ไปก่อน (รอรอบหน้าลองใหม่
+          ไม่ไปลบ webhook เพราะอาจกระทบเครื่องอื่นที่ใช้ webhook)
+        - 429: flood wait — รอตาม retry_after แล้วข้ามรอบ (ไม่ยิงซ้ำถี่)
     """
     url = "https://api.telegram.org/bot{}/getUpdates?timeout=0".format(token.strip())
     if offset:
@@ -275,10 +372,19 @@ def _tg_updates(token, offset, timeout=10):
     return []
 
 
-def _apply_webui_password(cfg, config_path, new_pw, lang="th"):
+def _apply_webui_password(cfg: "config_mod.Config", config_path: str, new_pw: str, lang: str = "th") -> Tuple[bool, str]:
     """เขียน webui_password (hash) ใหม่ลง config — atomic + ใช้ได้แม้ config ยังตั้งไม่ครบ.
 
-    ตรวจรูปแบบ ini ก่อน (parse ได้) แล้วเขียนตรง (ไม่ใช้ save_text เพราะ validate เต็มจะกีดกัน)
+    ตรวจรูปแบบ ini ก่อน (parse ได้) แล้วเขียนตรง (ไม่ใช้ save_text เพราะ validate เต็มจะกีดกัน).
+
+    Args:
+        cfg: Config ที่อ่านแล้ว
+        config_path: path ของ config.ini
+        new_pw: รหัสผ่านใหม่ (จะ hash ให้)
+        lang: ภาษา
+
+    Returns:
+        tuple[bool, str]: (สำเร็จหรือไม่, ข้อความผลลัพธ์)
     """
     import configparser
     import io
@@ -307,14 +413,29 @@ def _apply_webui_password(cfg, config_path, new_pw, lang="th"):
 # ---- คำสั่ง Telegram (เปิดด้วย telegram_allow_reset = true — เฉพาะ chat_id ที่ตั้งไว้) ----
 
 
-def _tg_command_name(cfg):
-    """ชื่อเครื่องที่ใช้รับคำสั่ง (telegram_command_name หรือ hostname ของระบบ)"""
+def _tg_command_name(cfg: "config_mod.Config") -> str:
+    """ชื่อเครื่องที่ใช้รับคำสั่ง (telegram_command_name หรือ hostname ของระบบ).
+
+    Args:
+        cfg: Config ที่อ่านแล้ว
+
+    Returns:
+        str: ชื่อเครื่องสำหรับรับคำสั่ง Telegram
+    """
     name = getattr(cfg, "telegram_command_name", "").strip()
     return name or _hostname()
 
 
-def _tg_list_text(cfg, lang="th"):
-    """รายชื่อ DDNS records + tunnel hostnames ที่ตั้งค่าไว้ สำหรับ /list"""
+def _tg_list_text(cfg: "config_mod.Config", lang: str = "th") -> str:
+    """รายชื่อ DDNS records + tunnel hostnames ที่ตั้งค่าไว้ สำหรับ /list.
+
+    Args:
+        cfg: Config ที่อ่านแล้ว
+        lang: ภาษา
+
+    Returns:
+        str: ข้อความตอบกลับ /list
+    """
     lines = []
     records = getattr(cfg, "records", []) or []
     if records:
@@ -348,8 +469,16 @@ def _tg_list_text(cfg, lang="th"):
     return "\n".join(lines)
 
 
-def _tg_status_text(config_path, lang="th"):
-    """ข้อความสถานะสำหรับ /status (records + รอบล่าสุด + error + เวอร์ชัน + tunnel + สถิติ API)"""
+def _tg_status_text(config_path: str, lang: str = "th") -> str:
+    """ข้อความสถานะสำหรับ /status (records + รอบล่าสุด + error + เวอร์ชัน + tunnel + สถิติ API).
+
+    Args:
+        config_path: path ของ config.ini
+        lang: ภาษา
+
+    Returns:
+        str: ข้อความตอบกลับ /status
+    """
     from . import cloudflare_api, ddns
 
     cfg = config_mod.Config(config_path)
@@ -389,7 +518,7 @@ def _tg_status_text(config_path, lang="th"):
 
 
 # ฟิลด์การแจ้งเตือนที่ /notify ควบคุมได้ (key ใน Telegram ↔ attribute ใน config)
-NOTIFY_FIELDS = {
+NOTIFY_FIELDS: Dict[str, str] = {
     "start": "notify_start",
     "stop": "notify_stop",
     "ip": "notify_ip_change",
@@ -400,12 +529,20 @@ NOTIFY_FIELDS = {
 }
 
 
-def _tg_notify_text(cfg, parts, lang="th"):
+def _tg_notify_text(cfg: "config_mod.Config", parts: List[str], lang: str = "th") -> str:
     """จัดการ /notify — ดู/เปิด/ปิดการแจ้งเตือน (บันทึก config ผ่านเส้นทางเดียวกับฟอร์มเว็บ).
 
-    รูปแบบ: /notify · /notify all on|off · /notify <event> [on|off]
+    รูปแบบ: /notify · /notify all on|off · /notify <event> [on|off].
+
+    Args:
+        cfg: Config ที่อ่านแล้ว
+        parts: คำสั่งที่แยกคำแล้ว (เช่น ["/notify", "all", "off"])
+        lang: ภาษา
+
+    Returns:
+        str: ข้อความตอบกลับ /notify
     """
-    def current():
+    def current() -> str:
         toggles = " · ".join(
             "{}={}".format(key, i18n.t(lang, "tg.notify.on") if getattr(cfg, field) else i18n.t(lang, "tg.notify.off"))
             for key, field in NOTIFY_FIELDS.items()
@@ -445,8 +582,15 @@ def _tg_notify_text(cfg, parts, lang="th"):
     return current()
 
 
-def _tg_ip_text(lang="th"):
-    """IP สาธารณะสำหรับ /ip"""
+def _tg_ip_text(lang: str = "th") -> str:
+    """IP สาธารณะสำหรับ /ip.
+
+    Args:
+        lang: ภาษา
+
+    Returns:
+        str: ข้อความตอบกลับ /ip
+    """
     from . import ip_detect
 
     parts = []
@@ -459,8 +603,15 @@ def _tg_ip_text(lang="th"):
     return i18n.t(lang, "tg.ip.text").format(" · ".join(parts))
 
 
-def _tg_update_text(lang="th"):
-    """เช็คเวอร์ชันใหม่สำหรับ /update"""
+def _tg_update_text(lang: str = "th") -> str:
+    """เช็คเวอร์ชันใหม่สำหรับ /update.
+
+    Args:
+        lang: ภาษา
+
+    Returns:
+        str: ข้อความตอบกลับ /update
+    """
     try:
         from . import webui as webui_mod
 
@@ -476,11 +627,18 @@ def _tg_update_text(lang="th"):
         return i18n.t(lang, "tg.update.fail") + str(exc)
 
 
-def _tg_run_now(cfg, config_path, reply, lang="th"):
-    """รันรอบ DDNS ทันที (thread แยก — กันบล็อก loop) แล้วตอบผลสรุป"""
+def _tg_run_now(cfg: "config_mod.Config", config_path: str, reply: Callable[[str], None], lang: str = "th") -> None:
+    """รันรอบ DDNS ทันที (thread แยก — กันบล็อก loop) แล้วตอบผลสรุป.
+
+    Args:
+        cfg: Config ที่อ่านแล้ว
+        config_path: path ของ config.ini
+        reply: ฟังก์ชันส่งข้อความตอบกลับ
+        lang: ภาษา
+    """
     from . import ddns
 
-    def work():
+    def work() -> None:
         try:
             summary = ddns.DDNSEngine(config_path, dry_run=False).run_once()
             if not summary:
@@ -499,8 +657,17 @@ def _tg_run_now(cfg, config_path, reply, lang="th"):
     reply(i18n.t(lang, "tg.run.busy"))
 
 
-def _tg_tunnel_text(cfg, action, lang="th"):
-    """สถานะ/ควบคุม tunnel สำหรับ /tunnel [start|stop]"""
+def _tg_tunnel_text(cfg: "config_mod.Config", action: str, lang: str = "th") -> str:
+    """สถานะ/ควบคุม tunnel สำหรับ /tunnel [start|stop].
+
+    Args:
+        cfg: Config ที่อ่านแล้ว
+        action: คำสั่งย่อย (start/stop/ว่าง = สถานะ)
+        lang: ภาษา
+
+    Returns:
+        str: ข้อความตอบกลับ /tunnel
+    """
     try:
         from . import tunnel as tunnel_mod
 
@@ -521,8 +688,16 @@ def _tg_tunnel_text(cfg, action, lang="th"):
         return i18n.t(lang, "tg.tunnel.err").format(exc)
 
 
-def _tg_service_action(action, lang="th"):
-    """ควบคุม Windows Service สำหรับ /restart /start /stop"""
+def _tg_service_action(action: str, lang: str = "th") -> str:
+    """ควบคุม Windows Service สำหรับ /restart /start /stop.
+
+    Args:
+        action: คำสั่งย่อย (restart/start/stop)
+        lang: ภาษา
+
+    Returns:
+        str: ข้อความตอบกลับ
+    """
     try:
         from . import service as service_mod
         from .webui import _in_service
@@ -541,8 +716,17 @@ def _tg_service_action(action, lang="th"):
         return i18n.t(lang, "tg.svc.fail").format(exc)
 
 
-def _tg_log_tail(cfg, limit=30, lang="th"):
-    """log 30 บรรทัดสุดท้ายสำหรับ /log"""
+def _tg_log_tail(cfg: "config_mod.Config", limit: int = 30, lang: str = "th") -> str:
+    """log 30 บรรทัดสุดท้ายสำหรับ /log.
+
+    Args:
+        cfg: Config ที่อ่านแล้ว
+        limit: จำนวนบรรทัดสุดท้ายที่จะอ่าน
+        lang: ภาษา
+
+    Returns:
+        str: ข้อความ log ท้ายสุด (จำกัด ~3500 ตัวอักษร) หรือข้อความแจ้งอ่านไม่ได้
+    """
     import os
 
     log_path = os.path.join(cfg.log_dir, "cloudflare-ddns.log")
@@ -556,18 +740,23 @@ def _tg_log_tail(cfg, limit=30, lang="th"):
         return i18n.t(lang, "tg.log.read_fail").format(exc)
 
 
-def check_telegram_commands(cfg, config_path=""):
+def check_telegram_commands(cfg: "config_mod.Config", config_path: str = "") -> None:
     """ฟังคำสั่งจาก Telegram — เฉพาะ chat_id ที่ตั้งไว้เท่านั้น (log ทุกคำสั่ง).
 
-    - เปิดด้วย telegram_allow_reset = true ใน config (ฟอร์ม: "ควบคุม/กู้รหัสผ่านผ่าน Telegram")
-    - คำสั่ง: /status /ip /run /update /tunnel /log /restart /start /stop /help
-    - ใช้ bot กลางร่วมหลายเครื่อง (รันหลายตัวพร้อมกัน): ต่อท้าย @ชื่อเครื่อง เช่น /status @เครื่องA —
-      เฉพาะเครื่องที่ชื่อตรง (telegram_command_name หรือ hostname) ตอบ ที่เหลือข้ามโดย**ไม่ confirm offset**
-      (คำสั่งยังรอคิวอยู่ ให้เครื่องเป้าได้รับเอง — กัน "ขโมยคำสั่ง" จาก bot ตัวเดียวกัน)
-      คำสั่งของเครื่องอื่นที่ค้างเกิน 10 นาที (เครื่องเป้าออฟไลน์) จะถูกทิ้ง ไม่บล็อกคิวทั้ง bot
-    - ไม่ระบุชื่อ = ส่งถึงทุกเครื่อง (ทุกตัวตอบ)
-    - กู้รหัสผ่าน: 'reset password' -> ตอบ 'yes' -> สุ่มรหัสใหม่ 12 ตัว ส่งกลับ (กัน 1 ครั้ง/10 นาที)
-    - ข้อความจาก chat อื่นถูกละเลย (ไม่ตอบ ไม่ log แต่ confirm ทิ้ง)
+    Args:
+        cfg: Config ที่อ่านแล้ว
+        config_path: path ของ config.ini (ส่งต่อให้ _dispatch_tg_command)
+
+    หมายเหตุ:
+        - เปิดด้วย telegram_allow_reset = true ใน config (ฟอร์ม: "ควบคุม/กู้รหัสผ่านผ่าน Telegram")
+        - คำสั่ง: /status /ip /run /update /tunnel /log /restart /start /stop /help
+        - ใช้ bot กลางร่วมหลายเครื่อง (รันหลายตัวพร้อมกัน): ต่อท้าย @ชื่อเครื่อง เช่น /status @เครื่องA —
+          เฉพาะเครื่องที่ชื่อตรง (telegram_command_name หรือ hostname) ตอบ ที่เหลือข้ามโดย**ไม่ confirm offset**
+          (คำสั่งยังรอคิวอยู่ ให้เครื่องเป้าได้รับเอง — กัน "ขโมยคำสั่ง" จาก bot ตัวเดียวกัน)
+          คำสั่งของเครื่องอื่นที่ค้างเกิน 10 นาที (เครื่องเป้าออฟไลน์) จะถูกทิ้ง ไม่บล็อกคิวทั้ง bot
+        - ไม่ระบุชื่อ = ส่งถึงทุกเครื่อง (ทุกตัวตอบ)
+        - กู้รหัสผ่าน: 'reset password' -> ตอบ 'yes' -> สุ่มรหัสใหม่ 12 ตัว ส่งกลับ (กัน 1 ครั้ง/10 นาที)
+        - ข้อความจาก chat อื่นถูกละเลย (ไม่ตอบ ไม่ log แต่ confirm ทิ้ง)
     """
     import secrets
 
@@ -655,10 +844,27 @@ def check_telegram_commands(cfg, config_path=""):
         handled &= {u for u in handled if u >= _updates_offset[token]}
 
 
-def _dispatch_tg_command(lower, text, uid, token, cfg, config_path, reply, confirmed=False):
-    """จัดการคำสั่ง Telegram หนึ่งคำสั่ง (แยกฟังก์ชัน — ใช้จาก check_telegram_commands)
+def _dispatch_tg_command(
+    lower: str,
+    text: str,
+    uid: int,
+    token: str,
+    cfg: "config_mod.Config",
+    config_path: str,
+    reply: Callable[[str], None],
+    confirmed: bool = False,
+) -> None:
+    """จัดการคำสั่ง Telegram หนึ่งคำสั่ง (แยกฟังก์ชัน — ใช้จาก check_telegram_commands).
 
-    confirmed=True ใช้เฉพาะตอน re-dispatch หลังยืนยันคำสั่งอันตราย — ข้าม gate ยืนยันซ้ำ
+    Args:
+        lower: คำสั่งตัวพิมพ์เล็ก
+        text: ข้อความดั้งเดิม (ใช้ log)
+        uid: update_id (ใช้ log/กันซ้ำ)
+        token: bot token
+        cfg: Config ที่อ่านแล้ว
+        config_path: path ของ config.ini
+        reply: ฟังก์ชันส่งข้อความตอบกลับ
+        confirmed: True ใช้เฉพาะตอน re-dispatch หลังยืนยันคำสั่งอันตราย — ข้าม gate ยืนยันซ้ำ
     """
     import secrets
 
@@ -768,24 +974,44 @@ def _dispatch_tg_command(lower, text, uid, token, cfg, config_path, reply, confi
         log.info("Telegram: คำสั่งไม่รู้จัก: %r", text[:60])
 
 
-def _tg_api(bot_token, method, timeout=10):
-    """เรียก Telegram Bot API ตรง ๆ คืน dict ที่ parse แล้ว"""
+def _tg_api(bot_token: str, method: str, timeout: int = 10) -> Dict[str, Any]:
+    """เรียก Telegram Bot API ตรง ๆ.
+
+    Args:
+        bot_token: bot token
+        method: ชื่อ method เช่น "getUpdates"/"deleteWebhook"
+        timeout: เวลารอสูงสุด (วินาที)
+
+    Returns:
+        dict: response ที่ parse เป็น dict แล้ว
+
+    Raises:
+        Exception: network/HTTP error (ปล่อยให้ caller จับ)
+    """
     url = "https://api.telegram.org/bot{}/{}".format(bot_token.strip(), method)
     with urllib.request.urlopen(url, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8", "replace"))
 
 
-def get_chat_id(bot_token, timeout=10, lang="th"):
+def get_chat_id(bot_token: str, timeout: int = 10, lang: str = "th") -> Tuple[str, str]:
     """หา chat_id ล่าสุดผ่าน getUpdates (ผู้ใช้ต้องเคยส่ง /start หรือข้อความให้ bot).
 
-    - ถ้าเจอ error 409 (มี webhook ค้าง) จะลบ webhook ให้อัตโนมัติแล้วลองใหม่
-    คืน (chat_id_str หรือ "", error_message)
+    Args:
+        bot_token: bot token
+        timeout: เวลารอสูงสุด (วินาที)
+        lang: ภาษา
+
+    Returns:
+        tuple[str, str]: (chat_id_str หรือ "", ข้อความ error)
+
+    หมายเหตุ:
+        - ถ้าเจอ error 409 (มี webhook ค้าง) จะลบ webhook ให้อัตโนมัติแล้วลองใหม่
     """
     token = bot_token.strip()
     if not token:
         return "", i18n.t(lang, "tg.chatid.no_token")
 
-    def fetch():
+    def fetch() -> Dict[str, Any]:
         return _tg_api(token, "getUpdates", timeout=timeout)
 
     try:
@@ -819,8 +1045,17 @@ def get_chat_id(bot_token, timeout=10, lang="th"):
 # ---- ข้อความแจ้งเตือน ----
 
 
-def short_error(text, limit=110, lang="th"):
-    """ย่อข้อความ error ให้อ่านง่าย (ตัด JSON/รายละเอียดยาว ๆ ทิ้ง)."""
+def short_error(text: Any, limit: int = 110, lang: str = "th") -> str:
+    """ย่อข้อความ error ให้อ่านง่าย (ตัด JSON/รายละเอียดยาว ๆ ทิ้ง).
+
+    Args:
+        text: ข้อความ error (แปลงเป็น str ก่อน)
+        limit: ความยาวสูงสุดของข้อความ
+        lang: ภาษา
+
+    Returns:
+        str: ข้อความ error ที่ย่อแล้ว
+    """
     text = str(text or "").strip()
     if not text:
         return i18n.t(lang, "tg.err_unknown")
@@ -835,8 +1070,12 @@ def short_error(text, limit=110, lang="th"):
 _hostname_cache = ""
 
 
-def _hostname():
-    """ชื่อเครื่อง (แคช) — ระบุที่มาของข้อความในทุกการแจ้งเตือน (ใช้ bot กลางร่วมหลายเครื่อง)"""
+def _hostname() -> str:
+    """ชื่อเครื่อง (แคช) — ระบุที่มาของข้อความในทุกการแจ้งเตือน (ใช้ bot กลางร่วมหลายเครื่อง).
+
+    Returns:
+        str: ชื่อเครื่อง หรือ "?" ถ้าหาไม่ได้
+    """
     global _hostname_cache
     if not _hostname_cache:
         import socket as _socket
@@ -848,13 +1087,27 @@ def _hostname():
     return _hostname_cache
 
 
-def _now_ts():
-    """เวลาปัจจุบันในรูปแบบ [dd/MM HH:MM] กำกับท้ายข้อความ"""
+def _now_ts() -> str:
+    """เวลาปัจจุบันในรูปแบบ [dd/MM HH:MM] กำกับท้ายข้อความ.
+
+    Returns:
+        str: timestamp สั้น ๆ
+    """
     return datetime.now().strftime("[%d/%m %H:%M]")
 
 
-def build_message(event, detail=None, name=None, lang="th"):
-    """สร้างข้อความแจ้งเตือนรูปแบบอ่านง่าย (ตามภาษา + เวลาเกิด + ชื่อเครื่อง)."""
+def build_message(event: str, detail: Optional[str] = None, name: Optional[str] = None, lang: str = "th") -> str:
+    """สร้างข้อความแจ้งเตือนรูปแบบอ่านง่าย (ตามภาษา + เวลาเกิด + ชื่อเครื่อง).
+
+    Args:
+        event: ชื่อเหตุการณ์ (EVENT_*)
+        detail: เนื้อหาเหตุการณ์ (ไม่บังคับ)
+        name: ชื่อเครื่อง (ไม่บังคับ — ใช้ hostname)
+        lang: ภาษา
+
+    Returns:
+        str: ข้อความแจ้งเตือนที่สมบูรณ์
+    """
     ts = _now_ts()
     host = name or _hostname()
     if event == EVENT_START:

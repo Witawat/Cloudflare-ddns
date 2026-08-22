@@ -18,6 +18,7 @@ import os
 import sys
 import threading
 import webbrowser
+from typing import Any, Optional
 
 from . import cloudflare_api
 from . import config as config_mod
@@ -27,7 +28,8 @@ from . import notifier
 log = logging.getLogger("cloudflare-ddns")
 
 
-def setup_console_logging():
+def setup_console_logging() -> None:
+    """ตั้งค่า logging ไป console (สำหรับคำสั่งที่รันแบบ foreground)."""
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(
         logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
@@ -38,8 +40,8 @@ def setup_console_logging():
         root.addHandler(handler)
 
 
-def print_banner():
-    """แสดงชื่อโปรแกรม + เวอร์ชัน + เครดิตผู้เขียน (ตอนเปิด console)"""
+def print_banner() -> None:
+    """แสดงชื่อโปรแกรม + เวอร์ชัน + เครดิตผู้เขียน (ตอนเปิด console)."""
     from . import __version__
 
     print()
@@ -48,7 +50,16 @@ def print_banner():
     print()
 
 
-def _ask(question, default=None):
+def _ask(question: str, default: Any = None) -> Any:
+    """ถามคำถามกับผู้ใช้ทาง console.
+
+    Args:
+        question: ข้อความคำถาม
+        default: ค่า default — ถ้าใส่ จะแสดง [default] และใช้เมื่อผู้ใช้กด Enter ว่าง
+
+    Returns:
+        Any: คำตอบ (str) หรือ default
+    """
     suffix = f" [{default}]" if default is not None else ""
     answer = input(f"{question}{suffix}: ").strip()
     if not answer and default is not None:
@@ -56,7 +67,16 @@ def _ask(question, default=None):
     return answer
 
 
-def _ask_yes(question, default=True):
+def _ask_yes(question: str, default: bool = True) -> bool:
+    """ถามคำถาม yes/no ทาง console.
+
+    Args:
+        question: ข้อความคำถาม
+        default: ค่า default (True = Y/n, False = y/N)
+
+    Returns:
+        bool: True/False ตามคำตอบ
+    """
     hint = "Y/n" if default else "y/N"
     answer = input(f"{question} ({hint}): ").strip().lower()
     if not answer:
@@ -67,7 +87,12 @@ def _ask_yes(question, default=True):
 # ---- setup wizard ----
 
 
-def cmd_setup(args):
+def cmd_setup(args: argparse.Namespace) -> None:
+    """Wizard ตั้งค่าครั้งแรก: token -> เลือก zone -> เพิ่ม record -> Telegram (เลือกได้).
+
+    Args:
+        args: argparse arguments (มี .config = path ของ config.ini)
+    """
     cfg = config_mod.Config(args.config)
     if os.path.isfile(args.config) and cfg.api_token:
         print(f"พบ config เดิมที่ {args.config}")
@@ -220,7 +245,15 @@ def cmd_setup(args):
 # ---- run / dry-run ----
 
 
-def cmd_run(args):
+def cmd_run(args: argparse.Namespace) -> int:
+    """รันแบบ foreground (ทดสอบ) — DDNS loop + log ไป console.
+
+    Args:
+        args: argparse arguments
+
+    Returns:
+        int: 0 = สำเร็จ, 1 = มี instance อื่นรันอยู่
+    """
     from . import instance_lock
     from . import service as service_mod
 
@@ -234,7 +267,12 @@ def cmd_run(args):
     ddns.run_forever(args.config, dry_run=False)
 
 
-def cmd_dry_run(args):
+def cmd_dry_run(args: argparse.Namespace) -> None:
+    """เทสต์รอบเดียว ไม่แก้ record จริง (ใช้ state/temp แยกจากของจริง).
+
+    Args:
+        args: argparse arguments
+    """
     setup_console_logging()
     engine = ddns.DDNSEngine(args.config, dry_run=True)
     print("Dry-run: ตรวจเท่านั้น ไม่แก้ record จริง")
@@ -251,8 +289,15 @@ def cmd_dry_run(args):
     print("เสร็จสิ้น")
 
 
-def cmd_notify_test(args):
-    """ส่งข้อความทดสอบผ่าน Telegram (ยืนยันว่า config ถูก)."""
+def cmd_notify_test(args: argparse.Namespace) -> int:
+    """ส่งข้อความทดสอบผ่าน Telegram (ยืนยันว่า config ถูก).
+
+    Args:
+        args: argparse arguments
+
+    Returns:
+        int: 0 = สำเร็จ, 1 = ยังไม่ได้ตั้งค่า/ส่งไม่ได้
+    """
     cfg = config_mod.Config(args.config)
     notify = notifier.TelegramNotifier.from_config(cfg)
     if not notify.enabled:
@@ -272,8 +317,15 @@ def cmd_notify_test(args):
     return 1
 
 
-def cmd_reset_password(args):
-    """ตั้งรหัสผ่านหน้าเว็บใหม่ (ใช้เมื่อลืมรหัส) — เขียนเป็น hash ลง config แบบ atomic."""
+def cmd_reset_password(args: argparse.Namespace) -> int:
+    """ตั้งรหัสผ่านหน้าเว็บใหม่ (ใช้เมื่อลืมรหัส) — เขียนเป็น hash ลง config แบบ atomic.
+
+    Args:
+        args: argparse arguments
+
+    Returns:
+        int: 0 = สำเร็จ, 1 = ล้มเหลว
+    """
     import configparser
     import io
 
@@ -315,37 +367,67 @@ def cmd_reset_password(args):
 # ---- service control ----
 
 
-def cmd_install(args):
+def cmd_install(args: argparse.Namespace) -> None:
+    """ติดตั้ง Windows Service.
+
+    Args:
+        args: argparse arguments
+    """
     from . import service as service_mod
 
     print(service_mod.install_service())
 
 
-def cmd_remove(args):
+def cmd_remove(args: argparse.Namespace) -> None:
+    """ลบ Windows Service.
+
+    Args:
+        args: argparse arguments
+    """
     from . import service as service_mod
 
     print(service_mod.remove_service())
 
 
-def cmd_start(args):
+def cmd_start(args: argparse.Namespace) -> None:
+    """เริ่ม Windows Service.
+
+    Args:
+        args: argparse arguments
+    """
     from . import service as service_mod
 
     print(service_mod.start_service())
 
 
-def cmd_stop(args):
+def cmd_stop(args: argparse.Namespace) -> None:
+    """หยุด Windows Service.
+
+    Args:
+        args: argparse arguments
+    """
     from . import service as service_mod
 
     print(service_mod.stop_service())
 
 
-def cmd_restart(args):
+def cmd_restart(args: argparse.Namespace) -> None:
+    """restart Windows Service.
+
+    Args:
+        args: argparse arguments
+    """
     from . import service as service_mod
 
     print(service_mod.restart_service())
 
 
-def cmd_status(args):
+def cmd_status(args: argparse.Namespace) -> None:
+    """ดูสถานะ: service + DDNS records + Cloudflare Tunnel.
+
+    Args:
+        args: argparse arguments
+    """
     from . import service as service_mod
 
     service_status = service_mod.service_status()
@@ -393,8 +475,13 @@ def cmd_status(args):
         print(f"  (อ่านสถานะ tunnel ไม่ได้: {exc})")
 
 
-def _start_tunnel_async(tunnel_mgr, cfg):
-    """เริ่ม Cloudflare Tunnel ใน thread แยก (ดาวน์โหลด cloudflared ครั้งแรกอาจนาน)."""
+def _start_tunnel_async(tunnel_mgr: Any, cfg: "config_mod.Config") -> None:
+    """เริ่ม Cloudflare Tunnel ใน thread แยก (ดาวน์โหลด cloudflared ครั้งแรกอาจนาน).
+
+    Args:
+        tunnel_mgr: TunnelManager instance
+        cfg: Config ที่อ่านแล้ว
+    """
     try:
         ok, message = tunnel_mgr.start(cfg)
         log.info("Cloudflare Tunnel: %s", message)
@@ -402,7 +489,15 @@ def _start_tunnel_async(tunnel_mgr, cfg):
         log.warning("เริ่ม Cloudflare Tunnel ไม่ได้: %s", exc)
 
 
-def cmd_webui(args):
+def cmd_webui(args: argparse.Namespace) -> int:
+    """เปิด Web UI แบบ blocking (ปิดด้วย Ctrl+C).
+
+    Args:
+        args: argparse arguments (มี .port/.password เพิ่มเติม)
+
+    Returns:
+        int: 0 = สำเร็จ, 1 = เปิดไม่ได้
+    """
     from . import webui
 
     setup_console_logging()
@@ -417,11 +512,20 @@ def cmd_webui(args):
     ui.serve_forever()
 
 
-def _install_console_close_handler(stop_event, loop_thread, tunnel_mgr, web_ui):
-    """จับการกด X (CTRL_CLOSE_EVENT) — ปิดโปรแกรมอย่างถูกต้อง (หยุด tunnel/webui ก่อน)
+def _install_console_close_handler(stop_event: threading.Event, loop_thread: Any, tunnel_mgr: Any, web_ui: Any) -> bool:
+    """จับการกด X (CTRL_CLOSE_EVENT) — ปิดโปรแกรมอย่างถูกต้อง (หยุด tunnel/webui ก่อน).
 
     ถ้าไม่จับ: Windows ฆ่า process ทันทีตอนกด X -> finally ไม่ทำงาน -> cloudflared (child)
-    ค้างเป็น process หลอน — ต้อง taskkill เองทุกครั้ง. ใช้ win32api (pywin32 — มีอยู่แล้ว)
+    ค้างเป็น process หลอน — ต้อง taskkill เองทุกครั้ง. ใช้ win32api (pywin32 — มีอยู่แล้ว).
+
+    Args:
+        stop_event: event สำหรับสั่งหยุด DDNS loop
+        loop_thread: thread ที่รัน run_forever (จะ join ให้ตอนปิด)
+        tunnel_mgr: TunnelManager instance (หยุดให้ตอนปิด)
+        web_ui: WebUI instance (หยุดให้ตอนปิด)
+
+    Returns:
+        bool: True = ติดตั้ง handler สำเร็จ, False = ข้าม (ไม่มี win32api)
     """
     try:
         import win32api
@@ -455,9 +559,17 @@ def _install_console_close_handler(stop_event, loop_thread, tunnel_mgr, web_ui):
         return False
 
 
-def cmd_default(args):
+def cmd_default(args: argparse.Namespace) -> int:
     """รันโดยไม่ใส่คำสั่ง: Web UI + DDNS loop + Cloudflare Tunnel พร้อมกัน (เทียบเท่า service).
-    กด exe ครั้งเดียวทำงานเต็มรูปแบบ — ปิดด้วย Ctrl+C (หยุดทุกอย่าง + แจ้ง Telegram 'หยุดทำงาน')"""
+
+    กด exe ครั้งเดียวทำงานเต็มรูปแบบ — ปิดด้วย Ctrl+C (หยุดทุกอย่าง + แจ้ง Telegram 'หยุดทำงาน').
+
+    Args:
+        args: argparse arguments
+
+    Returns:
+        int: 0 = สำเร็จ, 1 = มี instance อื่นรันอยู่
+    """
     from . import instance_lock
     from . import service as service_mod
     from . import webui
@@ -538,13 +650,19 @@ def cmd_default(args):
     log.info("ปิด Web UI + DDNS loop + Tunnel เรียบร้อย")
 
 
-def run_service_entry():
+def run_service_entry() -> None:
+    """entry สำหรับโหมด service (SCM เรียกผ่าน run-service)."""
     from . import service as service_mod
 
     service_mod.run_service_entry()
 
 
-def main(argv=None):
+def main(argv: Optional[list] = None) -> None:
+    """entry หลักของโปรแกรม — แยกคำสั่งตาม subcommand.
+
+    Args:
+        argv: argument list (None = ใช้ sys.argv[1:])
+    """
     # บังคับ UTF-8 เพื่อให้ print ภาษาไทย/สัญลักษณ์ได้ในทุก console ของ Windows
     for stream in (sys.stdout, sys.stderr):
         try:

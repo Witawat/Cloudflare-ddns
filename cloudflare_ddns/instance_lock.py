@@ -17,6 +17,7 @@
 
 import logging
 import os
+from typing import Optional
 
 try:
     import msvcrt
@@ -27,15 +28,30 @@ from . import config as config_mod
 
 log = logging.getLogger("cloudflare-ddns")
 
-_log_lock_fd = None
+_log_lock_fd: Optional[int] = None
 
 
-def instance_lock_path(config_path=None):
+def instance_lock_path(config_path: Optional[str] = None) -> str:
+    """คืน path ของไฟล์ instance.lock (อยู่ข้าง data dir ของ config ที่ใช้).
+
+    Args:
+        config_path: path ของ config.ini (ใช้หาตำแหน่ง data dir) — None = ค่า default
+
+    Returns:
+        str: path เต็มของไฟล์ instance.lock
+    """
     return os.path.join(config_mod.data_dir_for(config_path), "instance.lock")
 
 
-def _lock_fd_on(fd):
-    """lock 1 byte แรกของ fd (LK_NBLCK ไม่บล็อก) — โยน OSError ถ้า lock ไม่ได้"""
+def _lock_fd_on(fd: int) -> None:
+    """lock 1 byte แรกของ fd (LK_NBLCK ไม่บล็อก) — โยน OSError ถ้า lock ไม่ได้.
+
+    Args:
+        fd: file descriptor ของไฟล์ lock
+
+    Raises:
+        OSError: เมื่อ lock ไม่ได้ (มี process อื่นครอบอยู่)
+    """
     if os.fstat(fd).st_size == 0:
         os.write(fd, b"\x00")
         os.fsync(fd)
@@ -43,9 +59,15 @@ def _lock_fd_on(fd):
     msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
 
 
-def acquire_instance_lock(config_path=None):
-    """ครอบ lock รันซ้ำทั้ง process — คืน True ถ้าเป็น instance แรก (ได้ lock),
-    False ถ้ามี instance อื่นรันอยู่แล้ว"""
+def acquire_instance_lock(config_path: Optional[str] = None) -> bool:
+    """ครอบ lock รันซ้ำทั้ง process.
+
+    Args:
+        config_path: path ของ config.ini (ใช้หาตำแหน่ง data dir) — None = ค่า default
+
+    Returns:
+        bool: True ถ้าเป็น instance แรก (ได้ lock), False ถ้ามี instance อื่นรันอยู่แล้ว
+    """
     global _log_lock_fd
     if _log_lock_fd is not None:
         return True
@@ -67,7 +89,8 @@ def acquire_instance_lock(config_path=None):
         return False
 
 
-def release_instance_lock():
+def release_instance_lock() -> None:
+    """ปลด lock รันซ้ำที่ครอบไว้ (ไม่ค่อยต้องเรียก — process ตาย OS ปลดให้เอง)."""
     global _log_lock_fd
     if _log_lock_fd is None:
         return
@@ -84,13 +107,25 @@ def release_instance_lock():
 
 class file_lock:
     """context manager — lock ไฟล์สั้น ๆ (ครอบช่วงอ่าน-เขียน) ข้าม process.
-    ใช้ตรวจ `.locked` ว่าครอบได้หรือไม่ (อีก process ครอบอยู่)"""
 
-    def __init__(self, path):
+    ใช้ตรวจ `.locked` ว่าครอบได้หรือไม่ (อีก process ครอบอยู่)
+    """
+
+    def __init__(self, path: str) -> None:
+        """สร้าง context manager ของ file lock.
+
+        Args:
+            path: path ของไฟล์ที่จะใช้ lock
+        """
         self.path = path
-        self.fd = None
+        self.fd: Optional[int] = None
 
-    def __enter__(self):
+    def __enter__(self) -> "file_lock":
+        """ครอบ lock (ไม่บล็อก — ถ้าครอบไม่ได้จะตั้ง self.fd = None).
+
+        Returns:
+            file_lock: ตัว self เพื่อให้อ่าน .locked ได้
+        """
         if msvcrt is None:
             return self
         fd = None
@@ -107,10 +142,12 @@ class file_lock:
         return self
 
     @property
-    def locked(self):
+    def locked(self) -> bool:
+        """bool: True ถ้าครอบ lock สำเร็จ (ไม่มี process อื่นครอบอยู่)."""
         return self.fd is not None
 
-    def __exit__(self, exc_type, exc, tb):
+    def __exit__(self, exc_type: Optional[type], exc: Optional[BaseException], tb) -> bool:
+        """ปลด lock และปิดไฟล์ (ไม่กลืน exception)."""
         if self.fd is not None:
             try:
                 msvcrt.locking(self.fd, msvcrt.LK_UNLCK, 1)

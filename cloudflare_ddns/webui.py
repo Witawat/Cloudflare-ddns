@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from . import __version__
 from . import config as config_mod
@@ -24,24 +25,32 @@ from . import notifier
 # แคชผลตรวจ NAT สำหรับ /ip-check — nat_report ตรวจเต็ม (tracert + STUN หลายรอบ) ช้า ~10 วิ
 # จึงรันเต็มแค่ทุก 60 วิ ระหว่างนั้นตอบผลเดิมทันที (IP/NAT ไม่เปลี่ยนถี่ขนาดนั้น)
 # แคชแยกภาษา (th/en) — message ของ nat_report ต่างกันตาม lang
-_nat_cache = {}  # lang -> {"at": float, "result": dict}
+_nat_cache: Dict[str, Any] = {}  # lang -> {"at": float, "result": dict}
 NAT_CACHE_TTL = 60.0
 
 log = logging.getLogger("cloudflare-ddns")
 
-_tunnel_mgr = None
-_ddns_busy = {"running": False}
-_update_cache = {"time": 0.0, "data": {}}
+_tunnel_mgr: Any = None
+_ddns_busy: Dict[str, bool] = {"running": False}
+_update_cache: Dict[str, Any] = {"time": 0.0, "data": {}}
 
 # กันสุ่มรหัสผ่านหน้า login (เก็บในหน่วยความจำ — เริ่มใหม่เมื่อ service/โปรแกรม restart)
 _LOGIN_MAX_FAILS = 5
 _LOGIN_LOCK_SECONDS = 300
-_login_guard = {"fails": 0, "locked_until": 0.0}
+_login_guard: Dict[str, Any] = {"fails": 0, "locked_until": 0.0}
 
 
-def _version_newer(latest, current):
-    """เปรียบเทียบ version แบบตัวเลข (1.2.3 vs 1.2.10) — คืน True ถ้า latest > current"""
-    def _parts(v):
+def _version_newer(latest: str, current: str) -> bool:
+    """เปรียบเทียบ version แบบตัวเลข (1.2.3 vs 1.2.10).
+
+    Args:
+        latest: เวอร์ชันใหม่ที่ตรวจพบ
+        current: เวอร์ชันปัจจุบัน
+
+    Returns:
+        bool: True ถ้า latest > current
+    """
+    def _parts(v: str) -> List[int]:
         return [int(x) for x in str(v).strip("v").split(".") if x.isdigit()]
 
     a, b = _parts(latest), _parts(current)
@@ -52,8 +61,12 @@ def _version_newer(latest, current):
     return a > b
 
 
-def _is_admin():
-    """ตรวจว่า process นี้มีสิทธิ์ admin หรือไม่ (LocalSystem/runas = True)"""
+def _is_admin() -> bool:
+    """ตรวจว่า process นี้มีสิทธิ์ admin หรือไม่ (LocalSystem/runas = True).
+
+    Returns:
+        bool: True ถ้าเป็น admin
+    """
     try:
         import ctypes
 
@@ -62,14 +75,26 @@ def _is_admin():
         return False
 
 
-def _in_service():
-    """webui นี้รันใน Windows Service หรือไม่ (service.py เซ็ต env ตอน SvcDoRun)"""
+def _in_service() -> bool:
+    """webui นี้รันใน Windows Service หรือไม่ (service.py เซ็ต env ตอน SvcDoRun).
+
+    Returns:
+        bool: True ถ้ารันใน service
+    """
     import os
 
     return os.environ.get("CFDDNS_RUNNING_AS_SERVICE") == "1"
 
 
-def _get_tunnel_mgr(config_path=None):
+def _get_tunnel_mgr(config_path: Optional[str] = None) -> Any:
+    """คืน TunnelManager instance เดียว (แชร์ทั้งโปรแกรม).
+
+    Args:
+        config_path: path ของ config.ini
+
+    Returns:
+        TunnelManager: instance ที่ใช้ซ้ำได้
+    """
     global _tunnel_mgr
     if _tunnel_mgr is None:
         from . import tunnel as tunnel_mod
@@ -78,12 +103,19 @@ def _get_tunnel_mgr(config_path=None):
     return _tunnel_mgr
 
 
-def _decode_tunnel_token(token, lang="th"):
-    """แยก account_id + tunnel_id จาก tunnel token. คืน (dict, error)
+def _decode_tunnel_token(token: str, lang: str = "th") -> Tuple[Optional[Dict[str, str]], str]:
+    """แยก account_id + tunnel_id จาก tunnel token.
 
     รองรับ 2 รูปแบบ:
     - JWT 3 ส่วน (header.payload.signature) -> ใช้ payload (ส่วนที่ 1)
     - รูปแบบใหม่ 1 ส่วน (payload ล้วน)      -> ใช้ทั้ง token
+
+    Args:
+        token: tunnel token (JWT)
+        lang: ภาษา
+
+    Returns:
+        tuple[dict | None, str]: ({"account_id", "tunnel_id"} หรือ None, ข้อความ error — ว่างเมื่อสำเร็จ)
     """
     import base64
     import json as _json
@@ -102,17 +134,34 @@ def _decode_tunnel_token(token, lang="th"):
         return None, i18n.t(lang, "tunnel.token_no_ids")
     return {"account_id": account_id, "tunnel_id": tunnel_id}, ""
 
-def _tunnel_api_error(exc, lang="th"):
-    """แปล error จากการเรียก API tunnel ให้อ่านง่าย — 403 = token ไม่มีสิทธิ์ Tunnel"""
+def _tunnel_api_error(exc: Exception, lang: str = "th") -> str:
+    """แปล error จากการเรียก API tunnel ให้อ่านง่าย — 403 = token ไม่มีสิทธิ์ Tunnel.
+
+    Args:
+        exc: exception ที่เกิดขึ้น
+        lang: ภาษา
+
+    Returns:
+        str: ข้อความ error ที่แปลแล้ว
+    """
     text = str(exc)
     if "403" in text or "10000" in text:
         return i18n.t(lang, "tunnel.api_token_no_tunnel_perm")
     return text
 
 
-def _build_origin_request(data):
-    """สร้าง originRequest dict จาก option ที่ client ส่ง (เฉพาะที่มีค่า) — noTLSVerify/http2Origin/noHappyEyeballs ใช้กับ http/https เท่านั้น."""
-    origin = {}
+def _build_origin_request(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """สร้าง originRequest dict จาก option ที่ client ส่ง (เฉพาะที่มีค่า).
+
+    noTLSVerify/http2Origin/noHappyEyeballs ใช้กับ http/https เท่านั้น.
+
+    Args:
+        data: dict option ที่ client ส่งมา
+
+    Returns:
+        dict | None: originRequest ที่สร้างได้ หรือ None ถ้าไม่มี option ใด
+    """
+    origin: Dict[str, Any] = {}
     host_header = str(data.get("http_host_header") or "").strip()
     if host_header:
         origin["httpHostHeader"] = host_header
@@ -156,8 +205,15 @@ def _build_origin_request(data):
     return origin or None
 
 
-def _origin_request_to_dict(orq):
-    """แปลง originRequest (จาก Cloudflare API) → dict option ที่หน้าเว็บใช้"""
+def _origin_request_to_dict(orq: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """แปลง originRequest (จาก Cloudflare API) → dict option ที่หน้าเว็บใช้.
+
+    Args:
+        orq: originRequest dict จาก Cloudflare (อาจเป็น None)
+
+    Returns:
+        dict: option ที่หน้าเว็บรู้จัก
+    """
     orq = orq or {}
     return {
         "no_tls_verify": bool(orq.get("noTLSVerify")),
@@ -185,14 +241,29 @@ DEFAULT_SCAN_PORTS = [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 993, 995, 1433
 # ---- หน้าเว็บ (HTML/CSS/JS แยกไฟล์ — แก้ใน webui.html / webui.js) ----
 
 
-def _static_path(name):
-    """หาที่อยู่ไฟล์ static — ตอนเป็น exe อยู่ข้างใน bundle (--add-data)"""
+def _static_path(name: str) -> str:
+    """หาที่อยู่ไฟล์ static — ตอนเป็น exe อยู่ข้างใน bundle (--add-data).
+
+    Args:
+        name: ชื่อไฟล์ (webui.html/webui.js/webui_login.html)
+
+    Returns:
+        str: path เต็มของไฟล์ static
+    """
     if getattr(sys, "frozen", False):
         return os.path.join(sys._MEIPASS, "cloudflare_ddns", name)
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
 
 
-def _read_static(name):
+def _read_static(name: str) -> str:
+    """อ่านไฟล์ static (คืน "" ถ้าไม่มีไฟล์).
+
+    Args:
+        name: ชื่อไฟล์ static
+
+    Returns:
+        str: เนื้อหาไฟล์ หรือ ""
+    """
     try:
         with open(_static_path(name), "r", encoding="utf-8") as handle:
             return handle.read()
@@ -212,7 +283,15 @@ PAGE_LOGIN = _read_static("webui_login.html")
 # ---------- แปลง config <-> dict ----------
 
 
-def _cfg_to_dict(cfg):
+def _cfg_to_dict(cfg: "config_mod.Config") -> Dict[str, Any]:
+    """แปลง Config → dict (โครงสร้างเดียวกับฟอร์มเว็บ / config.json).
+
+    Args:
+        cfg: Config ที่อ่านแล้ว
+
+    Returns:
+        dict: {"cloudflare", "telegram", "tunnel", "records"}
+    """
     return {
         "cloudflare": {
             "api_token": cfg.api_token,
@@ -266,16 +345,32 @@ def _cfg_to_dict(cfg):
     }
 
 
-def _as_int(value, default):
-    """แปลงค่าเป็น int อย่างปลอดภัย (client ส่งค่าผิด -> ใช้ default กัน 500)"""
+def _as_int(value: Any, default: int) -> int:
+    """แปลงค่าเป็น int อย่างปลอดภัย (client ส่งค่าผิด -> ใช้ default กัน 500).
+
+    Args:
+        value: ค่าที่จะแปลง
+        default: ค่า default ถ้าแปลงไม่ได้
+
+    Returns:
+        int: ค่าที่แปลงได้ หรือ default
+    """
     try:
         return int(value)
     except (TypeError, ValueError):
         return default
 
 
-def _dict_to_ini(data, config_path=""):
-    """สร้างข้อความ config.ini จาก dict (โครงสร้างเดียวกับ _cfg_to_dict)."""
+def _dict_to_ini(data: Dict[str, Any], config_path: str = "") -> str:
+    """สร้างข้อความ config.ini จาก dict (โครงสร้างเดียวกับ _cfg_to_dict).
+
+    Args:
+        data: dict config (จากฟอร์ม/JSON)
+        config_path: path ของ config.ini (ใช้ hash รหัสผ่าน)
+
+    Returns:
+        str: ข้อความ config.ini ทั้งไฟล์
+    """
     cf = data.get("cloudflare", {})
     tg = data.get("telegram", {})
     lines = ["[cloudflare]"]
@@ -337,10 +432,16 @@ def _dict_to_ini(data, config_path=""):
 
 
 class WebUIHandler(BaseHTTPRequestHandler):
+    """HTTP handler ของ Web UI — ครอบทุก endpoint (GET/POST)."""
+
     server_version = "CloudflareDDNSWebUI/2.0"
 
-    def _load_records_time(self):
-        """อ่าน records_time จาก state.json (เวลา IP ล่าสุดของแต่ละ record)"""
+    def _load_records_time(self) -> Dict[str, str]:
+        """อ่าน records_time จาก state.json (เวลา IP ล่าสุดของแต่ละ record).
+
+        Returns:
+            dict[str, str]: key=fqdn|type -> เวลา ISO หรือ {}
+        """
         try:
             import json as _json
 
@@ -352,15 +453,23 @@ class WebUIHandler(BaseHTTPRequestHandler):
             return {}
 
     @property
-    def cfg(self):
+    def cfg(self) -> "config_mod.Config":
+        """Config ของ server (แชร์ร่วมทุก request)."""
         return self.server.cfg
 
-    def log_message(self, *args):
+    def log_message(self, *args: Any) -> None:
         pass
 
     # ---- helpers ----
 
-    def _send(self, code, body, content_type="text/html; charset=utf-8"):
+    def _send(self, code: int, body: Union[str, bytes], content_type: str = "text/html; charset=utf-8") -> None:
+        """ส่ง HTTP response พร้อม security headers (กัน MIME sniff/iframe/referrer).
+
+        Args:
+            code: HTTP status code
+            body: เนื้อหา response (str หรือ bytes)
+            content_type: MIME type ของ response
+        """
         data = body.encode("utf-8") if isinstance(body, str) else body
         self.send_response(code)
         self.send_header("Content-Type", content_type)
@@ -378,11 +487,21 @@ class WebUIHandler(BaseHTTPRequestHandler):
             # ไม่ใช่ error ของ server — เงียบ ๆ ไป ไม่ log ERROR ไม่ตอบ 500
             log.debug("client ตัด connection กลางคัน (%s)", self.path)
 
-    def _send_json(self, code, payload):
+    def _send_json(self, code: int, payload: Dict[str, Any]) -> None:
+        """ส่ง response เป็น JSON (ensure_ascii=False — ไทยอ่านตรง).
+
+        Args:
+            code: HTTP status code
+            payload: dict ที่จะ serialize
+        """
         self._send(code, json.dumps(payload, ensure_ascii=False), "application/json; charset=utf-8")
 
-    def _authed(self):
-        """ตรวจ session cookie — เปรียบเทียบ hash ของรหัส (รองรับ config เก่าที่ยัง plaintext)"""
+    def _authed(self) -> bool:
+        """ตรวจ session cookie — เปรียบเทียบ hash ของรหัส (รองรับ config เก่าที่ยัง plaintext).
+
+        Returns:
+            bool: True ถ้า login แล้ว (หรือไม่ตั้งรหัสผ่าน)
+        """
         password = self.cfg.webui_password
         if not password:
             return True
@@ -398,18 +517,33 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 return True
         return False
 
-    def _lang(self):
-        """ภาษาของ request นี้: cookie cfddns_lang -> Accept-Language -> th"""
+    def _lang(self) -> str:
+        """ภาษาของ request นี้: cookie cfddns_lang -> Accept-Language -> th.
+
+        Returns:
+            str: "th" หรือ "en"
+        """
         return i18n.detect_lang(self.headers.get("Cookie", ""), self.headers.get("Accept-Language", ""))
 
-    def _t(self, key, **vars):
-        """แปลข้อความตามภาษาของ request (ใช้แทน string ไทยใน response message)"""
+    def _t(self, key: str, **vars: Any) -> str:
+        """แปลข้อความตามภาษาของ request (ใช้แทน string ไทยใน response message).
+
+        Args:
+            key: คีย์ข้อความใน i18n
+            **vars: ค่าที่จะแทนที่ใน template
+
+        Returns:
+            str: ข้อความที่แปลแล้ว
+        """
         return i18n.t(self._lang(), key, **vars)
 
-    def _origin_allowed(self):
+    def _origin_allowed(self) -> bool:
         """กัน CSRF: browser cross-site ส่ง Origin เสมอ — ถ้ามี Origin ต้องตรงกับ host ของเรา.
 
-        CLI/curl ไม่ส่ง Origin -> ผ่าน (ผู้ใช้ในเครื่อง)
+        CLI/curl ไม่ส่ง Origin -> ผ่าน (ผู้ใช้ในเครื่อง).
+
+        Returns:
+            bool: True ถ้า Origin ตรงกับ Host (หรือไม่มี Origin)
         """
         origin = self.headers.get("Origin", "").strip()
         if not origin:
@@ -419,8 +553,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
     # ---- GET ----
 
-    def do_GET(self):
-        """wrapper กัน crash: error ภายใน -> ตอบ JSON 500 + log (เหมือน do_POST)"""
+    def do_GET(self) -> None:
+        """wrapper กัน crash: error ภายใน -> ตอบ JSON 500 + log (เหมือน do_POST)."""
         try:
             return self._do_get_inner()
         except Exception:
@@ -430,7 +564,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             except Exception:
                 return None
 
-    def _do_get_inner(self):
+    def _do_get_inner(self) -> None:
         path = self.path.split("?", 1)[0]
         if path == "/ip-check":
             from . import ip_detect
@@ -574,7 +708,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
     # ---- POST ----
 
-    def _read_body(self):
+    def _read_body(self) -> str:
+        """อ่าน body ของ POST request.
+
+        Returns:
+            str: เนื้อหา body ที่ decode เป็น UTF-8
+        """
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except (TypeError, ValueError):
@@ -583,9 +722,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
             length = 0
         return self.rfile.read(length).decode("utf-8", "replace")
 
-    def do_POST(self):
-        """wrapper กัน crash: error ภายใน -> ตอบ JSON 500 + log ละเอียด
-        (เดิม exception หลุด -> connection หลุด -> client เห็น 'Failed to fetch' ทั้งที่ข้อมูลเขียนไปแล้ว)"""
+    def do_POST(self) -> None:
+        """wrapper กัน crash: error ภายใน -> ตอบ JSON 500 + log ละเอียด.
+
+        (เดิม exception หลุด -> connection หลุด -> client เห็น 'Failed to fetch' ทั้งที่ข้อมูลเขียนไปแล้ว)
+        """
         try:
             return self._do_post_inner()
         except Exception:
@@ -595,7 +736,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             except Exception:
                 return None
 
-    def _do_post_inner(self):
+    def _do_post_inner(self) -> None:
         body = self._read_body()
 
         # กัน CSRF: ทุก POST ยกเว้น /login (ไม่มี cookie ใช้โจมตีได้) — ถ้า Origin มีและไม่ตรง = บล็อก
@@ -1322,8 +1463,15 @@ class WebUIHandler(BaseHTTPRequestHandler):
         return self._send_json(404, {"ok": False, "message": self._t("err.not_found")})
 
 
-def _update_check_data(lang="th"):
-    """เช็คเวอร์ชันใหม่จาก GitHub Releases (cache 1 ชม.) — คืน dict สำหรับ /update-check + startup/periodic check"""
+def _update_check_data(lang: str = "th") -> Dict[str, Any]:
+    """เช็คเวอร์ชันใหม่จาก GitHub Releases (cache 1 ชม.).
+
+    Args:
+        lang: ภาษา (ใช้เลือกข้อความ error)
+
+    Returns:
+        dict: {"ok", "latest", "has_update", "url", "message"} — ใช้กับ /update-check + startup/periodic check
+    """
     now = time.time()
     if _update_cache["time"] and now - _update_cache["time"] < 1 * 3600:
         return _update_cache["data"]
@@ -1359,13 +1507,17 @@ def _update_check_data(lang="th"):
     return data
 
 
-_update_notified = {"version": "", "at": 0.0}
+_update_notified: Dict[str, Any] = {"version": "", "at": 0.0}
 
 
-def _startup_update_check(cfg, config_path):
+def _startup_update_check(cfg: "config_mod.Config", config_path: str) -> None:
     """เช็คเวอร์ชันใหม่ตอนโปรแกรม/service เริ่ม (thread แยก — ไม่บล็อก boot).
 
-    มีเวอร์ชันใหม่ -> log + แจ้ง Telegram 1 ครั้งต่อเวอร์ชันต่อ process (ถ้าตั้งค่า Telegram ไว้)
+    มีเวอร์ชันใหม่ -> log + แจ้ง Telegram 1 ครั้งต่อเวอร์ชันต่อ process (ถ้าตั้งค่า Telegram ไว้).
+
+    Args:
+        cfg: Config ที่อ่านแล้ว
+        config_path: path ของ config.ini
     """
     try:
         data = _update_check_data()
@@ -1387,11 +1539,14 @@ def _startup_update_check(cfg, config_path):
         log.debug("startup update check: %s", exc)
 
 
-def _migrate_password_hash(cfg):
+def _migrate_password_hash(cfg: "config_mod.Config") -> None:
     """config เก่าที่ยังเก็บ webui_password แบบ plaintext -> แปลงเป็น hash + เขียนไฟล์ (ครั้งเดียว).
 
     ใช้ save_text (validate + backup + atomic) — ถ้า config ยังตั้งไม่ครบจะไม่เขียน
-    (แต่ _authed/login ยังรองรับ plaintext อยู่ จนกว่า config จะสมบูรณ์แล้ว migrate ผ่านฟอร์ม)
+    (แต่ _authed/login ยังรองรับ plaintext อยู่ จนกว่า config จะสมบูรณ์แล้ว migrate ผ่านฟอร์ม).
+
+    Args:
+        cfg: Config ที่อ่านแล้ว
     """
     pw = cfg.webui_password
     if not pw or config_mod.password_is_hash(pw):
@@ -1422,7 +1577,26 @@ def _migrate_password_hash(cfg):
 
 
 class WebUI:
-    def __init__(self, config_path=config_mod.DEFAULT_CONFIG_PATH, port=None, password=None, host=None):
+    """Web UI server — ครอบ ThreadingHTTPServer + เปิด/ปิด lifecycle."""
+
+    def __init__(
+        self,
+        config_path: str = config_mod.DEFAULT_CONFIG_PATH,
+        port: Optional[int] = None,
+        password: Optional[str] = None,
+        host: Optional[str] = None,
+    ) -> None:
+        """สร้าง Web UI server (ยังไม่เริ่ม — เรียก start()).
+
+        Args:
+            config_path: path ของ config.ini
+            port: พอร์ตที่ต้องการ (None = จาก config)
+            password: รหัสผ่านชั่วคราว (เขียน hash ทับ — ใช้ตอน cmd webui)
+            host: host ที่ผูก (None = จาก config)
+
+        Raises:
+            RuntimeError: เปิดพอร์ตไม่ได้ (พอร์ตถูกใช้อยู่)
+        """
         config_mod.migrate_legacy_data(config_path)
         self.config_path = config_path
         self.cfg = config_mod.Config(config_path)
@@ -1445,19 +1619,22 @@ class WebUI:
 
         # เช็คเวอร์ชันใหม่ตอนเริ่ม (async — ไม่บล็อก boot) — ใช้ได้กับทุกโหมด
         # (service / run / webui / กด exe เปล่า ๆ — ทุกจุดที่ WebUI ถูกสร้าง)
-        def _startup_check():
+        def _startup_check() -> None:
             time.sleep(3)
             _startup_update_check(self.cfg, config_path)
 
         threading.Thread(target=_startup_check, daemon=True).start()
 
-    def start(self):
+    def start(self) -> None:
+        """เริ่ม server (thread แยก — ไม่บล็อก)."""
         self.thread.start()
         log.info("Web UI เปิดที่ http://%s:%d (เข้าจากเครื่องนี้เท่านั้น)", self.host, self.port)
 
-    def serve_forever(self):
+    def serve_forever(self) -> None:
+        """เริ่ม server แล้วบล็อกรอจนกว่าจะ stop (ใช้โหมด webui command)."""
         self.start()
         self.thread.join()
 
-    def stop(self):
+    def stop(self) -> None:
+        """หยุด server (shutdown)."""
         self.server.shutdown()

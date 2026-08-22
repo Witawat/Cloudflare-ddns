@@ -5,6 +5,7 @@ import os
 import threading
 import time
 from logging.handlers import TimedRotatingFileHandler
+from typing import Any, Dict, Optional
 
 from . import config as config_mod
 from . import ddns
@@ -19,11 +20,13 @@ SERVICE_DESCRIPTION = (
 log = logging.getLogger("cloudflare-ddns")
 
 
-def setup_file_logging(log_dir=None, detail=False):
+def setup_file_logging(log_dir: Optional[str] = None, detail: bool = False) -> None:
     """log ไปไฟล์รายวัน (ใช้ทั้งตอน run foreground และตอนเป็น service).
 
-    detail=True: ทุกบรรทัดมี pid + ระดับ INFO ละเอียดขึ้น (ใช้หาสาเหตุ —
-    เช่น heartbeat เบิ้ล) — ปิด default (log สะอาด)
+    Args:
+        log_dir: โฟลเดอร์เก็บไฟล์ log (None = ค่า default)
+        detail: True = ทุกบรรทัดมี pid + ระดับ INFO ละเอียดขึ้น (ใช้หาสาเหตุ —
+            เช่น heartbeat เบิ้ล) — ปิด default (log สะอาด)
     """
     log_dir = log_dir or config_mod.DEFAULT_LOG_DIR
     os.makedirs(log_dir, exist_ok=True)
@@ -52,8 +55,15 @@ def setup_file_logging(log_dir=None, detail=False):
     root.addHandler(handler)
 
 
-def _make_service_class():
-    """สร้างคลาส service แบบ lazy เพื่อให้ import ได้แม้ยังไม่มี pywin32."""
+def _make_service_class() -> type:
+    """สร้างคลาส service แบบ lazy เพื่อให้ import ได้แม้ยังไม่มี pywin32.
+
+    Returns:
+        type: คลาส CloudflareDDNSService (subclass ของ ServiceFramework)
+
+    Raises:
+        ImportError: ถ้าไม่มี pywin32
+    """
     try:
         import win32service
         import win32serviceutil
@@ -67,22 +77,30 @@ def _make_service_class():
         _svc_display_name_ = SERVICE_DISPLAY_NAME
         _svc_description_ = SERVICE_DESCRIPTION
 
-        def __init__(self, args):
+        def __init__(self, args) -> None:
             super().__init__(args)
             self._stop_event = threading.Event()
 
-        def SvcStop(self):
+        def SvcStop(self) -> None:
+            """SCM สั่งหยุด — ตั้ง stop event ให้ loop หยุดเอง."""
             self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
             self._stop_event.set()
 
-        def _start_tunnel_async(self, tunnel_mgr, cfg):
+        def _start_tunnel_async(self, tunnel_mgr: Any, cfg: "config_mod.Config") -> None:
+            """เริ่ม tunnel ใน thread แยก (ไม่บล็อก SCM timeout 30 วิ).
+
+            Args:
+                tunnel_mgr: TunnelManager instance
+                cfg: Config ที่อ่านแล้ว
+            """
             try:
                 ok, message = tunnel_mgr.start(cfg)
                 log.info("Cloudflare Tunnel: %s", message)
             except Exception as exc:
                 log.warning("เริ่ม Cloudflare Tunnel ไม่ได้: %s", exc)
 
-        def SvcDoRun(self):
+        def SvcDoRun(self) -> None:
+            """main loop ของ service — เปิด webui + tunnel + run_forever (ห้ามบล็อกนาน)."""
             import servicemanager
 
             servicemanager.LogMsg(
@@ -161,7 +179,7 @@ def _make_service_class():
     return CloudflareDDNSService
 
 
-def run_service_entry():
+def run_service_entry() -> None:
     """entry ที่ Windows Service Control Manager เรียก (ผ่าน exe/pythonw)."""
     import servicemanager
 
@@ -179,19 +197,27 @@ def run_service_entry():
 # ---- คำสั่งควบคุม service (เรียกจาก main.py) ----
 
 
-def _service_util():
+def _service_util() -> Any:
+    """import pywin32 service ฟังก์ชันชุดควบคุม (lazy).
+
+    Returns:
+        tuple: (win32service, win32serviceutil) modules
+    """
     import win32service
     import win32serviceutil
 
     return win32service, win32serviceutil
 
 
-def install_service():
+def install_service() -> str:
     """ลงทะเบียน service เข้า Windows (ต้องรันด้วยสิทธิ์ administrator).
 
     - ถ้าติดตั้งไว้แล้ว จะลบ (และหยุด) อันเก่าก่อน แล้วติดตั้งใหม่ทับ
     - โหมด exe (PyInstaller frozen): ติดตั้งด้วยตัว exe เอง
     - โหมด source: ติดตั้งด้วย pythonw.exe + path ของ main.py
+
+    Returns:
+        str: ข้อความผลลัพธ์
     """
     import sys
 
@@ -223,10 +249,13 @@ def install_service():
     return f"ติดตั้ง service '{SERVICE_NAME}' เรียบร้อย (เริ่มอัตโนมัติตอน boot)"
 
 
-def _configure_failure_actions(win32service):
+def _configure_failure_actions(win32service: Any) -> None:
     """ตั้งค่า auto-restart เมื่อ service crash เอง (กัน service ตายเงียบ).
 
     ครั้งแรก crash -> restart 5 วินาที · ครั้งที่ 2 -> 30 วินาที · reset นับหลัง 24 ชม.
+
+    Args:
+        win32service: โมดูล win32service (จาก _service_util)
     """
     try:
         scm = win32service.OpenSCManager(
@@ -259,7 +288,12 @@ def _configure_failure_actions(win32service):
         log.warning("ตั้งค่า auto-restart ของ service ไม่ได้: %s", exc)
 
 
-def remove_service():
+def remove_service() -> str:
+    """ลบ service ออกจาก Windows (ต้องรันด้วยสิทธิ์ administrator).
+
+    Returns:
+        str: ข้อความผลลัพธ์
+    """
     win32service, win32serviceutil = _service_util()
     try:
         win32serviceutil.StopService(SERVICE_NAME)
@@ -269,26 +303,45 @@ def remove_service():
     return f"ลบ service '{SERVICE_NAME}' เรียบร้อย"
 
 
-def start_service():
+def start_service() -> str:
+    """เริ่ม service.
+
+    Returns:
+        str: ข้อความผลลัพธ์
+    """
     win32service, win32serviceutil = _service_util()
     win32serviceutil.StartService(SERVICE_NAME)
     return f"เริ่ม service '{SERVICE_NAME}' แล้ว"
 
 
-def stop_service():
+def stop_service() -> str:
+    """หยุด service.
+
+    Returns:
+        str: ข้อความผลลัพธ์
+    """
     win32service, win32serviceutil = _service_util()
     win32serviceutil.StopService(SERVICE_NAME)
     return f"หยุด service '{SERVICE_NAME}' แล้ว"
 
 
-def restart_service():
+def restart_service() -> str:
+    """restart service (หยุดแล้วเริ่มใหม่).
+
+    Returns:
+        str: ข้อความผลลัพธ์
+    """
     stop_service()
     start_service()
     return f"restart service '{SERVICE_NAME}' แล้ว"
 
 
-def service_status():
-    """คืน dict สถานะ service หรือ None ถ้ายังไม่ติดตั้ง"""
+def service_status() -> Dict[str, Any]:
+    """คืน dict สถานะ service หรือ None ถ้ายังไม่ติดตั้ง.
+
+    Returns:
+        dict: {"installed": bool, "state": str | "message": str}
+    """
     try:
         win32service, _ = _service_util()
     except ImportError:

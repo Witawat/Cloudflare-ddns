@@ -10,6 +10,7 @@ import os
 import time
 import urllib.error
 import urllib.request
+from typing import Any, Dict, List, Tuple
 
 from . import config as config_mod
 from . import i18n
@@ -26,11 +27,18 @@ _last_warn_time = 0.0
 # ถ้าห่างจากครั้งก่อน < 60 วิ จะข้าม (Healthchecks จำกัด ping ต่อนาที —
 # interval_seconds ที่สั้นกว่า 60 ก็ยังส่ง heartbeat แค่นาทีละครั้ง)
 MIN_PING_INTERVAL = 60
-_last_sent = {}
+_last_sent: Dict[str, float] = {}
 
 
-def _load_state(config_path):
-    """อ่านเวลาส่ง heartbeat ล่าสุดจากไฟล์ (ข้าม process) — กันรันซ้ำ 2 instance ส่งเบิ้ล"""
+def _load_state(config_path: str) -> Dict[str, Any]:
+    """อ่านเวลาส่ง heartbeat ล่าสุดจากไฟล์ (ข้าม process) — กันรันซ้ำ 2 instance ส่งเบิ้ล.
+
+    Args:
+        config_path: path ของ config.ini (ใช้หาตำแหน่งไฟล์ state)
+
+    Returns:
+        dict: เนื้อหา heartbeat_state.json หรือ {} ถ้าอ่านไม่ได้
+    """
     path = config_mod.heartbeat_state_path_for(config_path)
     try:
         with open(path, "r", encoding="utf-8") as handle:
@@ -39,7 +47,13 @@ def _load_state(config_path):
         return {}
 
 
-def _save_state(config_path, data):
+def _save_state(config_path: str, data: Dict[str, Any]) -> None:
+    """เขียน heartbeat state กลับไฟล์แบบ atomic (เฉพาะเมื่อเนื้อหาเปลี่ยน).
+
+    Args:
+        config_path: path ของ config.ini (ใช้หาตำแหน่งไฟล์ state)
+        data: dict ของเวลาส่งล่าสุดต่อ URL
+    """
     path = config_mod.heartbeat_state_path_for(config_path)
     text = json.dumps(data, ensure_ascii=False)
     try:
@@ -51,9 +65,17 @@ def _save_state(config_path, data):
     config_mod.atomic_write_text(path, text)
 
 
-def _ping(url, timeout=HEARTBEAT_TIMEOUT):
+def _ping(url: str, timeout: int = HEARTBEAT_TIMEOUT) -> Tuple[bool, str]:
     """GET URL และคืน (ok, error) — retry 1 ครั้งเฉพาะ network error (ไม่ retry HTTP error
-    เช่น 429 rate limit — ยิงซ้ำยิ่งแย่) ไม่โยน exception"""
+    เช่น 429 rate limit — ยิงซ้ำยิ่งแย่) ไม่โยน exception.
+
+    Args:
+        url: URL ปลายทางที่จะ ping
+        timeout: เวลารอสูงสุดต่อการเชื่อมต่อ (วินาที)
+
+    Returns:
+        tuple[bool, str]: (ส่งสำเร็จหรือไม่, ข้อความ error — ว่างเมื่อสำเร็จ)
+    """
     last_error = "unknown"
     for attempt in (1, 2):
         try:
@@ -72,8 +94,17 @@ def _ping(url, timeout=HEARTBEAT_TIMEOUT):
     return False, last_error
 
 
-def _signal_url(url, kind, lang="th"):
-    """แปลง URL ให้เป็น endpoint 'สัญญาณ' ตามบริการ (kind = fail | exit)"""
+def _signal_url(url: str, kind: str, lang: str = "th") -> str:
+    """แปลง URL ให้เป็น endpoint 'สัญญาณ' ตามบริการ (kind = fail | exit).
+
+    Args:
+        url: URL ของบริการ heartbeat
+        kind: ประเภทสัญญาณ — "fail" (รอบมีปัญหา) หรือ "exit" (ปิดโปรแกรม)
+        lang: รหัสภาษา (ใช้เลือกข้อความ msg สำหรับ Kuma)
+
+    Returns:
+        str: URL ปลายทางของสัญญาณที่แปลงแล้ว
+    """
     url = url.strip()
     suffix = "fail" if kind == "fail" else "exit"
     if "hc-ping.com" in url:
@@ -83,15 +114,17 @@ def _signal_url(url, kind, lang="th"):
     return url + sep + "status=down&msg=" + msg
 
 
-def send_ping(cfg, ok=True, stopped=False):
+def send_ping(cfg: "config_mod.Config", ok: bool = True, stopped: bool = False) -> None:
     """ส่ง heartbeat ตามสถานะ.
 
-    ok=True  = รอบทำงานปกติ (ping URL ตรง ๆ)
-    ok=False = รอบมีปัญหา (ส่งสัญญาณ fail)
-    stopped  = โปรแกรมกำลังหยุด (ส่งสัญญาณ exit)
+    Args:
+        cfg: วัตถุ Config ที่อ่านค่ามาแล้ว
+        ok: True = รอบทำงานปกติ (ping URL ตรง ๆ), False = รอบมีปัญหา (ส่งสัญญาณ fail)
+        stopped: True = โปรแกรมกำลังหยุด (ส่งสัญญาณ exit)
 
-    กันส่งซ้ำข้าม process: ครอบ file lock ช่วงตรวจ-ส่ง-เขียน (อีก instance ที่ lock
-    ไม่ได้จะข้ามรอบนี้) + จดเวลาล่าสุดลง heartbeat_state.json (อ่านจากทุก process)
+    หมายเหตุ:
+        กันส่งซ้ำข้าม process: ครอบ file lock ช่วงตรวจ-ส่ง-เขียน (อีก instance ที่ lock
+        ไม่ได้จะข้ามรอบนี้) + จดเวลาล่าสุดลง heartbeat_state.json (อ่านจากทุก process)
     """
     global _last_warn_time
     lang = getattr(cfg, "language", "th") or "th"
@@ -137,9 +170,16 @@ def send_ping(cfg, ok=True, stopped=False):
         _save_state(config_path, state)
 
 
-def send_test(cfg):
-    """ปุ่มทดสอบในเว็บ: ส่ง ping 1 ครั้งต่อ URL ที่ตั้งไว้ (ไม่โดน rate limit ระหว่างรอบ)"""
-    results = []
+def send_test(cfg: "config_mod.Config") -> List[Dict[str, Any]]:
+    """ปุ่มทดสอบในเว็บ: ส่ง ping 1 ครั้งต่อ URL ที่ตั้งไว้ (ไม่โดน rate limit ระหว่างรอบ).
+
+    Args:
+        cfg: วัตถุ Config ที่อ่านค่ามาแล้ว
+
+    Returns:
+        list[dict]: ผลการทดสอบต่อ URL — [{"name": str, "ok": bool, "error": str}]
+    """
+    results: List[Dict[str, Any]] = []
     for name, value in (
         ("Healthchecks.io", getattr(cfg, "healthchecks_url", "")),
         ("Uptime Kuma", getattr(cfg, "uptimekuma_url", "")),

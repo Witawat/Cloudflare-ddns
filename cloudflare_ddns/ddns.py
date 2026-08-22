@@ -6,6 +6,7 @@ import os
 import threading
 import time
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import cloudflare_api
 from . import config as config_mod
@@ -17,7 +18,7 @@ from .config import fqdn_name
 
 log = logging.getLogger("cloudflare-ddns")
 
-RECORD_TYPES = {4: "A", 6: "AAAA"}
+RECORD_TYPES: Dict[int, str] = {4: "A", 6: "AAAA"}
 
 
 class _NullNotifier:
@@ -25,15 +26,22 @@ class _NullNotifier:
 
     enabled = False
 
-    def notify(self, event, text):
+    def notify(self, event: str, text: str) -> None:
         pass
 
-    def flush(self):
+    def flush(self) -> Tuple[int, int]:
         return 0, 0
 
 
-def _is_zone_not_found(message):
-    """เช็คว่า error เป็น 'zone ไม่พบ' (id cache เก่า) หรือไม่"""
+def _is_zone_not_found(message: str) -> bool:
+    """เช็คว่า error เป็น 'zone ไม่พบ' (id cache เก่า) หรือไม่.
+
+    Args:
+        message: ข้อความ error จาก Cloudflare
+
+    Returns:
+        bool: True ถ้าเป็น error เกี่ยวกับ zone ไม่พบ
+    """
     msg = str(message).lower()
     return "not found" in msg or "9109" in msg or ("404" in msg and "zone" in msg)
 
@@ -43,8 +51,13 @@ _RATE_LIMIT_NOTIFY_INTERVAL = 600
 _last_rate_limit_notify = 0.0
 
 
-def _notify_rate_limit(notify, exc):
-    """แจ้ง Telegram ว่าโดน rate limit — กันซ้ำภายใน 10 นาที"""
+def _notify_rate_limit(notify: Any, exc: Exception) -> None:
+    """แจ้ง Telegram ว่าโดน rate limit — กันซ้ำภายใน 10 นาที.
+
+    Args:
+        notify: notifier object (TelegramNotifier หรือ _NullNotifier)
+        exc: exception rate limit ที่เกิดขึ้น
+    """
     global _last_rate_limit_notify
     now = time.time()
     if now - _last_rate_limit_notify >= _RATE_LIMIT_NOTIFY_INTERVAL:
@@ -53,27 +66,38 @@ def _notify_rate_limit(notify, exc):
 
 
 class DDNSEngine:
-    """engine หนึ่งตัว = อ่าน config -> ตรวจ IP -> อัปเดต record ทุกตัว"""
+    """engine หนึ่งตัว = อ่าน config -> ตรวจ IP -> อัปเดต record ทุกตัว."""
 
-    def __init__(self, config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False):
+    def __init__(self, config_path: str = config_mod.DEFAULT_CONFIG_PATH, dry_run: bool = False) -> None:
+        """สร้าง engine DDNS.
+
+        Args:
+            config_path: path ของ config.ini
+            dry_run: True = ไม่เขียน state/ไม่ส่ง Telegram/ไม่แตะ Cloudflare (แค่จำลอง)
+        """
         self.config_path = config_path
         self.dry_run = dry_run
-        self._state = {}
+        self._state: Dict[str, Any] = {}
         # state อยู่ข้าง config.ini ที่ใช้ (ข้าง exe เมื่อรัน exe) — กัน state แยกชุด
         # เมื่อรันโปรแกรมจากหลายจุด/หลาย config
         self._state_path = config_mod.state_path_for(config_path)
 
     # ---- state (cache IP ล่าสุด ไว้เทียบเพื่อลดการเรียก API) ----
 
-    def _load_state(self):
+    def _load_state(self) -> None:
+        """อ่าน state.json จากไฟล์ (หรือ reset เป็น {} ถ้าอ่านไม่ได้)."""
         try:
             with open(self._state_path, "r", encoding="utf-8") as handle:
                 self._state = json.load(handle)
         except (OSError, ValueError):
             self._state = {}
 
-    def _invalidate_zone(self, zone_key):
-        """ลบ zone cache เมื่อ id ไม่ถูกต้องแล้ว (เปลี่ยน token/ลบ zone) — รอบถัดไปจะหาใหม่"""
+    def _invalidate_zone(self, zone_key: str) -> None:
+        """ลบ zone cache เมื่อ id ไม่ถูกต้องแล้ว (เปลี่ยน token/ลบ zone) — รอบถัดไปจะหาใหม่.
+
+        Args:
+            zone_key: ชื่อ zone (ตัวพิมพ์เล็ก) ที่จะลบ cache
+        """
         zones = self._state.get("zones", {})
         if zone_key in zones:
             del zones[zone_key]
@@ -84,7 +108,8 @@ class DDNSEngine:
                 except Exception as exc:
                     log.warning("บันทึก state หลังลบ zone cache ไม่ได้: %s", exc)
 
-    def _save_state(self):
+    def _save_state(self) -> None:
+        """เขียน state.json แบบ atomic (เฉพาะเนื้อหาเปลี่ยน) — dry-run ไม่เขียน."""
         if self.dry_run:
             return
         os.makedirs(os.path.dirname(self._state_path), exist_ok=True)
@@ -109,11 +134,14 @@ class DDNSEngine:
         except OSError as exc:
             log.warning("บันทึก state ไม่ได้: %s", exc)
 
-    def status(self):
-        """ข้อมูลสถานะสำหรับ Web UI / status command
+    def status(self) -> Dict[str, Any]:
+        """ข้อมูลสถานะสำหรับ Web UI / status command.
 
         กรอง records/errors ตาม config ปัจจุบัน — record ที่ถูกลบออกจาก config
         แล้ว จะไม่โชว์ค้าง (cache เก่าใน state)
+
+        Returns:
+            dict: last_run / records / history / record_errors / dry_run
         """
         self._load_state()
         cfg = config_mod.Config(self.config_path)
@@ -138,10 +166,11 @@ class DDNSEngine:
 
     # ---- หลัก ----
 
-    def run_once(self):
+    def run_once(self) -> List[Dict[str, Any]]:
         """รันรอบเดียว: อ่าน config ล่าสุด แล้วอัปเดต record ทั้งหมด.
 
-        คืน summary (list ของ dict) สำหรับเอาไป log / แสดงผล
+        Returns:
+            list[dict]: summary ของรอบ (record/family/action/message) สำหรับเอาไป log / แสดงผล
         """
         cfg = config_mod.Config(self.config_path)
         errors = cfg.validate()
@@ -247,8 +276,14 @@ class DDNSEngine:
             heartbeat.send_ping(cfg, ok=not bad)
         return summary
 
-    def _set_record_error(self, rec, message, family=None):
-        """จด error ล่าสุดของ record ไว้ใน state (แสดงผลใน Web UI) — ลบเมื่อสำเร็จ"""
+    def _set_record_error(self, rec: "config_mod.RecordConfig", message: str, family: Optional[int] = None) -> None:
+        """จด error ล่าสุดของ record ไว้ใน state (แสดงผลใน Web UI) — ลบเมื่อสำเร็จ.
+
+        Args:
+            rec: record config ที่เกิด error
+            message: ข้อความ error
+            family: ชนิด IP ที่ error (4/6) — None = ทั้ง A และ AAAA
+        """
         errs = self._state.setdefault("record_errors", {})
         if family:
             rtype = RECORD_TYPES.get(family, "")
@@ -259,7 +294,13 @@ class DDNSEngine:
         if not self.dry_run:
             self._save_state()
 
-    def _clear_record_error(self, rec, family=None):
+    def _clear_record_error(self, rec: "config_mod.RecordConfig", family: Optional[int] = None) -> None:
+        """ลบ error ค้างของ record (เมื่อสำเร็จ/ปิด family).
+
+        Args:
+            rec: record config
+            family: ชนิด IP ที่จะลบ (4/6) — None = ทั้ง A และ AAAA
+        """
         errs = self._state.setdefault("record_errors", {})
         if family:
             rtype = RECORD_TYPES.get(family, "")
@@ -268,7 +309,34 @@ class DDNSEngine:
             for fam, rtype in RECORD_TYPES.items():
                 errs.pop(f"{rec.name.lower()}|{rtype}", None)
 
-    def _sync_family(self, api, zone_id, rec, fqdn, family, notify, zone_key="", reject_cloudflare_ips=True, consensus=0):
+    def _sync_family(
+        self,
+        api: cloudflare_api.CloudflareAPI,
+        zone_id: str,
+        rec: "config_mod.RecordConfig",
+        fqdn: str,
+        family: int,
+        notify: Any,
+        zone_key: str = "",
+        reject_cloudflare_ips: bool = True,
+        consensus: int = 0,
+    ) -> Optional[Dict[str, Any]]:
+        """ตรวจและอัปเดต record หนึ่งชนิด (A/AAAA) สำหรับ fqdn หนึ่งตัว.
+
+        Args:
+            api: CloudflareAPI instance
+            zone_id: id ของ zone ที่ record อยู่
+            rec: record config
+            fqdn: ชื่อ record เต็ม
+            family: ชนิด IP — 4 (A) หรือ 6 (AAAA)
+            notify: notifier object (TelegramNotifier หรือ _NullNotifier)
+            zone_key: ชื่อ zone ตัวพิมพ์เล็ก (ใช้ลบ cache ตอน zone not found)
+            reject_cloudflare_ips: ข้ามเมื่อ IP เป็นของ Cloudflare (anycast)
+            consensus: จำนวน provider ขั้นต่ำที่ต้องเห็น IP ตรงกัน (0 = ปิด)
+
+        Returns:
+            dict | None: summary ของ record นี้ หรือ None ถ้าไม่ต้องทำอะไร (IP ไม่เปลี่ยน)
+        """
         rtype = RECORD_TYPES[family]
         lang = getattr(notify, "lang", "th") or "th"
         key = f"{fqdn.lower()}|{rtype}"
@@ -370,9 +438,17 @@ class DDNSEngine:
             return {"record": fqdn, "family": family, "action": "error", "message": str(exc)}
 
 
-def _build_start_message(cfg, lang="th"):
+def _build_start_message(cfg: "config_mod.Config", lang: str = "th") -> str:
     """สร้างเนื้อหาข้อความ 'เริ่มทำงาน' (หัวข้อ/เวลา/ชื่อเครื่อง build_message เติมให้):
-    IP ที่ตรวจได้ / รายการ DDNS + Tunnel"""
+    IP ที่ตรวจได้ / รายการ DDNS + Tunnel.
+
+    Args:
+        cfg: Config ที่อ่านแล้ว
+        lang: รหัสภาษา
+
+    Returns:
+        str: ข้อความเริ่มทำงานทั้งบล็อก
+    """
     lines = []
     lines.append(i18n.t(lang, "ddns.start.interval").format(int(cfg.interval_seconds)))
     lines.append("")
@@ -421,8 +497,14 @@ def _build_start_message(cfg, lang="th"):
     return "\n".join(lines)
 
 
-def _send_daily_report(engine, cfg, notify):
-    """ส่งสรุปสถานะประจำวันทาง Telegram (วันละครั้ง กันซ้ำด้วยวันที่ใน state)."""
+def _send_daily_report(engine: DDNSEngine, cfg: "config_mod.Config", notify: Any) -> None:
+    """ส่งสรุปสถานะประจำวันทาง Telegram (วันละครั้ง กันซ้ำด้วยวันที่ใน state).
+
+    Args:
+        engine: DDNSEngine instance (ใช้ state)
+        cfg: Config ที่อ่านแล้ว
+        notify: notifier object (TelegramNotifier หรือ _NullNotifier)
+    """
     if not notify.enabled:
         return
     lang = getattr(notify, "lang", "th") or "th"
@@ -478,11 +560,15 @@ _periodic_update_at = 0.0
 PERIODIC_UPDATE_INTERVAL = 3600  # เช็คเวอร์ชันใหม่ทุก 1 ชม. (รันยาว ๆ ก็รู้ว่ามีรุ่นใหม่)
 
 
-def _periodic_update_check(cfg, config_path):
+def _periodic_update_check(cfg: "config_mod.Config", config_path: str) -> None:
     """เช็คเวอร์ชันใหม่เป็นระยะ (ทุก 1 ชม.) — import ข้างใน กัน circular (webui import ddns).
 
     ใช้ logic เดียวกับตอนเริ่มโปรแกรม (_startup_update_check) — cache 1 ชม. + แจ้ง Telegram
-    1 ครั้งต่อเวอร์ชันต่อ process (ไม่สแปม) — GitHub rate limit 60/ชม. ไม่มี token: 24 ครั้ง/วัน ปลอดภัย
+    1 ครั้งต่อเวอร์ชันต่อ process (ไม่สแปม) — GitHub rate limit 60/ชม. ไม่มี token: 24 ครั้ง/วัน ปลอดภัย.
+
+    Args:
+        cfg: Config ที่อ่านแล้ว
+        config_path: path ของ config.ini
     """
     global _periodic_update_at
     now = time.time()
@@ -503,10 +589,14 @@ TUNNEL_CHECK_INTERVAL = 30  # ตรวจ tunnel ตาย/ไม่รัน �
 _tunnel_start_lock = threading.Lock()
 
 
-def _ensure_tunnel_running(cfg, config_path):
-    """Cloudflare Tunnel ตาย (crash/ถูกปิดจากนอก) -> เริ่มใหม่เอง — ไม่ต้องมานั่งกดเอง
+def _ensure_tunnel_running(cfg: "config_mod.Config", config_path: str) -> None:
+    """Cloudflare Tunnel ตาย (crash/ถูกปิดจากนอก) -> เริ่มใหม่เอง — ไม่ต้องมานั่งกดเอง.
 
-    เช็คทุก 30 วิ (ไม่ใช่ทุกรอบ loop — กันสแปม start) — ข้ามถ้าไม่ได้เปิด tunnel_enabled
+    เช็คทุก 30 วิ (ไม่ใช่ทุกรอบ loop — กันสแปม start) — ข้ามถ้าไม่ได้เปิด tunnel_enabled.
+
+    Args:
+        cfg: Config ที่อ่านแล้ว
+        config_path: path ของ config.ini
     """
     global _tunnel_check_at
     if not getattr(cfg, "tunnel_enabled", False):
@@ -531,8 +621,18 @@ def _ensure_tunnel_running(cfg, config_path):
             log.warning("ตรวจ/เริ่ม tunnel ใหม่ไม่ได้: %s", exc)
 
 
-def run_forever(config_path=config_mod.DEFAULT_CONFIG_PATH, dry_run=False, stop_event=None):
-    """ลูปหลัก: รันทุก interval ตาม config (อ่าน config ใหม่ทุกรอบ)."""
+def run_forever(
+    config_path: str = config_mod.DEFAULT_CONFIG_PATH,
+    dry_run: bool = False,
+    stop_event: Optional[threading.Event] = None,
+) -> None:
+    """ลูปหลัก: รันทุก interval ตาม config (อ่าน config ใหม่ทุกรอบ).
+
+    Args:
+        config_path: path ของ config.ini
+        dry_run: True = ไม่แตะ state/Cloudflare/Telegram (จำลองเท่านั้น)
+        stop_event: ถ้าส่งมา จะหยุด loop ทันทีเมื่อ event ถูก set (service stop)
+    """
     import os as _os
 
     log.info(

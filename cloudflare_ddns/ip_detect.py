@@ -9,11 +9,12 @@ import struct
 import subprocess
 import time
 import urllib.request
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import config as config_mod
 from . import i18n
 
-PROVIDERS = {
+PROVIDERS: Dict[int, List[str]] = {
     4: [
         "https://api.ipify.org",
         "https://ifconfig.me/ip",
@@ -37,13 +38,34 @@ PRIVATE_NETWORKS = [
 ]
 
 
-def _http_get(url, timeout):
+def _http_get(url: str, timeout: int) -> str:
+    """GET URL แล้วคืนข้อความ (ตัดช่องว่างหัวท้าย) — โยน exception เมื่อเชื่อมต่อไม่ได้.
+
+    Args:
+        url: URL ที่จะขอ
+        timeout: เวลารอสูงสุด (วินาที)
+
+    Returns:
+        str: ข้อความจาก server
+
+    Raises:
+        Exception: network error / HTTP error (ปล่อยให้ caller จับ)
+    """
     request = urllib.request.Request(url, headers={"User-Agent": config_mod.user_agent()})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return response.read().decode("utf-8", "replace").strip()
 
 
-def _extract_text(text, url):
+def _extract_text(text: str, url: str) -> str:
+    """แยก IP ออกจากข้อความของ provider (กรณีพิเศษ cdn-cgi/trace).
+
+    Args:
+        text: ข้อความดิบจาก provider
+        url: URL ของ provider (ใช้ดูว่าเป็น cdn-cgi/trace หรือไม่)
+
+    Returns:
+        str: IP ที่แยกได้ หรือข้อความเดิมถ้าไม่ใช่รูปแบบพิเศษ
+    """
     if "cdn-cgi/trace" in url:
         for line in text.splitlines():
             if line.startswith("ip="):
@@ -52,16 +74,25 @@ def _extract_text(text, url):
     return text
 
 
-def get_public_ip(version=4, timeout=8, consensus=None):
+def get_public_ip(version: int = 4, timeout: int = 8, consensus: Optional[int] = None) -> Optional[str]:
     """คืน IP สาธารณะ (str) ตาม version ที่ขอ หรือ None ถ้าหาไม่ได้จากทุก provider.
 
-    consensus (int >= 2): ต้องมี provider ตั้งแต่ N รายเห็น IP ตัวเดียวกันถึงจะคืน
-    (กัน provider ตัวใดตัวหนึ่งตอบผิด) — ฉันทามติไม่พอ = คืน None เหมือนหาไม่เจอ
+    Args:
+        version: ชนิด IP — 4 (IPv4) หรือ 6 (IPv6)
+        timeout: เวลารอสูงสุดต่อ provider (วินาที)
+        consensus: ต้องมี provider ตั้งแต่ N รายเห็น IP ตัวเดียวกันถึงจะคืน
+            (กัน provider ตัวใดตัวหนึ่งตอบผิด) — ฉันทามติไม่พอ = คืน None เหมือนหาไม่เจอ
+
+    Returns:
+        str | None: IP สาธารณะ หรือ None ถ้าหาไม่ได้/ฉันทามติไม่พอ
+
+    Raises:
+        ValueError: version ไม่ใช่ 4 หรือ 6
     """
     if version not in (4, 6):
         raise ValueError("version ต้องเป็น 4 หรือ 6")
     need = max(int(consensus or 0), 0)
-    votes = {}
+    votes: Dict[str, int] = {}
     first_ip = None
     for url in PROVIDERS[version]:
         try:
@@ -85,17 +116,25 @@ def get_public_ip(version=4, timeout=8, consensus=None):
 
 # ---------- กัน IP ของ Cloudflare (anycast) ----------
 
-CLOUDFLARE_IP_URLS = {
+CLOUDFLARE_IP_URLS: Dict[int, str] = {
     4: "https://www.cloudflare.com/ips-v4",
     6: "https://www.cloudflare.com/ips-v6",
 }
 # แคชช่วง IP 24 ชม. — ถ้าโหลดไม่ได้ถือว่า "น่าสงสัย" (กันเขียน IP ผิด)
 CLOUDFLARE_IP_CACHE_TTL = 24 * 3600
-_cloudflare_ranges = {}  # version -> (timestamp, [ip_network])
+_cloudflare_ranges: Dict[int, Tuple[float, List[Any]]] = {}  # version -> (timestamp, [ip_network])
 
 
-def get_cloudflare_ranges(version, timeout=8):
-    """คืน list ของ ip_network ที่เป็นของ Cloudflare (แคช 24 ชม.) หรือ None ถ้าโหลดไม่ได้."""
+def get_cloudflare_ranges(version: int, timeout: int = 8) -> Optional[List[Any]]:
+    """คืน list ของ ip_network ที่เป็นของ Cloudflare (แคช 24 ชม.) หรือ None ถ้าโหลดไม่ได้.
+
+    Args:
+        version: ชนิด IP — 4 (IPv4) หรือ 6 (IPv6)
+        timeout: เวลารอสูงสุด (วินาที)
+
+    Returns:
+        list[ip_network] | None: ช่วง IP ของ Cloudflare หรือ None ถ้าโหลดไม่ได้
+    """
     cached = _cloudflare_ranges.get(version)
     now = time.time()
     if cached and now - cached[0] < CLOUDFLARE_IP_CACHE_TTL:
@@ -113,11 +152,18 @@ def get_cloudflare_ranges(version, timeout=8):
         return None
 
 
-def is_cloudflare_ip(ip_str, timeout=8):
+def is_cloudflare_ip(ip_str: str, timeout: int = 8) -> bool:
     """IP เป็นของ Cloudflare (anycast/CDN) หรือไม่.
 
     ถ้าโหลดช่วง IP ไม่ได้ -> คืน True (ถือว่าน่าสงสัย กันเขียน IP ผิดลง record)
     ปิดได้ด้วย reject_cloudflare_ips = false ใน config
+
+    Args:
+        ip_str: IP ที่จะตรวจ (IPv4 หรือ IPv6)
+        timeout: เวลารอสูงสุด (วินาที)
+
+    Returns:
+        bool: True ถ้า IP อยู่ในช่วงของ Cloudflare (หรือโหลดช่วงไม่ได้)
     """
     try:
         ip = ipaddress.ip_address(ip_str)
@@ -132,8 +178,15 @@ def is_cloudflare_ip(ip_str, timeout=8):
 # ---------- ตรวจ NAT / CGNAT ----------
 
 
-def is_private_ip(ip_str):
-    """IP อยู่ในช่วง private / CGNAT / loopback หรือไม่"""
+def is_private_ip(ip_str: str) -> bool:
+    """IP อยู่ในช่วง private / CGNAT / loopback หรือไม่.
+
+    Args:
+        ip_str: IP ที่จะตรวจ
+
+    Returns:
+        bool: True ถ้าเป็น IPv4 ในช่วง private/CGNAT (IPv6 หรือค่าผิด = False)
+    """
     try:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
@@ -146,8 +199,15 @@ def is_private_ip(ip_str):
     return False
 
 
-def is_cgnat_ip(ip_str):
-    """IP อยู่ในช่วง CGNAT (100.64.0.0/10) ของ ISP โดยเฉพาะ"""
+def is_cgnat_ip(ip_str: str) -> bool:
+    """IP อยู่ในช่วง CGNAT (100.64.0.0/10) ของ ISP โดยเฉพาะ.
+
+    Args:
+        ip_str: IP ที่จะตรวจ
+
+    Returns:
+        bool: True ถ้าเป็น IPv4 ในช่วง CGNAT
+    """
     try:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
@@ -155,10 +215,16 @@ def is_cgnat_ip(ip_str):
     return ip.version == 4 and ip in CGNAT_NETWORKS[0]
 
 
-def _stun_binding(stun_host="stun.l.google.com", port=19302, timeout=5):
+def _stun_binding(stun_host: str = "stun.l.google.com", port: int = 19302, timeout: int = 5) -> Optional[Tuple[str, int]]:
     """ถาม STUN server ว่าเราเห็น mapped address (IP + port) จากนอก NAT เป็นเท่าไหร่.
 
-    คืน (ip_str, port) หรือ None ถ้าถามไม่ได้
+    Args:
+        stun_host: hostname ของ STUN server
+        port: port ของ STUN server (default 19302)
+        timeout: เวลารอสูงสุด (วินาที)
+
+    Returns:
+        tuple[str, int] | None: (mapped IP, mapped port) หรือ None ถ้าถามไม่ได้
     """
     # STUN Binding Request: type=0x0001, len=0, magic cookie, txid 12 bytes
     txid = random.getrandbits(96).to_bytes(12, "big")
@@ -199,12 +265,20 @@ def _stun_binding(stun_host="stun.l.google.com", port=19302, timeout=5):
     return None
 
 
-def _tracert_hops(target="8.8.8.8", max_hops=5, wait_ms=250, timeout=20):
+def _tracert_hops(target: str = "8.8.8.8", max_hops: int = 5, wait_ms: int = 250, timeout: int = 20) -> Optional[List[str]]:
     """เรียก tracert.exe (Windows) แล้วคืน list IP ของแต่ละฮอป ตามลำดับ (เรียงจากใกล้สุด).
 
     ใช้ UDP TTL เองบน Windows ไม่ได้ (ICMP ถูก drop เข้า UDP socket -> err 10052)
     จึงพึ่ง tracert.exe — ทำงานได้โดยไม่ต้อง admin.
-    คืน None ถ้าเรียกไม่ได้ (ไม่มี tracert / timeout / parse ไม่ได้)
+
+    Args:
+        target: IP ปลายทางที่ tracert ไปหา
+        max_hops: จำนวนฮอปสูงสุด (-h)
+        wait_ms: เวลารอต่อฮอปเป็น ms (-w)
+        timeout: เวลารอสูงสุดของ process ทั้งหมด (วินาที)
+
+    Returns:
+        list[str] | None: IP ของแต่ละฮอป (ไม่รวม target) หรือ None ถ้าเรียกไม่ได้
     """
     exe = shutil.which("tracert")
     if not exe:
@@ -219,7 +293,7 @@ def _tracert_hops(target="8.8.8.8", max_hops=5, wait_ms=250, timeout=20):
     if proc.returncode != 0:
         return None
     pattern = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
-    hops = []
+    hops: List[str] = []
     for line in proc.stdout.splitlines():
         m = pattern.search(line)
         if not m:
@@ -231,13 +305,18 @@ def _tracert_hops(target="8.8.8.8", max_hops=5, wait_ms=250, timeout=20):
     return hops or None
 
 
-def _trace_verdict(hops):
+def _trace_verdict(hops: Optional[List[str]]) -> Optional[str]:
     """ตีความผล tracert: จุดแรกที่ข้าม router บ้าน (ฮอป 2 หรือฮอปเดียวสุดท้าย) เป็น IP แบบไหน.
 
-    คืน 'cg-nat' | 'double-nat' | 'public-route' | None (ตัดสินไม่ได้)
-    - เห็น 100.64/10 ที่ฮอปใด -> CGNAT ของ ISP (หลัง WAN ตรง ๆ)
-    - ฮอป 2 เป็น private -> มี NAT ซ้อน (double NAT — inbound ต้อง forward ทีละชั้น)
-    - ฮอป 2 เป็น public -> ไม่มีชั้น private คั่น (ต่อตรงหรือ NAT 1:1)
+    Args:
+        hops: list IP ต่อฮอปจาก _tracert_hops (อาจเป็น None)
+
+    Returns:
+        str | None: "cg-nat" | "double-nat" | "public-route" | None (ตัดสินไม่ได้)
+
+        - เห็น 100.64/10 ที่ฮอปใด -> CGNAT ของ ISP (หลัง WAN ตรง ๆ)
+        - ฮอป 2 เป็น private -> มี NAT ซ้อน (double NAT — inbound ต้อง forward ทีละชั้น)
+        - ฮอป 2 เป็น public -> ไม่มีชั้น private คั่น (ต่อตรงหรือ NAT 1:1)
     """
     if not hops:
         return None
@@ -251,10 +330,16 @@ def _trace_verdict(hops):
     return "public-route"
 
 
-def _stun_stability(rounds=4, timeout=5, delay=0.3):
+def _stun_stability(rounds: int = 4, timeout: int = 5, delay: float = 0.3) -> Optional[Dict[str, Any]]:
     """ถาม STUN ซ้ำหลายรอบ ดูว่า mapped IP/port เปลี่ยนไหม (สัญญาณ NAT แบบ dynamic).
 
-    คืน dict {'ips': [..], 'ports': [..], 'count': n} หรือ None ถ้าถามไม่ได้เลย
+    Args:
+        rounds: จำนวนรอบที่ถามซ้ำ
+        timeout: เวลารอสูงสุดต่อรอบ (วินาที)
+        delay: เวลารอระหว่างรอบ (วินาที)
+
+    Returns:
+        dict | None: {"ips": list, "ports": list, "count": int} หรือ None ถ้าถามไม่ได้เลย
     """
     ips, ports = set(), set()
     n = 0
@@ -270,21 +355,29 @@ def _stun_stability(rounds=4, timeout=5, delay=0.3):
     return {"ips": sorted(ips), "ports": sorted(ports), "count": n}
 
 
-def nat_report(public_ip=None, timeout=5, trace=True, stun_rounds=4, lang="th"):
+def nat_report(public_ip: Optional[str] = None, timeout: int = 5, trace: bool = True, stun_rounds: int = 4, lang: str = "th") -> Dict[str, Any]:
     """ตรวจสถานะ NAT ของเครื่อง 3 ชั้น: provider IP + tracert (ฮอปแรกหลัง WAN) + STUN ซ้ำ.
 
-    คืน dict:
-        public_ip      - IP ที่ตรวจได้จาก provider ภายนอก
-        stun_ip        - IP ที่ STUN server เห็น (mapped)
-        stun_port      - mapped port
-        tracert        - list IP ต่อฮอป (Windows tracert) หรือ [] ถ้าใช้ไม่ได้
-        stun_rounds    - dict จาก _stun_stability หรือ None
-        nat_type       - 'public' | 'cg-nat' | 'private-ip' | 'double-nat' | 'mismatch' | 'unknown'
-        message        - คำอธิบายตามภาษา (lang)
+    Args:
+        public_ip: IP สาธารณะที่รู้อยู่แล้ว (None = ให้ตรวจเอง)
+        timeout: เวลารอสูงสุดต่อการตรวจ (วินาที)
+        trace: เปิดใช้ tracert วิเคราะห์ฮอปหรือไม่
+        stun_rounds: จำนวนรอบ STUN ที่จะถามซ้ำ (0 = ข้ามส่วนนี้)
+        lang: รหัสภาษา (เลือกข้อความอธิบาย)
+
+    Returns:
+        dict: ผลการตรวจ — ประกอบด้วย:
+            - public_ip: IP ที่ตรวจได้จาก provider ภายนอก
+            - stun_ip: IP ที่ STUN server เห็น (mapped)
+            - stun_port: mapped port
+            - tracert: list IP ต่อฮอป (Windows tracert) หรือ [] ถ้าใช้ไม่ได้
+            - stun_rounds: dict จาก _stun_stability หรือ None
+            - nat_type: "public" | "cg-nat" | "private-ip" | "double-nat" | "mismatch" | "unknown"
+            - message: คำอธิบายตามภาษา (lang)
     """
     if not public_ip:
         public_ip = get_public_ip(4, timeout=timeout)
-    result = {
+    result: Dict[str, Any] = {
         "public_ip": public_ip or "",
         "stun_ip": "",
         "stun_port": 0,
@@ -301,7 +394,7 @@ def nat_report(public_ip=None, timeout=5, trace=True, stun_rounds=4, lang="th"):
         result["stun_ip"], result["stun_port"] = stun
 
     trace_v = None
-    hops = []
+    hops: Optional[List[str]] = []
     if trace:
         hops = _tracert_hops()
         result["tracert"] = hops or []
