@@ -4,7 +4,7 @@
     python -m cloudflare_ddns.main setup      # ตั้งค่าครั้งแรก (ถามทีละขั้น)
     python -m cloudflare_ddns.main run        # รันแบบ foreground (ทดสอบ)
     python -m cloudflare_ddns.main dry-run    # เทสต์รอบเดียว ไม่แตะ record จริง
-    python -m cloudflare_ddns.main install    # ติดตั้งเป็น Windows Service (ต้อง admin)
+    python -m cloudflare_ddns.main install    # ติดตั้ง Windows Service / macOS LaunchAgent
     python -m cloudflare_ddns.main start      # เริ่ม service
     python -m cloudflare_ddns.main status     # ดูสถานะ service + IP ล่าสุด
     python -m cloudflare_ddns.main webui      # เปิด Web UI ที่ http://127.0.0.1:8123
@@ -318,38 +318,38 @@ def cmd_reset_password(args):
 def cmd_install(args):
     from . import service as service_mod
 
-    print(service_mod.install_service())
+    print(service_mod.install_service(args.config))
 
 
 def cmd_remove(args):
     from . import service as service_mod
 
-    print(service_mod.remove_service())
+    print(service_mod.remove_service(args.config))
 
 
 def cmd_start(args):
     from . import service as service_mod
 
-    print(service_mod.start_service())
+    print(service_mod.start_service(args.config))
 
 
 def cmd_stop(args):
     from . import service as service_mod
 
-    print(service_mod.stop_service())
+    print(service_mod.stop_service(args.config))
 
 
 def cmd_restart(args):
     from . import service as service_mod
 
-    print(service_mod.restart_service())
+    print(service_mod.restart_service(args.config))
 
 
 def cmd_status(args):
     from . import service as service_mod
 
-    service_status = service_mod.service_status()
-    print("=== Windows Service ===")
+    service_status = service_mod.service_status(args.config)
+    print(f"=== Background Service ({service_mod.platform_name()}) ===")
     if service_status.get("installed"):
         state_names = {
             "running": "กำลังทำงาน",
@@ -378,7 +378,7 @@ def cmd_status(args):
     try:
         from . import tunnel as tunnel_mod
 
-        tunnel_status = tunnel_mod.TunnelManager().status(config_mod.Config(args.config))
+        tunnel_status = tunnel_mod.TunnelManager(args.config).status(config_mod.Config(args.config))
         print("=== Cloudflare Tunnel ===")
         print(f"  เปิดใช้งาน: {'ใช่' if tunnel_status['enabled'] else 'ไม่'} | "
               f"cloudflared: {'ติดตั้งแล้ว' if tunnel_status['installed'] else 'ยังไม่ติดตั้ง'} | "
@@ -414,7 +414,17 @@ def cmd_webui(args):
         return 1
     host = "127.0.0.1" if ui.host in ("0.0.0.0", "::") else ui.host
     log.info("เปิด Web UI ที่ http://%s:%s (ปิดด้วย Ctrl+C)", host, args.port or "(จาก config)")
-    ui.serve_forever()
+    try:
+        ui.serve_forever()
+    except KeyboardInterrupt:
+        print("Ctrl+C — ปิด Web UI แล้ว")
+    finally:
+        try:
+            ui.stop()
+        except KeyboardInterrupt:
+            # PyInstaller onefile บน macOS อาจส่ง SIGINT ถึง bootloader และ child
+            # ซ้ำกัน ขณะ shutdown — ปล่อย process จบได้เพราะ server thread เป็น daemon
+            pass
 
 
 def _install_console_close_handler(stop_event, loop_thread, tunnel_mgr, web_ui):
@@ -538,10 +548,10 @@ def cmd_default(args):
     log.info("ปิด Web UI + DDNS loop + Tunnel เรียบร้อย")
 
 
-def run_service_entry():
+def run_service_entry(config_path=None):
     from . import service as service_mod
 
-    service_mod.run_service_entry()
+    return service_mod.run_service_entry(config_path)
 
 
 def main(argv=None):
@@ -559,7 +569,7 @@ def main(argv=None):
     sub_parent.add_argument("--config", default=None, help=argparse.SUPPRESS)
     parser = argparse.ArgumentParser(
         prog="python -m cloudflare_ddns.main",
-        description="Cloudflare DDNS Updater — Windows service สำหรับอัปเดต DNS อัตโนมัติ",
+        description="Cloudflare DDNS Updater — background service สำหรับอัปเดต DNS อัตโนมัติ",
         parents=[parent],
     )
     sub = parser.add_subparsers(dest="command")
@@ -596,6 +606,9 @@ def main(argv=None):
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "run-service":
-        run_service_entry()
+        internal = argparse.ArgumentParser(add_help=False)
+        internal.add_argument("--config", default=config_mod.DEFAULT_CONFIG_PATH)
+        internal_args = internal.parse_args(sys.argv[2:])
+        raise SystemExit(run_service_entry(internal_args.config) or 0)
     else:
         main()

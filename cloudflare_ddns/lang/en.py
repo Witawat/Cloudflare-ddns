@@ -95,7 +95,7 @@ EN = {
     "tunnel.log_title": "cloudflared log (tunnel.log)",
 
     # ---- service ----
-    "service.no_admin": "No admin rights — open the web UI from a cmd/exe run as admin (or install as a service and control it from this page)",
+    "service.no_admin": "No permission to control the service — on Windows open the web UI as admin; macOS user LaunchAgents do not require sudo",
     "service.running_inside": "This page is already running inside the service — the service is running (already installed, no need to reinstall). Use the Restart button instead (do not install over yourself: it would delete the running service and stop mid-way)",
     "service.already_installed": "Service is already installed — use Restart, or uninstall first if you want to reinstall",
     "service.install_fail": "Could not install: {exc}",
@@ -196,7 +196,7 @@ EN = {
     "tg.reset.fail": "Reset failed: {}",
     "tg.log.empty": "(empty log)",
     "tg.log.read_fail": "Could not read log: {}",
-    "tg.help": "Commands (type in this chat):\n/status — DDNS status (IP/last run/errors/version/tunnel/API stats)\n/list — configured DDNS records + tunnel\n/ip — current public IP\n/run — run a DDNS round now (requires yes confirmation)\n/update — check for new version\n/tunnel [start|stop] — tunnel status/control (stop requires yes)\n/log — last 30 log lines\n/notify [all|start|stop|ip|error|created|round|daily] [on|off] — view/enable/disable notifications\n/restart /start /stop — Windows Service control (restart requires yes)\nreset password → yes — recover the web UI password\nShared bot across machines? Append @machine-name (e.g. /status @machineA) — only the matching machine replies\nEvery reply starts with [machine-name] — so you know which machine it's from",
+    "tg.help": "Commands (type in this chat):\n/status — DDNS status (IP/last run/errors/version/tunnel/API stats)\n/list — configured DDNS records + tunnel\n/ip — current public IP\n/run — run a DDNS round now (requires yes confirmation)\n/update — check for new version\n/tunnel [start|stop] — tunnel status/control (stop requires yes)\n/log — last 30 log lines\n/notify [all|start|stop|ip|error|created|round|daily] [on|off] — view/enable/disable notifications\n/restart /start /stop — background service control (restart requires yes)\nreset password → yes — recover the web UI password\nShared bot across machines? Append @machine-name (e.g. /status @machineA) — only the matching machine replies\nEvery reply starts with [machine-name] — so you know which machine it's from",
     "tg.help_short": "Commands (type in this chat):",
     "tg.chatid.not_found": "No messages from the bot yet — open the chat with the bot and press /start first",
     "tg.chatid.webhook_err": "Still stuck after deleting the webhook: error {code}: {exc} — if this bot is running with another program, stop it first and retry",

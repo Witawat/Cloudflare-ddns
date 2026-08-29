@@ -6,9 +6,9 @@
 
 ## 1. โปรเจกต์นี้คืออะไร
 
-Cloudflare DDNS Updater: โปรแกรม Python รันเป็น **Windows Service** ตรวจหา IP สาธารณะ (IPv4/IPv6) แล้วอัปเดต DNS record บน Cloudflare อัตโนมัติเมื่อ IP เปลี่ยน + **Web UI** (localhost) ดูสถานะ/ตั้งค่า + **Telegram notify** + **Cloudflare Tunnel** (cloudflared) + สแกนพอร์ต
+Cloudflare DDNS Updater: โปรแกรม Python รันเป็น **Windows Service หรือ macOS LaunchAgent** ตรวจหา IP สาธารณะ (IPv4/IPv6) แล้วอัปเดต DNS record บน Cloudflare อัตโนมัติเมื่อ IP เปลี่ยน + **Web UI** (localhost) ดูสถานะ/ตั้งค่า + **Telegram notify** + **Cloudflare Tunnel** (cloudflared) + สแกนพอร์ต
 
-- ใช้ **stdlib ล้วน** (urllib, http.server, socket, configparser) + `pywin32` เท่านั้น — **ห้ามเพิ่ม dependency** (ไม่ใช้ requests/fastapi/flask)
+- ใช้ **stdlib ล้วน** (urllib, http.server, socket, configparser) + `pywin32` เฉพาะ Windows — **ห้ามเพิ่ม dependency** (ไม่ใช้ requests/fastapi/flask)
 - Build เป็น exe ไฟล์เดียวด้วย PyInstaller (`build.bat`)
 - เอกสารผู้ใช้: `README.md`, `docs/` (GETTING-STARTED / USAGE / TROUBLESHOOTING), `CHANGELOG.md`
 - ทุกอย่างภาษาไทย (UI + log + เอกสาร) — ศัพท์เทคนิคอังกฤษได้
@@ -25,7 +25,7 @@ D:\MyCode\Cloudflare\
 │   ├── cloudflare_api.py  # CloudflareAPI: verify_token / zones / records CRUD (urllib ล้วน)
 │   ├── notifier.py        # TelegramNotifier: notify(event) -> build_message -> queue (atomic) + flush
 │   ├── tunnel.py          # TunnelManager: cloudflared download/start/stop/status (pid ใน tunnel.pid)
-│   ├── service.py         # Windows Service (pywin32): SvcDoRun -> webui thread + ddns loop + tunnel async
+│   ├── service.py         # Windows Service (pywin32) + macOS LaunchAgent (launchd)
 │   └── webui.py           # Web UI ทั้งหมดในไฟล์เดียว: PAGE (HTML+CSS+JS) + handlers + wizard
 ├── dist\cloudflare-ddns.exe   # exe ที่ build แล้ว (ข้อมูล runtime อยู่ข้าง exe)
 ├── config.ini / state.json / notify_queue.json / tunnel.pid / logs\  # runtime (gitignored)
@@ -49,7 +49,7 @@ D:\MyCode\Cloudflare\
 | `setup` | wizard ตั้งค่าครั้งแรก (console) — เปิดเบราว์เซอร์ + ถาม token/zone/record/Telegram |
 | `run` | รัน foreground (เทสต์) |
 | `dry-run` | ตรวจรอบเดียว **ไม่แตะ record/state** |
-| `install` / `remove` | ติดตั้ง/ลบ Windows Service (admin) |
+| `install` / `remove` | ติดตั้ง/ลบ Windows Service (admin) หรือ macOS LaunchAgent (user) |
 | `start` / `stop` / `restart` | ควบคุม service |
 | `status` | สถานะ service + IP + tunnel |
 | `webui` | เปิด Web UI (blocking) |
@@ -81,7 +81,7 @@ POST /port-scan          สแกนพอร์ต (จำกัดเฉพ�
 POST /notify-queue/flush|clear
 POST /tunnel/test|start|stop|download|bind|hostnames|unbind|sync|zones
 POST /tunnel/update-check  เช็ค cloudflared ล่าสุดจาก GitHub (cache 6 ชม.)
-POST /service/install|start|stop|restart|uninstall   ควบคุม Windows Service (ต้อง admin; stop/install/uninstall ปฏิเสธเมื่อรันใน service เอง)
+POST /service/install|start|stop|restart|uninstall   ควบคุม Windows Service/macOS LaunchAgent (Windows ต้อง admin; stop/install/uninstall ปฏิเสธเมื่อรันใน service เอง)
 POST /ddns-run           รันรอบ DDNS ทันที (thread + กันซ้ำ busy)
 POST /heartbeat-test     ทดสอบส่ง heartbeat ทันที (ไม่โดน rate limit รอบ)
 POST /open-data-folder   เปิดโฟลเดอร์ข้อมูล (os.startfile)
@@ -220,7 +220,7 @@ powershell -File <temp>\svc-reinstall.cmd # remove+install+start
   1. **Build ใหม่** — รัน `build.bat` (ตรวจ exe ไม่ล็อก: `taskkill /F /IM cloudflare-ddns.exe` ก่อนถ้าค้าง) → ยืนยัน `dist\cloudflare-ddns.exe` build สำเร็จ
   2. **แจ้งเลข version + สรุป** — ตรวจ `cloudflare_ddns/__init__.py` (bump ถ้าฟีเจอร์/แก้สำคัญ: minor ใหม่ → bump ทันที) แล้วรายงานให้ผู้ใช้ทราบ: version ปัจจุบัน + สรุปสั้น ๆ ว่าทำอะไรไป/ผลเป็นยังไง (เหมือนข้อความ commit)
   3. **Commit** — commit งานที่เสร็จด้วยข้อความไทยตามรูปแบบ (ข้อ 6 ข้อ 9) — อย่ารอผู้ใช้สั่ง commit เมื่องานเสร็จสมบูรณ์แล้ว (ยกเว้นผู้ใช้ยังติดตามงานอยู่ งานไม่จบ)
-- อย่า commit: `config.ini`, `state.json`, `notify_queue.json`, `logs/`, `cloudflared.exe`, `tunnel.pid`, `*.png` (gitignore มีแล้ว)
+- อย่า commit: `config.ini`, `state.json`, `notify_queue.json`, `logs/`, `cloudflared.exe`, `cloudflared`, `tunnel.pid`, `*.png` (gitignore มีแล้ว)
 - ไม่ push โดยไม่ได้รับคำสั่ง
 - **ห้ามสร้าง GitHub release จนกว่าผู้ใช้จะสั่งโดยตรง** (เคยสั่งลบ release ไปแล้ว — อยากปล่อยเมื่อไหร่ต้องถามก่อน)
 - ถ้าผู้ใช้ติดตั้ง service อยู่: หลัง rebuild **ต้อง reinstall/restart** ไม่งั้นผู้ใช้ยังใช้ exe เก่า (เว็บจะไม่เห็นฟีเจอร์ใหม่)

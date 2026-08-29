@@ -40,8 +40,10 @@ DEFAULT_DATA_DIR = PROJECT_DIR
 DEFAULT_LOG_DIR = os.path.join(DEFAULT_DATA_DIR, "logs")
 DEFAULT_STATE_PATH = os.path.join(DEFAULT_DATA_DIR, "state.json")
 # ตำแหน่งเดิม (ก่อนย้าย) ใช้ย้ายข้อมูลให้อัตโนมัติครั้งเดียว
-LEGACY_DATA_DIR = os.path.join(
-    os.environ.get("PROGRAMDATA", r"C:\ProgramData"), "CloudflareDDNS"
+LEGACY_DATA_DIR = (
+    os.path.join(os.environ.get("PROGRAMDATA", r"C:\ProgramData"), "CloudflareDDNS")
+    if os.name == "nt"
+    else ""
 )
 
 

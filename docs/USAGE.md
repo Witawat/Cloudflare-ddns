@@ -19,7 +19,7 @@
 
 ## 1. ภาพรวม & องค์ประกอบ
 
-> **ข้อกำหนดระบบ:** โปรเจกต์นี้เป็น Windows เท่านั้น (Windows Service + pywin32) — รองรับเต็มบน **Windows 10/11 x64** (8.1 ใช้งานได้, 7 ไม่รองรับ) — Web UI ต้องการเบราว์เซอร์ Chrome/Edge 111+ ขึ้นไป (สี CSS สมัยใหม่) — ไม่มี build สำหรับ Linux/macOS
+> **ข้อกำหนดระบบ:** รองรับ Windows 10/11 และ macOS 12+ (Apple Silicon/Intel) — ใช้ Windows Service หรือ macOS LaunchAgent ตามระบบ — Linux ยังไม่มี service installer
 
 ```
 โปรเจกต์/
@@ -31,7 +31,7 @@
 │   ├── cloudflare_api.py     # Cloudflare API v4 (urllib ล้วน)
 │   ├── notifier.py           # Telegram + คิว retry
 │   ├── tunnel.py             # cloudflared (ดาวน์โหลด/เริ่ม/หยุด)
-│   ├── service.py            # Windows Service wrapper
+│   ├── service.py            # Windows Service + macOS LaunchAgent
 │   └── webui.py              # Web UI (หน้าเดียวครบ)
 ├── dist\cloudflare-ddns.exe  # exe ไฟล์เดียว (build จาก build.bat)
 ├── config.ini                # ตั้งค่า (อยู่ข้าง exe ในโหมด exe)
@@ -39,7 +39,7 @@
 ├── notify_queue.json         # คิวข้อความ Telegram ที่ค้าง
 ├── tunnel.pid                # pid ของ cloudflared
 ├── logs\cloudflare-ddns.log  # log รายวัน (เก็บ 14 วัน)
-└── cloudflared.exe           # ดาวน์โหลดอัตโนมัติเมื่อใช้ Tunnel
+└── cloudflared[.exe]         # ดาวน์โหลดให้ตรง OS/CPU อัตโนมัติเมื่อใช้ Tunnel
 ```
 
 > ข้อมูล runtime ทั้งหมดอยู่**ข้าง exe/โปรเจกต์** — ย้ายโฟลเดอร์ = ย้ายทั้งชุด (ถ้าเคยใช้เวอร์ชันเก่า ระบบย้ายข้อมูลจาก ProgramData ให้อัตโนมัติครั้งเดียว)
@@ -109,10 +109,10 @@ python -m cloudflare_ddns.main setup
 - สถานะ (พร้อมใช้งาน/ยังไม่ตั้ง) + จำนวนคิวค้าง
 - ปุ่ม: ส่งข้อความทดสอบ / ดูคิว (แสดงข้อความทั้งหมด) / ลองส่งใหม่ / ล้างคิว
 
-### 4.4 Windows Service
-- สถานะ: ติดตั้งไหม / กำลังทำงานไหม + **context ของหน้าเว็บ** (รันใน service / standalone · admin หรือไม่ — ปุ่มที่ทำไม่ได้จะปิด)
+### 4.4 Background Service
+- สถานะ: ติดตั้งไหม / กำลังทำงานไหม + **context ของหน้าเว็บ** (Windows ต้อง admin; macOS LaunchAgent ใช้ user ปกติ)
 - ปุ่ม: **เริ่ม service** / **Restart service** (เว็บหลุดชั่วครู่แล้วกลับมาเอง) / **หยุด service** / **ติดตั้ง service** (ยกระดับจากรัน standalone → service เริ่มเองตอน boot) / **ถอนการติดตั้ง** (confirm 2 ชั้น)
-- ข้อควรรู้: ทุกปุ่มต้องเปิด webui ด้วยสิทธิ์ admin — ถ้าหน้าเว็บรันใน service อยู่แล้ว เริ่ม/ติดตั้ง/ถอน/หยุดทำไม่ได้จากเว็บ (กันตัดการเชื่อมต่อตัวเอง) — ใช้ install.bat / uninstall.bat แทน (Restart ใช้ได้เสมอ)
+- ข้อควรรู้: Windows ต้องเปิด webui ด้วยสิทธิ์ admin; macOS ไม่ต้องใช้ sudo — ถ้าหน้าเว็บรันใน service อยู่แล้ว ปุ่มที่ตัด process ตัวเองจะถูกปิด (Restart ใช้ได้)
 
 ### 4.5 Cloudflare Tunnel
 - สถานะ: เปิดใช้งานไหม / cloudflared ติดตั้งไหม / รันอยู่ (pid)
@@ -176,7 +176,7 @@ python -m cloudflare_ddns.main setup
 | `/tunnel` / `/tunnel start` / `/tunnel stop` | สถานะ / เริ่ม / หยุด tunnel (**stop ต้องยืนยัน `yes`**) |
 | `/log` | log 30 บรรทัดสุดท้าย |
 | `/notify [all\|start\|stop\|ip\|error\|created\|round\|daily] [on\|off]` | ดู/เปิด/ปิดการแจ้งเตือน — ไม่ระบุ on/off = สลับค่าปัจจุบัน |
-| `/restart` / `/start` / `/stop` | ควบคุม Windows Service (รันใน service เอง: `/stop` ใช้ไม่ได้ — **restart ต้องยืนยัน `yes`**) |
+| `/restart` / `/start` / `/stop` | ควบคุม background service ตามระบบ (รันใน service เอง: `/stop` ใช้ไม่ได้ — **restart ต้องยืนยัน `yes`**) |
 | `reset password` → `yes` | กู้รหัสผ่านหน้าเว็บ (รหัสใหม่ 12 ตัวส่งกลับ — กัน 1 ครั้ง/10 นาที) |
 
 > **คำสั่งอันตรายต้องยืนยัน 2 ขั้น**: `/run`, `/restart`, `/tunnel stop` — ระบบถาม "พิมพ์ `yes` เพื่อยืนยัน (ภายใน 2 นาที)" ก่อนรันจริง (พิมพ์ `no` เพื่อยกเลิก) กันสั่งพลาด/กดผิด

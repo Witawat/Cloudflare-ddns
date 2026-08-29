@@ -522,7 +522,7 @@ def _tg_tunnel_text(cfg, action, lang="th"):
 
 
 def _tg_service_action(action, lang="th"):
-    """ควบคุม Windows Service สำหรับ /restart /start /stop"""
+    """ควบคุม background service สำหรับ /restart /start /stop."""
     try:
         from . import service as service_mod
         from .webui import _in_service

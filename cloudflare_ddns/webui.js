@@ -36,7 +36,7 @@ const I18N = {
     "svc.in_service": "รันใน service (มีสิทธิ์ระบบ) — ติดตั้ง/ถอน/หยุดต้องใช้ .bat ภายนอก",
     "svc.standalone_admin": "รันแบบ standalone · มีสิทธิ์ admin — ควบคุม service ได้",
     "svc.standalone_no_admin": "รันแบบ standalone · ไม่มีสิทธิ์ admin — ปุ่มควบคุม service ใช้ไม่ได้ (เปิด exe/cmd เป็น admin)",
-    "svc.need_admin": "ต้องเปิด webui ด้วยสิทธิ์ admin",
+    "svc.need_admin": "ไม่มีสิทธิ์ควบคุม service (Windows ต้องเปิดแบบ admin)",
     "svc.not_installed": "ยังไม่ได้ติดตั้ง service — กด \"ติดตั้ง service\" (ต้อง admin)",
     "svc.state.running": "กำลังทำงาน",
     "svc.state.stopped": "หยุดอยู่",
@@ -159,11 +159,11 @@ const I18N = {
     "cfg.import_ok": "นำเข้า config สำเร็จ — {msg}",
     "cfg.import_fail": "นำเข้าไม่สำเร็จ: {msg}",
     "cfg.import_err": "นำเข้า config ไม่ได้: {err}",
-    "svc.install_confirm": "ติดตั้ง Windows Service 'CloudflareDDNS'? (เริ่มอัตโนมัติตอน boot)",
-    "svc.restart_confirm": "Restart Windows Service? — หน้าเว็บนี้จะหลุดชั่วครู่แล้วกลับมาเอง",
-    "svc.start_confirm": "เริ่ม Windows Service 'CloudflareDDNS'?",
-    "svc.stop_confirm": "หยุด Windows Service 'CloudflareDDNS'? (หน้าเว็บนี้จะไม่กลับมาเอง)",
-    "svc.uninstall_confirm": "ถอนการติดตั้ง Windows Service 'CloudflareDDNS'?",
+    "svc.install_confirm": "ติดตั้ง background service? (Windows Service / macOS LaunchAgent)",
+    "svc.restart_confirm": "Restart background service? — หน้าเว็บนี้จะหลุดชั่วครู่แล้วกลับมาเอง",
+    "svc.start_confirm": "เริ่ม background service?",
+    "svc.stop_confirm": "หยุด background service? (หน้าเว็บนี้จะไม่กลับมาเอง)",
+    "svc.uninstall_confirm": "ถอนการติดตั้ง background service?",
     "svc.uninstall_confirm2": "ยืนยันอีกครั้ง — ถอน service จริง ๆ? (config/state/ข้อมูลไม่ถูกลบ)",
     "pw.clear_hint": "จะลบรหัสผ่านเมื่อกดบันทึก — เข้าเว็บได้โดยไม่ต้อง login",
     "heartbeat.test": "Heartbeat: {msg}",
@@ -326,7 +326,7 @@ const I18N = {
     "html.053": "ข้อควรรู้",
     "html.054": "ต้องมีสิทธิ์ admin — ถ้าหน้าเว็บนี้รันเป็น service อยู่แล้ว (เปิดเองหลัง boot) การติดตั้ง/ถอน/หยุดทำไม่ได้จากเว็บ (จะตัดการเชื่อมต่อตัวเอง) — ใช้ install.bat / uninstall.bat แทน ส่วน Restart ใช้ได้เสมอ (เว็บหลุด ~10-15 วิ แล้วกลับมา)",
     "html.055": "รันแบบ standalone (คำสั่ง webui / เปิด exe เปล่า ๆ) ต้องเปิดด้วยสิทธิ์ admin ถึงจะติดตั้ง/ควบคุม service ได้",
-    "html.056": "ถอนการติดตั้งไม่ลบ config/state/ข้อมูล — แค่เอา service ออกจาก Windows",
+    "html.056": "ถอนการติดตั้งไม่ลบ config/state/ข้อมูล — แค่เอา service ออกจากระบบ",
     "html.057": "สแกนพอร์ต",
     "html.058": "ตรวจบริการที่เปิดอยู่บน host ที่ตั้งไว้ (resolve IP ปัจจุบันให้อัตโนมัติ)",
     "html.059": "สแกน",
@@ -380,7 +380,7 @@ const I18N = {
     "html.102": " เปิด tunnel อัตโนมัติตอน service เริ่ม",
     "html.103": "เช็คอัปเดต cloudflared",
     "html.104": "Tunnel Token (ยาว — วางได้เต็มช่อง ไม่ซ่อน)",
-    "html.105": "ที่อยู่ cloudflared.exe (เว้นว่าง = ดาวน์โหลดข้าง exe อัตโนมัติ)",
+    "html.105": "ที่อยู่ cloudflared (เว้นว่าง = ดาวน์โหลดให้ตรงระบบอัตโนมัติ)",
     "html.106": "+ เพิ่ม record",
     "html.107": "โหลดชื่อ record จาก Cloudflare",
     "html.108": "แก้ไขไฟล์ config.ini ตรง ๆ ระวังรูปแบบให้ถูกต้อง (ระบบตรวจ syntax และค่าพื้นฐานก่อนบันทึก) — ตัวอย่างดูได้จาก config.example.ini",
@@ -451,7 +451,7 @@ const I18N = {
     "html.053": "Good to know",
     "html.054": "Admin rights required — if this page runs inside the service (auto-started after boot), install/uninstall/stop cannot be done from the web (it would disconnect itself) — use install.bat / uninstall.bat instead. Restart always works (the page drops ~10-15s then returns)",
     "html.055": "Running standalone (webui command / opening the exe) requires admin rights to install/control the service",
-    "html.056": "Uninstalling does NOT delete config/state/data — it only removes the service from Windows",
+    "html.056": "Uninstalling does NOT delete config/state/data — it only removes the background service",
     "html.057": "Port scan",
     "html.058": "Check which services are open on a configured host (resolves the current IP automatically)",
     "html.059": "Scan",
@@ -505,7 +505,7 @@ const I18N = {
     "html.102": " Auto-start tunnel when the service starts",
     "html.103": "Check cloudflared updates",
     "html.104": "Tunnel Token (long — full field, not hidden)",
-    "html.105": "cloudflared.exe path (empty = auto-download next to exe)",
+    "html.105": "cloudflared path (empty = auto-download for this OS/CPU)",
     "html.106": "+ Add record",
     "html.107": "Load record names from Cloudflare",
     "html.108": "Edit config.ini directly — be careful with the format (syntax and basic values are validated before saving) — see config.example.ini for examples",
@@ -550,7 +550,7 @@ const I18N = {
     "svc.in_service": "Running in the service (system privileges) — install/uninstall/stop requires external .bat",
     "svc.standalone_admin": "Standalone · admin rights — can control the service",
     "svc.standalone_no_admin": "Standalone · no admin rights — service control buttons unavailable (open the exe/cmd as admin)",
-    "svc.need_admin": "Requires opening the web UI as admin",
+    "svc.need_admin": "No permission to control the service (Windows requires admin)",
     "svc.not_installed": "Service is not installed — press \"Install service\" (requires admin)",
     "svc.state.running": "Running",
     "svc.state.stopped": "Stopped",
@@ -673,11 +673,11 @@ const I18N = {
     "cfg.import_ok": "Config imported — {msg}",
     "cfg.import_fail": "Import failed: {msg}",
     "cfg.import_err": "Could not import config: {err}",
-    "svc.install_confirm": "Install Windows Service 'CloudflareDDNS'? (auto-start on boot)",
-    "svc.restart_confirm": "Restart Windows Service? — this page will disconnect briefly and come back",
-    "svc.start_confirm": "Start Windows Service 'CloudflareDDNS'?",
-    "svc.stop_confirm": "Stop Windows Service 'CloudflareDDNS'? (this page will not come back)",
-    "svc.uninstall_confirm": "Uninstall Windows Service 'CloudflareDDNS'?",
+    "svc.install_confirm": "Install the background service (Windows Service / macOS LaunchAgent)?",
+    "svc.restart_confirm": "Restart the background service? — this page will disconnect briefly and come back",
+    "svc.start_confirm": "Start the background service?",
+    "svc.stop_confirm": "Stop the background service? (this page will not come back)",
+    "svc.uninstall_confirm": "Uninstall the background service?",
     "svc.uninstall_confirm2": "Confirm again — really uninstall the service? (config/state/data are NOT deleted)",
     "pw.clear_hint": "Password will be removed when you save — access the web without login",
     "heartbeat.test": "Heartbeat: {msg}",
@@ -1007,7 +1007,7 @@ async function copyIp(el) {
   }
 }
 
-/* ---------- Windows Service ---------- */
+/* ---------- Background Service ---------- */
 
 async function loadServiceStatus() {
   try {
@@ -1016,10 +1016,10 @@ async function loadServiceStatus() {
     const svc = s.service || {};
     const rt = s.runtime || {};
     const ctx = $("svc-ctx");
-    if (rt.in_service) ctx.textContent = t("svc.in_service");
-    else if (rt.admin) ctx.textContent = t("svc.standalone_admin");
+    if (rt.in_service) ctx.textContent = rt.platform === "darwin" ? (LANG === "en" ? "Running in macOS LaunchAgent" : "รันใน macOS LaunchAgent") : t("svc.in_service");
+    else if (rt.can_control_service) ctx.textContent = rt.platform === "darwin" ? "standalone · macOS LaunchAgent ✓" : t("svc.standalone_admin");
     else ctx.textContent = t("svc.standalone_no_admin");
-    const canControl = rt.admin;
+    const canControl = !!rt.can_control_service;
     ["svcInstall", "svcUninstall", "svcStart", "svcStop", "svcRestart"].forEach(id => {
       const b = $(id);
       b.disabled = !canControl;

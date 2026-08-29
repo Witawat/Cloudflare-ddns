@@ -164,7 +164,8 @@
 ### รันบน Windows 7 / Linux / macOS ได้ไหม
 - **Windows 7: ไม่รองรับ** — โปรแกรม build ด้วย Python 3.12 ซึ่งตัดการสนับสนุน Win7 ทางการ (ถ้าต้องการจริงต้อง build เองด้วย Python 3.8 + pywin32 เก่า — ไม่แนะนำ)
 - **Windows 8.1: ใช้งานได้** (Python 3.12 รองรับทางการ) — แต่เน้นเทสต์บน 10/11
-- **Linux / macOS: ยังไม่มี build** — โปรเจกต์ออกแบบมาเป็น Windows Service (pywin32/cloudflared Windows) — บางส่วนของโค้ด (เช่น tunnel, ปุ่มเปิดโฟลเดอร์) ผูก Windows ไว้
+- **macOS 12+ รองรับแล้ว** — ทั้ง Apple Silicon/Intel, ใช้ LaunchAgent และดาวน์โหลด cloudflared ให้ตรง CPU; ดู [MACOS.md](MACOS.md)
+- **Linux: ยังไม่รองรับ service อัตโนมัติ** — รัน foreground ได้บางส่วน แต่ยังไม่มี systemd installer
 - **ARM Windows (เช่น Surface Pro X)**: ใช้ได้ผ่าน x64 emulation — อาจช้าหน่อย
 
 ### เปิดเว็บแล้วสี/หน้าเว็บเพี้ยน

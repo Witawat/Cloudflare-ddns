@@ -1,7 +1,9 @@
 """เทสต์ tunnel: log_tail / last_error อ่านจากไฟล์ tunnel.log"""
 
 import os
+import io
 import tempfile
+import tarfile
 import unittest
 from unittest import mock
 
@@ -199,10 +201,11 @@ class TunnelStartKillStaleTest(unittest.TestCase):
             ok, msg = mgr.stop()
         self.assertTrue(ok)
         proc.wait.assert_called_once()
-        # taskkill ถูกเรียก (ฆ่า proc_pid 12345 ที่ยัง alive)
-        self.assertTrue(run.called)
-        args = run.call_args[0][0]
-        self.assertIn("12345", args)
+        if os.name == "nt":
+            # taskkill ถูกเรียก (ฆ่า proc_pid 12345 ที่ยัง alive)
+            self.assertTrue(run.called)
+            args = run.call_args[0][0]
+            self.assertIn("12345", args)
 
     def test_stop_ฆ่าproc_pid_ที่ไม่ยอมตาย(self):
         """stop(): proc ยัง alive หลัง wait(6) -> ต้อง taskkill proc.pid (ตัวที่รันจริง)"""
@@ -216,11 +219,42 @@ class TunnelStartKillStaleTest(unittest.TestCase):
         with mock.patch.object(tunnel_mod, "_pid_alive", side_effect=lambda pid: pid == 55555) as alive, \
                 mock.patch.object(tunnel_mod.subprocess, "run") as run, \
                 mock.patch.object(tunnel_mod.time, "sleep"):
-            ok, msg = mgr.stop()
+            with mock.patch.object(mgr, "_kill_pid") as kill:
+                ok, msg = mgr.stop()
         self.assertTrue(ok)
         self.assertGreaterEqual(alive.call_count, 2)  # ตรวจ proc_pid + รอตาย
-        calls = [c[0][0] for c in run.call_args_list]
-        self.assertTrue(any("55555" in c for c in calls))
+        kill.assert_called_once_with(55555)
+
+
+class TunnelMacDownloadTest(unittest.TestCase):
+    def test_asset_mac_arm64(self):
+        with mock.patch.object(tunnel_mod, "sys_platform", return_value="darwin"), \
+                mock.patch.object(tunnel_mod.platform, "machine", return_value="arm64"), \
+                mock.patch.object(tunnel_mod.os, "name", "posix"):
+            self.assertEqual(tunnel_mod._download_asset(), ("cloudflared-darwin-arm64.tgz", True))
+
+    def test_extract_tgz_และchmod_executable(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        cfg_path = os.path.join(tmp.name, "config.ini")
+        cfg = mock.Mock(path=cfg_path, cloudflared_path="")
+        archive_bytes = io.BytesIO()
+        with tarfile.open(fileobj=archive_bytes, mode="w:gz") as archive:
+            body = b"fake-cloudflared"
+            info = tarfile.TarInfo("cloudflared")
+            info.size = len(body)
+            archive.addfile(info, io.BytesIO(body))
+        response = io.BytesIO(archive_bytes.getvalue())
+        response.__enter__ = lambda obj: obj
+        response.__exit__ = lambda *args: None
+        with mock.patch.object(tunnel_mod, "_download_asset", return_value=("mac.tgz", True)), \
+                mock.patch.object(tunnel_mod.urllib.request, "urlopen", return_value=response):
+            ok, _ = tunnel_mod.ensure_installed(cfg)
+        path = tunnel_mod.cloudflared_path(cfg)
+        self.assertTrue(ok)
+        with open(path, "rb") as handle:
+            self.assertEqual(handle.read(), b"fake-cloudflared")
+        self.assertTrue(os.access(path, os.X_OK))
 
 
 if __name__ == "__main__":

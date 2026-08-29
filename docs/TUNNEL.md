@@ -12,7 +12,7 @@
 1. ล็อกอิน https://dash.cloudflare.com → คลิก **Zero Trust** (เมนูซ้าย)
 2. **Networks → Tunnels** → **Create a tunnel**
 3. ตั้งชื่อ (เช่น `home`) → เลือก **Cloudflare-managed (แนะนำ)** → ต่อไป
-4. หน้า "Install and run a connector": เลือก **Windows** → จะเห็นคำสั่งแบบ:
+4. หน้า "Install and run a connector": เลือก **Windows** หรือ **macOS** → จะเห็นคำสั่งที่ลงท้ายด้วย token เช่น:
    ```
    cloudflared service install eyJhIjoi...
    ```
@@ -136,4 +136,4 @@
 
 ---
 
-*อัปเดต: v2.2.0 — ดูประวัติเต็มใน [CHANGELOG](../CHANGELOG.md)*
+*อัปเดต: v2.6.0 — ดูประวัติเต็มใน [CHANGELOG](../CHANGELOG.md)*

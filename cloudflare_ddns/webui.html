@@ -498,7 +498,7 @@ __LOGIN__
 
   <section class="panel">
     <div class="panel-head">
-      <h2>Windows Service</h2>
+      <h2>Background Service</h2>
       <p id="svc-ctx">…</p>
     </div>
     <div class="tg-row">
@@ -514,7 +514,7 @@ __LOGIN__
       <ul style="margin:8px 0 0;padding-left:20px">
         <li><span data-i18n="html.054">ต้องมีสิทธิ์ admin — ถ้าหน้าเว็บนี้รันเป็น service อยู่แล้ว (เปิดเองหลัง boot) การติดตั้ง/ถอน/หยุดทำไม่ได้จากเว็บ (จะตัดการเชื่อมต่อตัวเอง) — ใช้ install.bat / uninstall.bat แทน ส่วน Restart ใช้ได้เสมอ (เว็บหลุด ~10-15 วิ แล้วกลับมา)</span></li>
         <li><span data-i18n="html.055">รันแบบ standalone (คำสั่ง webui / เปิด exe เปล่า ๆ) ต้องเปิดด้วยสิทธิ์ admin ถึงจะติดตั้ง/ควบคุม service ได้</span></li>
-        <li><span data-i18n="html.056">ถอนการติดตั้งไม่ลบ config/state/ข้อมูล — แค่เอา service ออกจาก Windows</span></li>
+        <li><span data-i18n="html.056">ถอนการติดตั้งไม่ลบ config/state/ข้อมูล — แค่เอา service ออกจากระบบ</span></li>
       </ul>
     </details>
   </section>
@@ -674,7 +674,7 @@ __LOGIN__
       <textarea id="tunnel_token" rows="3" class="mono" spellcheck="false" autocomplete="off" placeholder="eyJhIjoi..."></textarea>
     </label>
     <div class="grid2">
-      <label class="field"><span data-i18n="html.105">ที่อยู่ cloudflared.exe (เว้นว่าง = ดาวน์โหลดข้าง exe อัตโนมัติ)</span>
+      <label class="field"><span data-i18n="html.105">ที่อยู่ cloudflared (เว้นว่าง = ดาวน์โหลดให้ตรงระบบอัตโนมัติ)</span>
         <input id="cloudflared_path" type="text" class="mono" autocomplete="off" placeholder="(อัตโนมัติ)">
       </label>
       <label class="field" title="quic = เร็วสุด แต่ ISP บางรายบล็อก UDP 443 → tunnel หลุด; http2 = เสถียรกว่าเมื่อถูกบล็อก"><span data-i18n="html.119">โปรโตคอลเชื่อม Cloudflare</span>

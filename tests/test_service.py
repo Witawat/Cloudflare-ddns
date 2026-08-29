@@ -1,12 +1,16 @@
 """เทสต์ service: กันรันซ้ำแจ้ง SCM หยุด + รอ async tunnel thread ก่อนหยุด"""
 
 import sys
+import os
+import plistlib
+import tempfile
 import unittest
 from unittest import mock
 
 from cloudflare_ddns import service as service_mod
 
 
+@unittest.skipUnless(os.name == "nt", "เทสต์ Windows Service")
 class ServiceInstanceLockTest(unittest.TestCase):
     """instance lock ชน -> แจ้ง SCM STOPPED + ไม่เริ่ม loop"""
 
@@ -38,6 +42,7 @@ class ServiceInstanceLockTest(unittest.TestCase):
         self.assertIn(1, status_calls)  # SERVICE_STOPPED รายงานแล้ว
 
 
+@unittest.skipUnless(os.name == "nt", "เทสต์ Windows Service")
 class ServiceTunnelJoinTest(unittest.TestCase):
     """หยุด service -> ต้องรอ async tunnel thread (join) ก่อน stop tunnel"""
 
@@ -127,6 +132,59 @@ class ServiceTunnelJoinTest(unittest.TestCase):
                 with self.assertRaises(KeyboardInterrupt):
                     inst2.SvcDoRun()
         self.assertEqual(order, ["join", "stop"])
+
+
+class LaunchdServiceTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.config_path = os.path.join(self.tmp.name, "config.ini")
+        self.plist_path = os.path.join(self.tmp.name, "LaunchAgents", "service.plist")
+
+    def test_install_เขียนplistพร้อมconfigและlog(self):
+        with mock.patch.object(service_mod, "_launchd_plist_path", return_value=self.plist_path):
+            message = service_mod._install_launchd_service(self.config_path)
+        self.assertIn("LaunchAgent", message)
+        with open(self.plist_path, "rb") as handle:
+            data = plistlib.load(handle)
+        self.assertEqual(data["Label"], service_mod.LAUNCHD_LABEL)
+        self.assertTrue(data["RunAtLoad"])
+        self.assertTrue(data["KeepAlive"])
+        self.assertIn(self.config_path, data["ProgramArguments"])
+        self.assertEqual(data["EnvironmentVariables"]["CFDDNS_RUNNING_AS_SERVICE"], "1")
+        self.assertTrue(data["StandardErrorPath"].endswith("launchd.stderr.log"))
+
+    def test_status_อ่านrunningและpidจากlaunchctl(self):
+        os.makedirs(os.path.dirname(self.plist_path), exist_ok=True)
+        with open(self.plist_path, "w", encoding="utf-8") as handle:
+            handle.write("plist")
+        result = mock.Mock(returncode=0, stdout="state = running\n\tpid = 1234\n", stderr="")
+        with mock.patch.object(service_mod, "_launchd_plist_path", return_value=self.plist_path), \
+                mock.patch.object(service_mod, "_launchctl", return_value=result):
+            status = service_mod._launchd_service_status()
+        self.assertEqual(status["state"], "running")
+        self.assertEqual(status["pid"], 1234)
+        self.assertEqual(status["kind"], "launchd")
+
+    def test_run_service_เริ่มและหยุดwebuiพร้อมปลดlock(self):
+        from cloudflare_ddns import instance_lock
+
+        cfg = mock.Mock(log_dir=os.path.join(self.tmp.name, "logs"), detail_log=False)
+        cfg.tunnel_enabled = False
+        web_ui = mock.Mock(port=8123)
+        with mock.patch.object(service_mod.config_mod, "Config", return_value=cfg), \
+                mock.patch.object(service_mod, "setup_file_logging"), \
+                mock.patch.object(service_mod.signal, "signal"), \
+                mock.patch.object(instance_lock, "acquire_instance_lock", return_value=True), \
+                mock.patch.object(instance_lock, "release_instance_lock") as release, \
+                mock.patch("cloudflare_ddns.webui.WebUI", return_value=web_ui), \
+                mock.patch.object(service_mod.ddns, "run_forever") as run_forever:
+            result = service_mod._run_posix_service(self.config_path)
+        self.assertEqual(result, 0)
+        web_ui.start.assert_called_once()
+        web_ui.stop.assert_called_once()
+        run_forever.assert_called_once()
+        release.assert_called_once()
 
 
 if __name__ == "__main__":

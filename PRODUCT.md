@@ -10,7 +10,7 @@ product
 
 ## Product Purpose
 
-หน้าเดียวที่บอกสถานะของ Cloudflare DDNS ทั้งหมด: IP สาธารณะล่าสุดของแต่ละ record, เวลารอบล่าสุด, สถานะการแจ้งเตือน Telegram, สถิติการเรียก Cloudflare API, และประวัติการอัปเดต พร้อมฟอร์มตั้งค่า (token, interval, Telegram, records, Tunnel) ที่บันทึกได้เองโดยปลอดภัย (ตรวจสอบ config ก่อนเขียน) โดยไม่ต้องแตะไฟล์ config.ini ตรง ๆ — รวมถึงควบคุม Windows Service (ติดตั้ง/เริ่ม/หยุด/Restart/ถอน, เท่าที่สิทธิ์อนุญาต) และเช็คเวอร์ชันใหม่ได้ในหน้าเดียว
+หน้าเดียวที่บอกสถานะของ Cloudflare DDNS ทั้งหมด: IP สาธารณะล่าสุดของแต่ละ record, เวลารอบล่าสุด, สถานะการแจ้งเตือน Telegram, สถิติการเรียก Cloudflare API, และประวัติการอัปเดต พร้อมฟอร์มตั้งค่า (token, interval, Telegram, records, Tunnel) ที่บันทึกได้เองโดยปลอดภัย (ตรวจสอบ config ก่อนเขียน) โดยไม่ต้องแตะไฟล์ config.ini ตรง ๆ — รวมถึงควบคุม Windows Service หรือ macOS LaunchAgent (ติดตั้ง/เริ่ม/หยุด/Restart/ถอน, เท่าที่สิทธิ์อนุญาต) และเช็คเวอร์ชันใหม่ได้ในหน้าเดียว
 
 ปลอดภัยพอเปิดจาก LAN: รหัสผ่านหน้าเว็บเก็บเป็น hash (กัน config/cookie รั่วได้รหัสจริง) · กันสุ่มรหัส (ผิด 5 ครั้ง → ล็อก) · กัน CSRF (ตรวจ Origin ทุก POST) · security headers — และถ้าลืมรหัส กู้ได้เอง 3 ทาง (ฟอร์ม / คำสั่ง `reset-password` / Telegram opt-in) โดยไม่ต้องแก้ไฟล์
 

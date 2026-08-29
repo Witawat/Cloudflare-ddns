@@ -1,15 +1,15 @@
 # Cloudflare DDNS Updater
 
-ตรวจหา IP สาธารณะของเครื่อง (IPv4 + IPv6) แล้วอัปเดต DNS record บน Cloudflare **โดยอัตโนมัติเมื่อ IP เปลี่ยน** รันเป็น **Windows Service จริง** เริ่มเองตอน boot — พร้อม **Web UI** สำหรับดูสถานะ/ตั้งค่า/สแกนพอร์ต และรองรับ **Cloudflare Tunnel** (ไม่ต้องเปิดพอร์ต)
+ตรวจหา IP สาธารณะของเครื่อง (IPv4 + IPv6) แล้วอัปเดต DNS record บน Cloudflare **โดยอัตโนมัติเมื่อ IP เปลี่ยน** รันเบื้องหลังด้วย **Windows Service หรือ macOS LaunchAgent** — พร้อม **Web UI** สำหรับดูสถานะ/ตั้งค่า/สแกนพอร์ต และรองรับ **Cloudflare Tunnel** (ไม่ต้องเปิดพอร์ต)
 
-> 📖 เอกสารอื่น: [คู่มือใช้งานละเอียด](docs/USAGE.md) · [เริ่มต้นใช้งาน/หา Token](docs/GETTING-STARTED.md) · **[คู่มือ Cloudflare Tunnel](docs/TUNNEL.md)** · [แก้ปัญหาทั่วไป](docs/TROUBLESHOOTING.md) · [ประวัติเวอร์ชัน](CHANGELOG.md)
+> 📖 เอกสารอื่น: [คู่มือใช้งานละเอียด](docs/USAGE.md) · [ใช้งานบน macOS](docs/MACOS.md) · [เริ่มต้นใช้งาน/หา Token](docs/GETTING-STARTED.md) · **[คู่มือ Cloudflare Tunnel](docs/TUNNEL.md)** · [แก้ปัญหาทั่วไป](docs/TROUBLESHOOTING.md) · [ประวัติเวอร์ชัน](CHANGELOG.md)
 
 ## ความสามารถหลัก
 
 | ฟีเจอร์ | รายละเอียด |
 |---|---|
 | **DDNS อัตโนมัติ** | ตรวจ IP IPv4/IPv6 (หลาย provider สำรอง) → อัปเดต A/AAAA เฉพาะเมื่อ IP เปลี่ยน + สร้าง record ให้อัตโนมัติถ้ายังไม่มี |
-| **Windows Service** | รันจริงตอน boot, log รายวัน, หยุด/เริ่มเร็ว, แก้ config ได้ระหว่างรัน (มีผลรอบถัดไป) + **ควบคุม/ติดตั้ง/ถอนจาก Web UI** ได้ (ต้อง admin) |
+| **Background Service** | Windows Service เริ่มตอน boot หรือ macOS LaunchAgent เริ่มเมื่อ login, log รายวัน, ควบคุม/ติดตั้ง/ถอนจาก Web UI ได้ |
 | **Web UI** | สถานะสด, wizard ตั้งค่าครั้งแรก 5 ขั้น, ฟอร์มตั้งค่า + โหมดแก้ไฟล์ตรง, ประวัติ, ดู log, สแกนพอร์ต, ปุ่มควบคุม Telegram/Tunnel — ใช้บนมือถือได้ |
 | **i18n ไทย/อังกฤษ** | ปุ่มสลับภาษา TH/EN ที่หัวหน้าเว็บ (จำภาษาด้วย localStorage+cookie) · auto-detect จากเบราว์เซอร์ · วันที่/เวลา locale ตามภาษา · **ข้อความ Telegram** แปลตาม config `language` (log ไฟล์คงไทย) |
 | **แจ้งเตือน Telegram** | ทุกข้อความระบุชื่อเครื่อง + เวลา · IP เปลี่ยนรวมเป็นข้อความเดียว · tunnel เริ่ม/หยุด/ดาวน์โหลด · กันสแปม error 10 นาที · สรุปทุกรอบ (ไม่บังคับ) + สรุปรายวัน — คิว retry + จัดการในเว็บ · **ควบคุมผ่านแชท**: `/status` `/ip` `/run` `/update` `/tunnel` `/log` `/restart` + กู้รหัสผ่าน |
@@ -19,18 +19,18 @@
 | **ความปลอดภัย Web UI** | รหัสผ่านหน้าเว็บเก็บเป็น **hash** (ไม่มีรหัสจริงใน config/cookie) + กันสุ่มรหัส (5 ครั้ง → ล็อก) + กัน CSRF (ตรวจ Origin) + security headers — **กู้รหัสได้ 3 ทาง** (ฟอร์ม / `reset-password` / Telegram opt-in) |
 | **Cloudflare Tunnel** | เปิด cloudflared ตาม service, wizard 4 ขั้น, ผูก hostname อัตโนมัติ (ตั้ง DNS + config ให้) — ดู/**แก้ไข**/ลบ hostname ได้ในเว็บ + **options ครบชุด** (ข้ามตรวจ SSL / host header / timeout / keep-alive / HTTP2 / Happy Eyeballs) + **ดู log tunnel + กรองเฉพาะ error** + **private hostname** (บริการใน LAN) — คู่มือละเอียด ([docs/TUNNEL.md](docs/TUNNEL.md)) |
 | **ตรวจ NAT** | รู้ว่า IP อยู่หลัง CGNAT หรือไม่ (STUN) — เตือนถ้า DDNS ใช้ไม่ได้ |
-| **EXE ไฟล์เดียว** | build ด้วย PyInstaller — ไม่ต้องติดตั้ง Python |
+| **ไฟล์รันเดี่ยว** | build ด้วย PyInstaller เป็น `.exe` บน Windows หรือ executable บน macOS — ไม่ต้องติดตั้ง Python ที่เครื่องปลายทาง |
 
 ## ความต้องการระบบ
 
 | รายการ | ข้อกำหนด |
 |---|---|
-| **ระบบปฏิบัติการ** | **Windows 10 / 11 (x64) — รองรับเต็ม** · Windows 8.1 ใช้งานได้ · Windows 7 ไม่รองรับ (Python 3.9+ ตัดการสนับสนุน) · ARM Windows ใช้ได้ผ่าน x64 emulation |
+| **ระบบปฏิบัติการ** | **Windows 10/11** · **macOS 12+ (Apple Silicon และ Intel)** · Windows 8.1 ใช้งานได้ · Windows 7 ไม่รองรับ |
 | **เบราว์เซอร์** (Web UI) | Chrome / Edge 111+ หรือ Firefox รุ่นใหม่ (หน้าเว็บใช้ CSS สมัยใหม่ `oklch`/`color-mix` — เบราว์เซอร์เก่าจะสีเพี้ยน) |
-| **สิทธิ์** | ติดตั้ง service / ควบคุมปุ่ม service ต้อง admin |
+| **สิทธิ์** | Windows Service ต้อง admin · macOS LaunchAgent ใช้สิทธิ์ user ปกติ |
 | **อินเทอร์เน็ต** | ต้องออก HTTPS ไปยัง provider ตรวจ IP และ api.cloudflare.com ได้ |
 
-> โปรเจกต์นี้ **ออกแบบมาสำหรับ Windows เท่านั้น** (Windows Service + pywin32 + cloudflared Windows build) — ยังไม่มี build/สนับสนุน Linux หรือ macOS
+> Linux ยังไม่รองรับการติดตั้ง service อัตโนมัติ ส่วนแกน DDNS อาจรัน foreground ได้
 
 ## เริ่มต้นเร็ว (3 ขั้นตอน)
 
@@ -42,6 +42,18 @@ install.bat                              REM 3. ติดตั้ง service (�
 ```
 
 เสร็จแล้วเปิด `http://127.0.0.1:8123` ดูสถานะได้เลย (service เปิด Web UI ให้เอง — ครั้งแรก wizard จะขึ้นให้ตั้งค่า)
+
+### เริ่มต้นบน macOS
+
+```bash
+python3 -m cloudflare_ddns.main setup
+python3 -m cloudflare_ddns.main dry-run
+./install-macos.sh
+```
+
+LaunchAgent จะเริ่มอัตโนมัติเมื่อ user login และเปิด Web UI ที่ `http://127.0.0.1:8123` ดูรายละเอียดที่ [docs/MACOS.md](docs/MACOS.md)
+
+โหมด source บน macOS ไม่มี runtime dependency เพิ่มเติม (`pywin32` จะติดตั้งเฉพาะ Windows)
 
 ## ใช้งานแบบ EXE (ไม่ต้องติดตั้ง Python)
 
@@ -61,14 +73,14 @@ install.bat                   REM ติดตั้ง service (ใช้ exe �
 | `... setup` | ตั้งค่าครั้งแรก (wizard ถามทีละขั้น) |
 | `... run` | รันแบบ foreground (ดู log จริง ๆ ตอนเทสต์) |
 | `... dry-run` | ตรวจรอบเดียว ไม่แก้ record จริง |
-| `... install` / `remove` | ติดตั้ง/ลบ Windows Service (ต้อง admin) |
+| `... install` / `remove` | ติดตั้ง/ลบ Windows Service หรือ macOS LaunchAgent |
 | `... start` / `stop` / `restart` | ควบคุม service |
 | `... status` | สถานะ service + IP ล่าสุด + tunnel |
 | `... webui` | เปิด Web UI ที่ http://127.0.0.1:8123 |
 | `... notify-test` | ส่งข้อความทดสอบ Telegram |
 | `... reset-password` | ตั้ง/ลบรหัสผ่านหน้าเว็บใหม่ (ใช้เมื่อลืมรหัส — ใช้ได้แม้ config ไม่ครบ) |
 
-`install.bat` / `uninstall.bat` ครอบคำสั่ง install/remove (ขอสิทธิ์ admin ให้อัตโนมัติ)
+Windows ใช้ `install.bat` / `uninstall.bat`; macOS ใช้ `install-macos.sh` / `uninstall-macos.sh`
 
 ## Cloudflare Tunnel (ทางเลือกแทน/เสริม DDNS)
 
@@ -78,7 +90,7 @@ install.bat                   REM ติดตั้ง service (ใช้ exe �
 [cloudflare]
 tunnel_enabled = true
 tunnel_token = eyJhIjoi...        ; จาก Zero Trust > Networks > Tunnels
-cloudflared_path =                ; เว้นว่าง = ดาวน์โหลด cloudflared.exe ข้าง exe อัตโนมัติ
+cloudflared_path =                ; เว้นว่าง = ดาวน์โหลด cloudflared ให้ตรง OS/CPU อัตโนมัติ
 tunnel_protocol = auto            ; auto | quic | http2 — ถ้า ISP บล็อก UDP ให้ใช้ http2 (TCP 443)
 ```
 
@@ -128,7 +140,7 @@ tunnel_protocol = auto            ; auto | quic | http2 — ถ้า ISP บล
 
 - **สถานะ IP**: IP ล่าสุดต่อ record + เวลาอัปเดต + กดคัดลอกชื่อ/IP ได้ + ตรวจ NAT (STUN) + ตรวจ IP สด + **สถิติการเรียก Cloudflare API** (จำนวน/error/rate limit)
 - **แถบสถานะ**หัวหน้า: พร้อมใช้งาน / ตั้งค่าไม่ครบ / มีปัญหา + **เวอร์ชันโปรแกรม** + แจ้งเตือนเมื่อมีเวอร์ชันใหม่ (GitHub — เช็คตอนเปิดหน้าเว็บ + ทุก 1 ชม.ตอนโปรแกรม/service รัน แจ้ง Telegram ให้)
-- **Windows Service**: สถานะ service + เริ่ม/หยุด/Restart/ติดตั้ง/ถอนการติดตั้ง (ต้อง admin — หยุด/ติดตั้ง/ถอนทำไม่ได้ถ้าเว็บรันใน service)
+- **Background Service**: สถานะ + เริ่ม/หยุด/Restart/ติดตั้ง/ถอน Windows Service หรือ macOS LaunchAgent
 - **สถานะ IP**: ปุ่ม "ตรวจ DDNS ตอนนี้" — รันรอบ DDNS ทันที (ไม่รอรอบถัดไป)
 - **Telegram**: สถานะ + คิว + ส่งข้อความทดสอบ + ดูคิว/ลองส่งใหม่/ล้างคิว
 - **Cloudflare Tunnel**: สถานะ (รวมเวอร์ชัน cloudflared) + wizard ตั้งค่า + ดู hostname ที่ผูกแล้ว (**แก้ไข**/ลบ) + เริ่ม/หยุด/ดาวน์โหลด cloudflared + เพิ่ม hostname ด่วน + ซิงค์จาก Cloudflare + **ดู log tunnel (เฉพาะ error ได้)** + **ปุ่มเริ่ม/หยุด disabled ตามสถานะ**
