@@ -497,6 +497,31 @@ def _build_start_message(cfg: "config_mod.Config", lang: str = "th") -> str:
     return "\n".join(lines)
 
 
+def _history_is_today(time_str: Optional[str], today: str) -> bool:
+    """ตรวจว่าค่าเวลาใน history ตรงกับวันที่ local หรือไม่.
+
+    ประวัติเก็บเวลาเป็น UTC (isoformat) แต่ `today` เป็นวันที่ local — ต้องแปลงเป็น
+    เวลาท้องถิ่นก่อนเทียบ ไม่งั้นการอัปเดตช่วงเที่ยงคืน-เช้าจะถูกนับเป็นวันก่อนหน้า.
+
+    Args:
+        time_str: ค่า "time" ในรายการ history (isoformat UTC หรือว่าง).
+        today: วันที่ local รูปแบบ YYYY-MM-DD.
+
+    Returns:
+        bool: True ถ้ารายการนั้นเกิดขึ้นในวันที่ local ตรงกับ `today`.
+    """
+    if not time_str:
+        return False
+    try:
+        dt = datetime.fromisoformat(time_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        local = dt.astimezone().date()
+        return local == datetime.strptime(today, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return (time_str or "").startswith(today)
+
+
 def _send_daily_report(engine: DDNSEngine, cfg: "config_mod.Config", notify: Any) -> None:
     """ส่งสรุปสถานะประจำวันทาง Telegram (วันละครั้ง กันซ้ำด้วยวันที่ใน state).
 
@@ -519,7 +544,7 @@ def _send_daily_report(engine: DDNSEngine, cfg: "config_mod.Config", notify: Any
     records = engine._state.get("records", {})
     records_time = engine._state.get("records_time", {})
     history = engine._state.get("history", [])
-    today_count = sum(1 for h in history if (h.get("time") or "").startswith(today))
+    today_count = sum(1 for h in history if _history_is_today(h.get("time"), today))
 
     lines = [
         i18n.t(lang, "ddns.daily.title"),

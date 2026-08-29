@@ -274,5 +274,27 @@ class TunnelAutoRestartTest(unittest.TestCase):
             self.assertEqual(mgr.start.call_count, 2)
 
 
+class DailyReportTimeTest(unittest.TestCase):
+    """ตรวจว่า _history_is_today เทียบเวลาท้องถิ่น (เดิมนับ UTC ผิด)."""
+
+    def test_UTC_เช้าตรู่_นับเป็นวันท้องถิ่น_ถัดไป(self):
+        # อัปเดต local 05:30 ของวันที่ 29 (UTC+7) -> เก็บเป็น UTC 28 22:30
+        # ต้องนับเป็นวันที่ 29 (ไม่ใช่ 28)
+        self.assertTrue(ddns._history_is_today("2026-08-28T22:30:00+00:00", "2026-08-29"))
+        self.assertFalse(ddns._history_is_today("2026-08-28T22:30:00+00:00", "2026-08-28"))
+
+    def test_UTC_กลางวัน_นับตรงวัน(self):
+        self.assertTrue(ddns._history_is_today("2026-08-29T03:30:00+00:00", "2026-08-29"))
+
+    def test_cut_cases(self):
+        self.assertFalse(ddns._history_is_today("", "2026-08-29"))
+        self.assertTrue(ddns._history_is_today("2026-08-29T03:30:00", "2026-08-29"))  # naive ถือ UTC
+
+    def test_malformed_matches_only_raw_prefix(self):
+        # ค่าที่ parse ไม่ได้ -> เทียบ prefix ตรง (เหมือนของเดิม) ไม่พัง
+        self.assertTrue(ddns._history_is_today("2026-08-29", "2026-08-29"))
+        self.assertFalse(ddns._history_is_today("garbage", "2026-08-29"))
+
+
 if __name__ == "__main__":
     unittest.main()
