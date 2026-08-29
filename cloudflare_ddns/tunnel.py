@@ -6,7 +6,11 @@
 
 import logging
 import os
+import platform
+import shutil
+import signal
 import subprocess
+import tarfile
 import time
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
@@ -16,10 +20,7 @@ from . import notifier
 
 log = logging.getLogger("cloudflare-ddns")
 
-DOWNLOAD_URL = (
-    "https://github.com/cloudflare/cloudflared/releases/latest/download/"
-    "cloudflared-windows-amd64.exe"
-)
+DOWNLOAD_BASE_URL = "https://github.com/cloudflare/cloudflared/releases/latest/download/"
 
 PID_FILE = "tunnel.pid"
 TUNNEL_LOG = "tunnel.log"
@@ -110,9 +111,29 @@ def cloudflared_path(cfg: Optional["config_mod.Config"] = None) -> str:
     """
     if cfg and getattr(cfg, "cloudflared_path", "").strip():
         return cfg.cloudflared_path.strip()
+    filename = "cloudflared.exe" if os.name == "nt" else "cloudflared"
     if cfg and getattr(cfg, "path", None):
-        return os.path.join(config_mod.data_dir_for(cfg.path), "cloudflared.exe")
-    return os.path.join(config_mod.DEFAULT_DATA_DIR, "cloudflared.exe")
+        return os.path.join(config_mod.data_dir_for(cfg.path), filename)
+    return os.path.join(config_mod.DEFAULT_DATA_DIR, filename)
+
+
+def _download_asset():
+    """คืน (ชื่อ asset, เป็น tgz หรือไม่) สำหรับระบบปัจจุบัน."""
+    machine = platform.machine().lower()
+    if os.name == "nt":
+        arch = "386" if machine in ("x86", "i386", "i686") else "amd64"
+        return f"cloudflared-windows-{arch}.exe", False
+    if sys_platform() == "darwin":
+        arch = "arm64" if machine in ("arm64", "aarch64") else "amd64"
+        return f"cloudflared-darwin-{arch}.tgz", True
+    raise RuntimeError("ดาวน์โหลด cloudflared อัตโนมัติรองรับ Windows และ macOS เท่านั้น")
+
+
+def sys_platform():
+    """แยกไว้เพื่อให้ unit test mock แพลตฟอร์มได้ง่าย."""
+    import sys
+
+    return sys.platform
 
 
 def _pid_path(config_path: Optional[str] = None) -> str:
@@ -138,7 +159,7 @@ def is_installed(cfg: Optional["config_mod.Config"] = None) -> bool:
 
 
 def ensure_installed(cfg: Optional["config_mod.Config"] = None) -> Tuple[bool, str]:
-    """ดาวน์โหลด cloudflared.exe (Windows amd64) ถ้ายังไม่มี.
+    """ดาวน์โหลด cloudflared ให้ตรง OS/CPU ถ้ายังไม่มี. คืน (ok, message).
 
     Args:
         cfg: Config ที่อ่านแล้ว (ใช้หา path) — None = ใช้ค่า default
@@ -150,10 +171,13 @@ def ensure_installed(cfg: Optional["config_mod.Config"] = None) -> Tuple[bool, s
     if os.path.isfile(path):
         return True, f"มี cloudflared แล้ว ({path})"
     tmp = path + ".download"
+    extracted = path + ".extract"
     try:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        asset, is_archive = _download_asset()
         log.info("กำลังดาวน์โหลด cloudflared จาก GitHub...")
         request = urllib.request.Request(
-            DOWNLOAD_URL, headers={"User-Agent": config_mod.user_agent()}
+            DOWNLOAD_BASE_URL + asset, headers={"User-Agent": config_mod.user_agent()}
         )
         with urllib.request.urlopen(request, timeout=120) as response, open(tmp, "wb") as handle:
             while True:
@@ -161,14 +185,32 @@ def ensure_installed(cfg: Optional["config_mod.Config"] = None) -> Tuple[bool, s
                 if not chunk:
                     break
                 handle.write(chunk)
-        os.replace(tmp, path)
+        if is_archive:
+            with tarfile.open(tmp, "r:gz") as archive:
+                member = next(
+                    (item for item in archive.getmembers() if os.path.basename(item.name) == "cloudflared"),
+                    None,
+                )
+                if member is None or not member.isfile():
+                    raise OSError("ไม่พบไฟล์ cloudflared ใน archive")
+                source = archive.extractfile(member)
+                if source is None:
+                    raise OSError("อ่านไฟล์ cloudflared จาก archive ไม่ได้")
+                with source, open(extracted, "wb") as handle:
+                    shutil.copyfileobj(source, handle)
+            os.chmod(extracted, 0o755)
+            os.replace(extracted, path)
+            os.remove(tmp)
+        else:
+            os.replace(tmp, path)
         log.info("ดาวน์โหลด cloudflared สำเร็จ: %s", path)
         return True, f"ดาวน์โหลด cloudflared สำเร็จ ({path})"
     except Exception as exc:
         log.warning("ดาวน์โหลด cloudflared ไม่ได้: %s", exc)
         try:
-            if os.path.isfile(tmp):
-                os.remove(tmp)
+            for leftover in (tmp, extracted):
+                if os.path.isfile(leftover):
+                    os.remove(leftover)
         except OSError:
             pass
         return False, f"ดาวน์โหลด cloudflared ไม่ได้: {exc}"
@@ -198,23 +240,31 @@ def _pid_alive(pid: Optional[int]) -> bool:
 
 
 def _process_is_cloudflared(pid: int) -> bool:
-    """เช็คว่า pid นั้นเป็น cloudflared.exe จริงหรือไม่ (กัน kill ผิด process ตอน pid reuse).
+    """เช็คว่า pid นั้นเป็น cloudflared จริงหรือไม่ (กัน kill ผิด process ตอน pid reuse).
 
     Args:
         pid: process id ที่จะตรวจ
 
     Returns:
-        bool: True ถ้าเป็น cloudflared.exe (หรือตรวจไม่ได้ — ถือว่าใช่)
+        bool: True ถ้าเป็น cloudflared (หรือตรวจไม่ได้ — ถือว่าใช่)
     """
     try:
+        if os.name == "nt":
+            result = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                timeout=10,
+                text=True,
+            )
+            name = (result.stdout or "").strip().split(",")[0].strip('"').lower()
+            return name == "cloudflared.exe"
         result = subprocess.run(
-            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            ["ps", "-p", str(pid), "-o", "comm="],
             capture_output=True,
             timeout=10,
             text=True,
         )
-        name = (result.stdout or "").strip().split(",")[0].strip('"').lower()
-        return name == "cloudflared.exe"
+        return os.path.basename((result.stdout or "").strip()).lower() == "cloudflared"
     except Exception:
         return True  # ตรวจไม่ได้ -> ถือว่าใช่ (รักษาพฤติกรรมเดิม)
 
@@ -424,13 +474,16 @@ class TunnelManager:
         protocol = str(getattr(cfg, "tunnel_protocol", "") or "").strip().lower()
         if protocol in ("quic", "http2"):
             args.extend(["--protocol", protocol])
+        popen_kwargs = {
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+        }
+        if os.name == "nt":
+            popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        else:
+            popen_kwargs["start_new_session"] = True
         try:
-            self._proc = subprocess.Popen(
-                args,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
+            self._proc = subprocess.Popen(args, **popen_kwargs)
         except OSError as exc:
             return False, f"เริ่ม cloudflared ไม่ได้: {exc}"
         self._save_pid(self._proc.pid)
@@ -450,7 +503,7 @@ class TunnelManager:
         return True, f"เริ่ม tunnel แล้ว (pid {self._proc.pid})"
 
     def _find_stale_cloudflared(self, cfg: Optional["config_mod.Config"] = None) -> List[int]:
-        """หา pid ของ cloudflared.exe ที่ค้างอยู่ (pid ไฟล์ + tasklist).
+        """หา pid ของ cloudflared ที่ค้างอยู่ (pid ไฟล์ + process list).
 
         Args:
             cfg: Config ที่อ่านแล้ว (ไม่ค่อยใช้ — กัน forward compat)
@@ -463,7 +516,10 @@ class TunnelManager:
         pid = self._load_pid()
         if pid and _pid_alive(pid) and _process_is_cloudflared(pid):
             found.append(pid)
-        # 2. tasklist หา cloudflared.exe ที่รันอยู่ (กัน pid reuse/ซ่อน)
+        # 2. Windows รุ่นเดิมค้นทุก process; macOS จำกัดเฉพาะ pid ที่โปรแกรมบันทึกไว้
+        # เพื่อไม่ฆ่า cloudflared instance อื่นของผู้ใช้โดยไม่ตั้งใจ
+        if os.name != "nt":
+            return found
         try:
             result = subprocess.run(
                 ["tasklist", "/FI", "IMAGENAME eq cloudflared.exe", "/FO", "CSV", "/NH"],
@@ -482,19 +538,27 @@ class TunnelManager:
         return found
 
     def _kill_pid(self, pid: int) -> None:
-        """taskkill ตาม pid (ไม่ตรวจว่าเป็น cloudflared ซ้ำ — เรียกจาก _find_stale เท่านั้น).
+        """หยุด process ตาม pid (เรียกหลังตรวจว่าเป็น cloudflared แล้วเท่านั้น).
 
         Args:
             pid: process id ที่จะ kill
         """
         try:
-            subprocess.run(
-                ["taskkill", "/PID", str(pid), "/F"],
-                capture_output=True,
-                timeout=10,
-            )
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/F"],
+                    capture_output=True,
+                    timeout=10,
+                )
+            else:
+                os.kill(pid, signal.SIGTERM)
+                deadline = time.time() + 3
+                while _pid_alive(pid) and time.time() < deadline:
+                    time.sleep(0.1)
+                if _pid_alive(pid):
+                    os.kill(pid, signal.SIGKILL)
         except Exception as exc:
-            log.warning("taskkill pid %s ไม่ได้: %s", pid, exc)
+            log.warning("หยุด pid %s ไม่ได้: %s", pid, exc)
 
     def stop(self, wait: bool = True) -> Tuple[bool, str]:
         """หยุด cloudflared.
@@ -521,15 +585,8 @@ class TunnelManager:
                     pass
         # ฆ่า process ที่เราสร้างเองถ้ายังไม่ตาย (self._proc.pid — เชื่อถือได้ว่าเป็น cloudflared)
         if proc_pid and _pid_alive(proc_pid):
-            try:
-                subprocess.run(
-                    ["taskkill", "/PID", str(proc_pid), "/F"],
-                    capture_output=True,
-                    timeout=10,
-                )
-                stopped = True
-            except Exception as exc:
-                log.warning("taskkill cloudflared (pid %s) ไม่ได้: %s", proc_pid, exc)
+            self._kill_pid(proc_pid)
+            stopped = True
         if self._proc is not None:
             self._proc = None
         # pid จากไฟล์ (รอบก่อน/process อื่น) — ตรวจก่อน kill กัน pid reuse ผิดตัว
@@ -540,15 +597,8 @@ class TunnelManager:
                     self._pid,
                 )
             else:
-                try:
-                    subprocess.run(
-                        ["taskkill", "/PID", str(self._pid), "/F"],
-                        capture_output=True,
-                        timeout=10,
-                    )
-                    stopped = True
-                except Exception as exc:
-                    log.warning("taskkill cloudflared (pid %s) ไม่ได้: %s", self._pid, exc)
+                self._kill_pid(self._pid)
+                stopped = True
         if wait and stopped:
             # รอให้ process ตายจริง (กัน service restart ไวเกิน -> เก่ายังค้าง)
             deadline = time.time() + 6

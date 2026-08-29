@@ -76,7 +76,7 @@ def _is_admin() -> bool:
 
 
 def _in_service() -> bool:
-    """webui นี้รันใน Windows Service หรือไม่ (service.py เซ็ต env ตอน SvcDoRun).
+    """webui นี้รันใน background service หรือไม่ (service เซ็ต env ตอน SvcDoRun/_run_posix_service).
 
     Returns:
         bool: True ถ้ารันใน service
@@ -84,6 +84,20 @@ def _in_service() -> bool:
     import os
 
     return os.environ.get("CFDDNS_RUNNING_AS_SERVICE") == "1"
+
+
+def _can_control_service() -> bool:
+    """webui นี้ควบคุม service ได้หรือไม่ (ขึ้นกับ platform — macOS LaunchAgent ไม่ต้อง admin).
+
+    Returns:
+        bool: True ถ้าควบคุม service ได้
+    """
+    try:
+        from . import service as service_mod
+
+        return service_mod.can_control_service()
+    except Exception:
+        return False
 
 
 def _get_tunnel_mgr(config_path: Optional[str] = None) -> Any:
@@ -635,11 +649,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
             try:
                 from . import service as service_mod
 
-                _svc = service_mod.service_status()
+                _svc = service_mod.service_status(self.server.config_path)
                 status["service"] = {
                     "installed": _svc.get("installed", False),
                     "state": _svc.get("state", ""),
                     "running": _svc.get("state") == "running",
+                    "kind": _svc.get("kind", service_mod.service_kind()),
                 }
             except Exception:
                 status["service"] = {"installed": False, "state": "", "running": False}
@@ -647,6 +662,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
             status["runtime"] = {
                 "in_service": _in_service(),
                 "admin": _is_admin(),
+                "can_control_service": _can_control_service(),
+                "platform": sys.platform,
             }
             try:
                 from . import cloudflare_api as _cf_api
@@ -1292,7 +1309,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
         if self.path in ("/service/install", "/service/restart", "/service/uninstall", "/service/start", "/service/stop"):
             from . import service as service_mod
 
-            if not _is_admin():
+            if not _can_control_service():
                 return self._send_json(
                     400,
                     {
@@ -1312,15 +1329,15 @@ class WebUIHandler(BaseHTTPRequestHandler):
                             ),
                         },
                     )
-                if service_mod.service_status().get("installed"):
+                if service_mod.service_status(self.server.config_path).get("installed"):
                     return self._send_json(400, {"ok": False, "message": self._t("service.already_installed")})
                 try:
-                    message = service_mod.install_service()
+                    message = service_mod.install_service(self.server.config_path)
                 except Exception as exc:
                     return self._send_json(400, {"ok": False, "message": self._t("service.install_fail", exc=exc)})
                 return self._send_json(200, {"ok": True, "message": self._t("service.install_ok", message=message)})
             if self.path == "/service/uninstall":
-                svc = service_mod.service_status()
+                svc = service_mod.service_status(self.server.config_path)
                 if not svc.get("installed"):
                     return self._send_json(400, {"ok": False, "message": self._t("service.not_installed")})
                 if svc.get("state") in ("running", "starting", "stopping"):
@@ -1336,23 +1353,23 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         },
                     )
                 try:
-                    message = service_mod.remove_service()
+                    message = service_mod.remove_service(self.server.config_path)
                 except Exception as exc:
                     return self._send_json(400, {"ok": False, "message": self._t("service.remove_fail", exc=exc)})
                 return self._send_json(200, {"ok": True, "message": message})
             if self.path == "/service/start":
-                svc = service_mod.service_status()
+                svc = service_mod.service_status(self.server.config_path)
                 if not svc.get("installed"):
                     return self._send_json(400, {"ok": False, "message": self._t("service.not_installed_start")})
                 if svc.get("state") in ("running", "starting"):
                     return self._send_json(400, {"ok": False, "message": self._t("service.already_running")})
                 try:
-                    message = service_mod.start_service()
+                    message = service_mod.start_service(self.server.config_path)
                 except Exception as exc:
                     return self._send_json(400, {"ok": False, "message": self._t("service.start_fail", exc=exc)})
                 return self._send_json(200, {"ok": True, "message": message})
             if self.path == "/service/stop":
-                svc = service_mod.service_status()
+                svc = service_mod.service_status(self.server.config_path)
                 if not svc.get("installed"):
                     return self._send_json(400, {"ok": False, "message": self._t("service.not_installed")})
                 if _in_service():
@@ -1367,7 +1384,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         },
                     )
                 try:
-                    message = service_mod.stop_service()
+                    message = service_mod.stop_service(self.server.config_path)
                 except Exception as exc:
                     return self._send_json(400, {"ok": False, "message": self._t("service.stop_fail", exc=exc)})
                 return self._send_json(200, {"ok": True, "message": message})
@@ -1379,18 +1396,21 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
                 _t.sleep(2)
                 try:
-                    sc = r"C:\Windows\System32\sc.exe"
-                    cmd = (
-                        f'"{sc}" stop {service_mod.SERVICE_NAME}'
-                        f' & ping -n 3 127.0.0.1 >nul'
-                        f' & "{sc}" start {service_mod.SERVICE_NAME}'
-                    )
-                    _sp.run(["cmd", "/c", cmd], capture_output=True, timeout=60)
-                    log.info("restart service สำเร็จ (ผ่าน cmd/sc)")
+                    if os.name == "nt":
+                        sc = r"C:\Windows\System32\sc.exe"
+                        cmd = (
+                            f'"{sc}" stop {service_mod.SERVICE_NAME}'
+                            f' & ping -n 3 127.0.0.1 >nul'
+                            f' & "{sc}" start {service_mod.SERVICE_NAME}'
+                        )
+                        _sp.run(["cmd", "/c", cmd], capture_output=True, timeout=60)
+                    else:
+                        service_mod.restart_service(self.server.config_path)
+                    log.info("restart service สำเร็จ")
                 except Exception as exc:
                     log.warning("restart service ไม่ได้: %s", exc)
 
-            if not service_mod.service_status().get("installed"):
+            if not service_mod.service_status(self.server.config_path).get("installed"):
                 return self._send_json(400, {"ok": False, "message": self._t("service.not_installed_start")})
             threading.Thread(target=_do_restart, daemon=True).start()
             return self._send_json(200, {"ok": True, "message": self._t("service.restart_started")})
@@ -1416,7 +1436,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
         if self.path == "/open-data-folder":
             import os
 
-            path = config_mod.DEFAULT_DATA_DIR
+            path = config_mod.data_dir_for(self.server.config_path)
             if _in_service():
                 # รันใน service (SYSTEM) — startfile เปิด explorer ใน session 0 ที่ผู้ใช้มองไม่เห็น
                 # -> ส่ง path กลับไปให้หน้าเว็บคัดลอก (JS จัดการคัดลอกให้อัตโนมัติ)
@@ -1432,7 +1452,16 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     },
                 )
             try:
-                os.startfile(path)
+                if sys.platform == "darwin":
+                    import subprocess
+
+                    subprocess.Popen(["open", path])
+                elif os.name == "nt":
+                    os.startfile(path)
+                else:
+                    import subprocess
+
+                    subprocess.Popen(["xdg-open", path])
             except Exception as exc:
                 return self._send_json(400, {"ok": False, "message": self._t("folder.open_fail", exc=exc)})
             return self._send_json(200, {"ok": True, "path": path, "message": self._t("folder.open_ok", path=path)})
@@ -1638,3 +1667,4 @@ class WebUI:
     def stop(self) -> None:
         """หยุด server (shutdown)."""
         self.server.shutdown()
+        self.server.server_close()

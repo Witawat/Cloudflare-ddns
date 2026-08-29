@@ -1,7 +1,11 @@
-"""Windows Service wrapper (pywin32) สำหรับรัน DDNS loop เป็น service."""
+"""จัดการ background service: Windows Service (pywin32) และ macOS LaunchAgent."""
 
 import logging
 import os
+import plistlib
+import signal
+import subprocess
+import sys
 import threading
 import time
 from logging.handlers import TimedRotatingFileHandler
@@ -16,6 +20,7 @@ SERVICE_DESCRIPTION = (
     "ตรวจหา IP สาธารณะ (IPv4/IPv6) แล้วอัปเดต DNS record บน Cloudflare "
     "โดยอัตโนมัติเมื่อ IP เปลี่ยน"
 )
+LAUNCHD_LABEL = "com.makerwitawat.cloudflare-ddns"
 
 log = logging.getLogger("cloudflare-ddns")
 
@@ -179,7 +184,7 @@ def _make_service_class() -> type:
     return CloudflareDDNSService
 
 
-def run_service_entry() -> None:
+def _run_windows_service_entry() -> None:
     """entry ที่ Windows Service Control Manager เรียก (ผ่าน exe/pythonw)."""
     import servicemanager
 
@@ -209,7 +214,7 @@ def _service_util() -> Any:
     return win32service, win32serviceutil
 
 
-def install_service() -> str:
+def _install_windows_service() -> str:
     """ลงทะเบียน service เข้า Windows (ต้องรันด้วยสิทธิ์ administrator).
 
     - ถ้าติดตั้งไว้แล้ว จะลบ (และหยุด) อันเก่าก่อน แล้วติดตั้งใหม่ทับ
@@ -222,7 +227,7 @@ def install_service() -> str:
     import sys
 
     win32service, win32serviceutil = _service_util()
-    status = service_status()
+    status = _windows_service_status()
     if status.get("installed"):
         try:
             win32serviceutil.StopService(SERVICE_NAME)
@@ -288,7 +293,7 @@ def _configure_failure_actions(win32service: Any) -> None:
         log.warning("ตั้งค่า auto-restart ของ service ไม่ได้: %s", exc)
 
 
-def remove_service() -> str:
+def _remove_windows_service() -> str:
     """ลบ service ออกจาก Windows (ต้องรันด้วยสิทธิ์ administrator).
 
     Returns:
@@ -303,7 +308,7 @@ def remove_service() -> str:
     return f"ลบ service '{SERVICE_NAME}' เรียบร้อย"
 
 
-def start_service() -> str:
+def _start_windows_service() -> str:
     """เริ่ม service.
 
     Returns:
@@ -314,7 +319,7 @@ def start_service() -> str:
     return f"เริ่ม service '{SERVICE_NAME}' แล้ว"
 
 
-def stop_service() -> str:
+def _stop_windows_service() -> str:
     """หยุด service.
 
     Returns:
@@ -325,23 +330,19 @@ def stop_service() -> str:
     return f"หยุด service '{SERVICE_NAME}' แล้ว"
 
 
-def restart_service() -> str:
+def _restart_windows_service() -> str:
     """restart service (หยุดแล้วเริ่มใหม่).
 
     Returns:
         str: ข้อความผลลัพธ์
     """
-    stop_service()
-    start_service()
+    _stop_windows_service()
+    _start_windows_service()
     return f"restart service '{SERVICE_NAME}' แล้ว"
 
 
-def service_status() -> Dict[str, Any]:
-    """คืน dict สถานะ service หรือ None ถ้ายังไม่ติดตั้ง.
-
-    Returns:
-        dict: {"installed": bool, "state": str | "message": str}
-    """
+def _windows_service_status() -> Dict[str, Any]:
+    """คืน dict สถานะ service หรือ None ถ้ายังไม่ติดตั้ง."""
     try:
         win32service, _ = _service_util()
     except ImportError:
@@ -368,3 +369,303 @@ def service_status() -> Dict[str, Any]:
         return {"installed": True, "state": states.get(status[1], str(status[1]))}
     except Exception as exc:
         return {"installed": False, "message": f"ไม่พบ service: {exc}"}
+
+
+# ---- macOS LaunchAgent ----
+
+
+def platform_name():
+    if sys.platform == "darwin":
+        return "macOS"
+    if os.name == "nt":
+        return "Windows"
+    return sys.platform
+
+
+def service_kind():
+    return "launchd" if sys.platform == "darwin" else "windows-service"
+
+
+def can_control_service():
+    """LaunchAgent เป็นของ user ไม่ต้อง admin; Windows ยังต้อง elevated token."""
+    if sys.platform == "darwin":
+        return True
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except Exception:
+            return False
+    return False
+
+
+def _launchd_plist_path():
+    return os.path.join(os.path.expanduser("~/Library/LaunchAgents"), LAUNCHD_LABEL + ".plist")
+
+
+def _getuid() -> int:
+    """เลข uid ของ user (launchd domain ใช้) — fallback PID บนระบบที่ไม่มี os.getuid (Windows/test).
+
+    Returns:
+        int: uid (POSIX) หรือ PID (fallback สำหรับ machine ที่ไม่ใช่ macOS)
+    """
+    try:
+        return os.getuid()
+    except AttributeError:
+        return os.getpid()
+
+
+def _launchd_target():
+    return f"gui/{_getuid()}/{LAUNCHD_LABEL}"
+
+
+def _launchd_domain():
+    return f"gui/{_getuid()}"
+
+
+def _launchd_program_arguments(config_path):
+    config_path = os.path.abspath(config_path or config_mod.DEFAULT_CONFIG_PATH)
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "run-service", "--config", config_path]
+    runner = os.path.join(config_mod.PROJECT_DIR, "run.py")
+    if os.path.isfile(runner):
+        return [sys.executable, runner, "run-service", "--config", config_path]
+    return [
+        sys.executable,
+        "-m",
+        "cloudflare_ddns.main",
+        "run-service",
+        "--config",
+        config_path,
+    ]
+
+
+def _launchctl(*args, check=False):
+    return subprocess.run(
+        ["launchctl", *args],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=check,
+    )
+
+
+def _install_launchd_service(config_path=None):
+    config_path = os.path.abspath(config_path or config_mod.DEFAULT_CONFIG_PATH)
+    data_dir = config_mod.data_dir_for(config_path)
+    log_dir = config_mod.log_dir_for(config_path)
+    plist_path = _launchd_plist_path()
+    os.makedirs(os.path.dirname(plist_path), exist_ok=True)
+    os.makedirs(log_dir, exist_ok=True)
+    payload = {
+        "Label": LAUNCHD_LABEL,
+        "ProgramArguments": _launchd_program_arguments(config_path),
+        "WorkingDirectory": data_dir,
+        "RunAtLoad": True,
+        "KeepAlive": True,
+        "ProcessType": "Background",
+        "ThrottleInterval": 10,
+        "EnvironmentVariables": {
+            "CFDDNS_RUNNING_AS_SERVICE": "1",
+            "PYTHONUNBUFFERED": "1",
+        },
+        "StandardOutPath": os.path.join(log_dir, "launchd.stdout.log"),
+        "StandardErrorPath": os.path.join(log_dir, "launchd.stderr.log"),
+    }
+    tmp = plist_path + ".tmp"
+    with open(tmp, "wb") as handle:
+        plistlib.dump(payload, handle, sort_keys=False)
+    os.replace(tmp, plist_path)
+    return (
+        f"ติดตั้ง LaunchAgent '{LAUNCHD_LABEL}' แล้ว ({plist_path}) — "
+        "ใช้คำสั่ง start เพื่อเริ่มทันที"
+    )
+
+
+def _remove_launchd_service(config_path=None):
+    plist_path = _launchd_plist_path()
+    if not os.path.isfile(plist_path):
+        return f"ไม่พบ LaunchAgent '{LAUNCHD_LABEL}'"
+    _launchctl("bootout", _launchd_target())
+    os.remove(plist_path)
+    return f"ลบ LaunchAgent '{LAUNCHD_LABEL}' แล้ว (config/state/log ยังอยู่)"
+
+
+def _start_launchd_service(config_path=None):
+    plist_path = _launchd_plist_path()
+    if not os.path.isfile(plist_path):
+        raise RuntimeError("ยังไม่ได้ติดตั้ง LaunchAgent — รันคำสั่ง install ก่อน")
+    status = _launchd_service_status()
+    if status.get("state") == "running":
+        return f"LaunchAgent '{LAUNCHD_LABEL}' กำลังทำงานอยู่แล้ว"
+    result = _launchctl("bootstrap", _launchd_domain(), plist_path)
+    if result.returncode != 0:
+        # plist อาจโหลดอยู่แต่ process หยุดชั่วคราว — kickstart ให้ launchd เริ่มใหม่
+        result = _launchctl("kickstart", "-k", _launchd_target())
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout or "launchctl start ไม่สำเร็จ").strip())
+    return f"เริ่ม LaunchAgent '{LAUNCHD_LABEL}' แล้ว"
+
+
+def _stop_launchd_service(config_path=None):
+    if not os.path.isfile(_launchd_plist_path()):
+        raise RuntimeError("ยังไม่ได้ติดตั้ง LaunchAgent")
+    result = _launchctl("bootout", _launchd_target())
+    if result.returncode != 0 and "No such process" not in (result.stderr or ""):
+        raise RuntimeError((result.stderr or result.stdout or "launchctl stop ไม่สำเร็จ").strip())
+    return f"หยุด LaunchAgent '{LAUNCHD_LABEL}' แล้ว"
+
+
+def _restart_launchd_service(config_path=None):
+    if not os.path.isfile(_launchd_plist_path()):
+        raise RuntimeError("ยังไม่ได้ติดตั้ง LaunchAgent")
+    result = _launchctl("kickstart", "-k", _launchd_target())
+    if result.returncode != 0:
+        return _start_launchd_service(config_path)
+    return f"restart LaunchAgent '{LAUNCHD_LABEL}' แล้ว"
+
+
+def _launchd_service_status():
+    plist_path = _launchd_plist_path()
+    if not os.path.isfile(plist_path):
+        return {"installed": False, "message": "ยังไม่ได้ติดตั้ง LaunchAgent", "kind": "launchd"}
+    result = _launchctl("print", _launchd_target())
+    if result.returncode != 0:
+        return {"installed": True, "state": "stopped", "kind": "launchd"}
+    output = result.stdout or ""
+    state = "running" if "state = running" in output else "stopped"
+    pid = None
+    for line in output.splitlines():
+        if line.strip().startswith("pid ="):
+            try:
+                pid = int(line.split("=", 1)[1].strip())
+            except ValueError:
+                pass
+            break
+    return {"installed": True, "state": state, "pid": pid, "kind": "launchd"}
+
+
+def _run_posix_service(config_path=None):
+    """รัน Web UI + DDNS + Tunnel ใน foreground ให้ launchd ดูแล lifecycle."""
+    from . import instance_lock
+
+    config_path = os.path.abspath(config_path or config_mod.DEFAULT_CONFIG_PATH)
+    os.environ["CFDDNS_RUNNING_AS_SERVICE"] = "1"
+    cfg = config_mod.Config(config_path)
+    setup_file_logging(cfg.log_dir, detail=cfg.detail_log)
+    if not instance_lock.acquire_instance_lock(config_path):
+        log.warning("มี instance อื่นรันอยู่แล้ว — LaunchAgent ไม่เริ่มซ้ำ")
+        return 1
+
+    stop_event = threading.Event()
+
+    def _stop(_signum, _frame):
+        stop_event.set()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, _stop)
+
+    web_ui = None
+    tunnel_mgr = None
+    tunnel_thread = None
+    try:
+        from . import webui as webui_mod
+
+        web_ui = webui_mod.WebUI(config_path)
+        web_ui.start()
+        log.info("LaunchAgent เริ่มทำงาน; Web UI: http://127.0.0.1:%d", web_ui.port)
+        if cfg.tunnel_enabled:
+            from . import tunnel as tunnel_mod
+
+            tunnel_mgr = tunnel_mod.TunnelManager(config_path)
+            tunnel_thread = threading.Thread(
+                target=lambda: _start_tunnel_for_service(tunnel_mgr, cfg), daemon=True
+            )
+            tunnel_thread.start()
+        ddns.run_forever(config_path, dry_run=False, stop_event=stop_event)
+        return 0
+    finally:
+        if tunnel_thread is not None:
+            tunnel_thread.join(timeout=60)
+        if tunnel_mgr is not None:
+            try:
+                tunnel_mgr.stop()
+            except Exception as exc:
+                log.warning("หยุด Cloudflare Tunnel ไม่ได้: %s", exc)
+        if web_ui is not None:
+            try:
+                web_ui.stop()
+            except Exception as exc:
+                log.warning("หยุด Web UI ไม่ได้: %s", exc)
+        instance_lock.release_instance_lock()
+        log.info("LaunchAgent หยุดทำงาน")
+
+
+def _start_tunnel_for_service(tunnel_mgr, cfg):
+    try:
+        ok, message = tunnel_mgr.start(cfg)
+        log.info("Cloudflare Tunnel: %s", message)
+    except Exception as exc:
+        log.warning("เริ่ม Cloudflare Tunnel ไม่ได้: %s", exc)
+
+
+# ---- public cross-platform API ----
+
+
+def run_service_entry(config_path=None):
+    if sys.platform == "darwin":
+        return _run_posix_service(config_path)
+    if os.name == "nt":
+        return _run_windows_service_entry()
+    raise RuntimeError("โหมด service รองรับ Windows และ macOS เท่านั้น")
+
+
+def install_service(config_path=None):
+    if sys.platform == "darwin":
+        return _install_launchd_service(config_path)
+    if os.name == "nt":
+        return _install_windows_service()
+    raise RuntimeError("การติดตั้ง service รองรับ Windows และ macOS เท่านั้น")
+
+
+def remove_service(config_path=None):
+    if sys.platform == "darwin":
+        return _remove_launchd_service(config_path)
+    if os.name == "nt":
+        return _remove_windows_service()
+    raise RuntimeError("การลบ service รองรับ Windows และ macOS เท่านั้น")
+
+
+def start_service(config_path=None):
+    if sys.platform == "darwin":
+        return _start_launchd_service(config_path)
+    if os.name == "nt":
+        return _start_windows_service()
+    raise RuntimeError("การเริ่ม service รองรับ Windows และ macOS เท่านั้น")
+
+
+def stop_service(config_path=None):
+    if sys.platform == "darwin":
+        return _stop_launchd_service(config_path)
+    if os.name == "nt":
+        return _stop_windows_service()
+    raise RuntimeError("การหยุด service รองรับ Windows และ macOS เท่านั้น")
+
+
+def restart_service(config_path=None):
+    if sys.platform == "darwin":
+        return _restart_launchd_service(config_path)
+    if os.name == "nt":
+        return _restart_windows_service()
+    raise RuntimeError("การ restart service รองรับ Windows และ macOS เท่านั้น")
+
+
+def service_status(config_path=None):
+    if sys.platform == "darwin":
+        return _launchd_service_status()
+    if os.name == "nt":
+        result = _windows_service_status()
+        result["kind"] = "windows-service"
+        return result
+    return {"installed": False, "message": "ระบบนี้ยังไม่รองรับ service", "kind": "unsupported"}

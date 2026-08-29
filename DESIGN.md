@@ -36,7 +36,7 @@ Mood: "เช้าที่บ้าน เปิดแล็ปท็อปด
 
 - **แถบหัวหน้า**: ชื่อ + status pill รวม (พร้อม / ไม่พร้อม / มีปัญหา) + pill เวอร์ชัน (เล็ก 0.75rem) + pill "มีเวอร์ชันใหม่" (โทน warn, ลิงก์ไป release) + ปุ่ม Refresh
 - **ส่วนสถานะ**: รายการ record (ไม่ใช่การ์ดซ้อน): แต่ละแถว = จุดสี + ชื่อ record (mono, คัดลอกได้, ไม่ติด `|A`) + IP (mono, คัดลอกได้) + badge เวลาอัปเดตล่าสุดพร้อมชนิด (A/AAAA); ถ้า error แถวนั้นเป็นโทน error + บรรทัดสถิติ Cloudflare API (เรียก/error/429, muted, ขนาดเล็ก)
-- **ส่วน Windows Service**: หนึ่งแถว: สถานะติดตั้ง/รัน + ปุ่มเริ่ม/หยุด/Restart/ติดตั้ง/ถอน (ปุ่มที่ทำไม่ได้จากบริบทปัจจุบัน — ไม่ admin หรือรันใน service — disabled พร้อม title อธิบาย) + บรรทัด context ("รันใน service (มีสิทธิ์ระบบ)" / "standalone · admin ✓/✗") + details "ข้อควรรู้"
+- **ส่วน Background Service**: หนึ่งแถว: สถานะ Windows Service/macOS LaunchAgent + ปุ่มเริ่ม/หยุด/Restart/ติดตั้ง/ถอน (ปุ่มที่ทำไม่ได้จากบริบทปัจจุบัน disabled พร้อม title อธิบาย) + บรรทัด context ของ platform/สิทธิ์ + details "ข้อควรรู้"
 - **ส่วน Telegram**: หนึ่งแถว: สถานะพร้อมใช้งาน/ยังไม่ได้ตั้ง/คิวรอ N + ปุ่ม "ส่งข้อความทดสอบ"
 - **ส่วนตั้งค่า (ฟอร์ม)**: กลุ่ม Cloudflare (token, interval, toggles), กลุ่ม Telegram (token, chat_id, toggles เหตุการณ์), กลุ่ม records (แต่ละแถวมีฟอร์ม + ปุ่มลบ, ปุ่ม "เพิ่ม record")
 - Toast ด้านล่างขวา (fixed, z-index สูงสุด) สำหรับผลบันทึก/error

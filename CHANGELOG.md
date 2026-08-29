@@ -2,6 +2,29 @@
 
 รูปแบบ: [Semantic Versioning](https://semver.org/) — เวอร์ชัน 1.x.x (ยังไม่ release เป็น tag)
 
+## [2.6.0] — 2026-08-29 (bumped — ยังไม่ปล่อย release)
+
+### เพิ่ม (Features)
+
+- **รองรับ macOS 12+ (Apple Silicon และ Intel)**: ใช้ background service แบบ user LaunchAgent
+  ผ่าน `launchd` — คำสั่ง `install/start/stop/restart/remove/status` เทียบเท่ากับ Windows
+- **Cloudflare Tunnel บน macOS**: ตรวจจับ CPU, ดาวน์โหลด `cloudflared-darwin-arm64/amd64.tgz`
+  อัตโนมัติ, แตกไฟล์และตั้ง executable permission, ควบคุม process ด้วย POSIX signal
+- **Build/ติดตั้งบน macOS**: เพิ่ม `build-macos.sh`, `install-macos.sh`, `uninstall-macos.sh`
+  และคู่มือ `docs/MACOS.md`
+
+### แก้บั๊ก (Fixes)
+
+- **instance/heartbeat lock บน macOS**: เพิ่ม `fcntl.flock` ขนานกับ `msvcrt` ที่ใช้บน Windows —
+  กันโปรแกรมเปิดซ้ำและกันส่ง heartbeat ซ้ำข้าม process บน macOS
+- **Web UI ปรับตาม platform**: ควบคุม LaunchAgent ได้ไม่ต้อง admin, เปิดโฟลเดอร์ด้วย Finder
+  แทน explorer, แสดงสถานะ service/platform ตรงตามระบบ
+
+### เพิ่ม (Tests)
+
+- เพิ่มเทสต์ LaunchAgent plist/status, cloudflared asset/extract/chmod และเทสต์ file lock แบบ POSIX
+  (184 เทสต์ผ่านบน macOS; ข้าม 2 เทสต์ที่เฉพาะ Windows SCM)
+
 ## [2.5.1] — 2026-08-29 (bumped — ยังไม่ปล่อย release)
 
 ### แก้บั๊ก (Fixes)

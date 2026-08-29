@@ -3,7 +3,7 @@
 สาเหตุ: เปิด exe/run/service ซ้ำ 2 instance พร้อมกัน → heartbeat ส่งเบิ้ลทุกนาที
 (ในแต่ละ process มันกันส่งซ้ำของตัวเองได้ แต่กันข้าม process ไม่ได้)
 
-ใช้ file lock (msvcrt) แทน named mutex เพราะ:
+ใช้ file lock ของระบบ (msvcrt บน Windows / fcntl บน macOS และ Unix) เพราะ:
 - file lock เห็นข้าม session (service อยู่ session 0, exe ผู้ใช้อยู่ session 1 —
   named mutex ธรรมดาเป็น per-session จะมองไม่เห็นกัน)
 - ไม่ต้อง Global\\ prefix ที่ต้อง admin สร้าง
@@ -21,8 +21,13 @@ from typing import Optional
 
 try:
     import msvcrt
-except ImportError:  # ไม่ใช่ Windows (dev บน mac/linux) — ปล่อยผ่าน ไม่กัน
+except ImportError:
     msvcrt = None
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 from . import config as config_mod
 
@@ -44,19 +49,37 @@ def instance_lock_path(config_path: Optional[str] = None) -> str:
 
 
 def _lock_fd_on(fd: int) -> None:
-    """lock 1 byte แรกของ fd (LK_NBLCK ไม่บล็อก) — โยน OSError ถ้า lock ไม่ได้.
+    """ครอบ fd แบบ non-blocking — โยน OSError ถ้ามี process อื่นครอบอยู่.
 
     Args:
         fd: file descriptor ของไฟล์ lock
 
     Raises:
-        OSError: เมื่อ lock ไม่ได้ (มี process อื่นครอบอยู่)
+        OSError: เมื่อ lock ไม่ได้ (มี process อื่นครอบอยู่ หรือระบบไม่รองรับ)
     """
     if os.fstat(fd).st_size == 0:
         os.write(fd, b"\x00")
         os.fsync(fd)
     os.lseek(fd, 0, os.SEEK_SET)
-    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+    if msvcrt is not None:
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+    elif fcntl is not None:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    else:
+        raise OSError("ระบบนี้ไม่รองรับ file lock")
+
+
+def _unlock_fd(fd: int) -> None:
+    """ปลด lock ที่ครอบไว้บน fd — โอเคถ้า fd ไม่ได้ lock (ลองปลดช่วง cleanup).
+
+    Args:
+        fd: file descriptor ของไฟล์ lock
+    """
+    if msvcrt is not None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    elif fcntl is not None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
 
 
 def acquire_instance_lock(config_path: Optional[str] = None) -> bool:
@@ -70,8 +93,6 @@ def acquire_instance_lock(config_path: Optional[str] = None) -> bool:
     """
     global _log_lock_fd
     if _log_lock_fd is not None:
-        return True
-    if msvcrt is None:
         return True
     fd = None
     try:
@@ -95,7 +116,7 @@ def release_instance_lock() -> None:
     if _log_lock_fd is None:
         return
     try:
-        msvcrt.locking(_log_lock_fd, msvcrt.LK_UNLCK, 1)
+        _unlock_fd(_log_lock_fd)
     except OSError:
         pass
     try:
@@ -126,8 +147,6 @@ class file_lock:
         Returns:
             file_lock: ตัว self เพื่อให้อ่าน .locked ได้
         """
-        if msvcrt is None:
-            return self
         fd = None
         try:
             fd = os.open(self.path, os.O_CREAT | os.O_RDWR)
@@ -150,7 +169,7 @@ class file_lock:
         """ปลด lock และปิดไฟล์ (ไม่กลืน exception)."""
         if self.fd is not None:
             try:
-                msvcrt.locking(self.fd, msvcrt.LK_UNLCK, 1)
+                _unlock_fd(self.fd)
             except OSError:
                 pass
             try:

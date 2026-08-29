@@ -10,11 +10,6 @@ from cloudflare_ddns import config as config_mod
 from cloudflare_ddns import heartbeat
 from cloudflare_ddns import instance_lock
 
-try:
-    import msvcrt
-except ImportError:
-    msvcrt = None
-
 PING_URL = "https://hc-ping.com/abc"
 
 
@@ -167,8 +162,6 @@ class TestInstanceLock(unittest.TestCase):
         instance_lock.release_instance_lock()
 
     def test_มีinstanceอื่น_ครอบไม่ได้(self):
-        if msvcrt is None:
-            self.skipTest("ไม่ใช่ Windows — ไม่มี msvcrt")
         # จำลอง instance อื่นครอบ lock ไว้
         lk = instance_lock.file_lock(instance_lock.instance_lock_path(self.config_path))
         lk.__enter__()
@@ -181,8 +174,6 @@ class TestInstanceLock(unittest.TestCase):
         self.assertTrue(instance_lock.acquire_instance_lock(self.config_path))
 
     def test_ครอบแล้วปลด_ได้ใหม่(self):
-        if msvcrt is None:
-            self.skipTest("ไม่ใช่ Windows — ไม่มี msvcrt")
         self.assertTrue(instance_lock.acquire_instance_lock(self.config_path))
         instance_lock.release_instance_lock()
         self.assertTrue(instance_lock.acquire_instance_lock(self.config_path))

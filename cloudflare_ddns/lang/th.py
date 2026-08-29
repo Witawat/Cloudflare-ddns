@@ -95,7 +95,7 @@ TH = {
     "tunnel.log_title": "Log ของ cloudflared (tunnel.log)",
 
     # ---- service ----
-    "service.no_admin": "ไม่มีสิทธิ์ admin — เปิด webui จาก cmd/exe ที่รันเป็น admin (หรือติดตั้งเป็น service แล้วควบคุมจากเว็บนี้)",
+    "service.no_admin": "ไม่มีสิทธิ์ควบคุม service — Windows ให้เปิด webui แบบ admin; macOS ใช้ LaunchAgent ของ user ได้โดยไม่ต้อง sudo",
     "service.running_inside": "เว็บนี้รันใน service อยู่แล้ว — service กำลังทำงาน (ติดตั้งอยู่แล้ว ไม่ต้องติดตั้งใหม่) ใช้ปุ่ม Restart แทน (ห้ามติดตั้งทับตัวเอง: จะลบ service ที่รันอยู่ทิ้งแล้วหยุดกลางคัน)",
     "service.already_installed": "service ติดตั้งอยู่แล้ว — ใช้ปุ่ม Restart หรือถอนก่อนถ้าอยากติดตั้งใหม่",
     "service.install_fail": "ติดตั้งไม่ได้: {exc}",
@@ -196,7 +196,7 @@ TH = {
     "tg.reset.fail": "reset ไม่สำเร็จ: {}",
     "tg.log.empty": "(log ว่าง)",
     "tg.log.read_fail": "อ่าน log ไม่ได้: {}",
-    "tg.help": "รายการคำสั่ง (พิมพ์ในแชทนี้):\n/status — สถานะ DDNS (IP/รอบล่าสุด/error/เวอร์ชัน/tunnel/สถิติ API)\n/list — รายชื่อ DDNS + tunnel ที่ตั้งค่าไว้\n/ip — IP สาธารณะปัจจุบัน\n/run — รันรอบ DDNS ทันที (ต้องยืนยัน yes)\n/update — เช็คเวอร์ชันใหม่\n/tunnel [start|stop] — สถานะ/ควบคุม tunnel (stop ต้องยืนยัน yes)\n/log — log 30 บรรทัดสุดท้าย\n/notify [all|start|stop|ip|error|created|round|daily] [on|off] — ดู/เปิด/ปิดการแจ้งเตือน\n/restart /start /stop — ควบคุม Windows Service (restart ต้องยืนยัน yes)\nreset password → yes — กู้รหัสผ่านหน้าเว็บ\nใช้ bot กลางหลายเครื่อง? ต่อท้าย @ชื่อเครื่อง (เช่น /status @เครื่องA) — เฉพาะเครื่องที่ชื่อตรงตอบ\nทุกคำตอบขึ้นต้นด้วย [ชื่อเครื่อง] — รู้ว่ามาจากเครื่องไหน",
+    "tg.help": "รายการคำสั่ง (พิมพ์ในแชทนี้):\n/status — สถานะ DDNS (IP/รอบล่าสุด/error/เวอร์ชัน/tunnel/สถิติ API)\n/list — รายชื่อ DDNS + tunnel ที่ตั้งค่าไว้\n/ip — IP สาธารณะปัจจุบัน\n/run — รันรอบ DDNS ทันที (ต้องยืนยัน yes)\n/update — เช็คเวอร์ชันใหม่\n/tunnel [start|stop] — สถานะ/ควบคุม tunnel (stop ต้องยืนยัน yes)\n/log — log 30 บรรทัดสุดท้าย\n/notify [all|start|stop|ip|error|created|round|daily] [on|off] — ดู/เปิด/ปิดการแจ้งเตือน\n/restart /start /stop — ควบคุม background service (restart ต้องยืนยัน yes)\nreset password → yes — กู้รหัสผ่านหน้าเว็บ\nใช้ bot กลางหลายเครื่อง? ต่อท้าย @ชื่อเครื่อง (เช่น /status @เครื่องA) — เฉพาะเครื่องที่ชื่อตรงตอบ\nทุกคำตอบขึ้นต้นด้วย [ชื่อเครื่อง] — รู้ว่ามาจากเครื่องไหน",
     "tg.help_short": "รายการคำสั่ง (พิมพ์ในแชทนี้):",
     "tg.chatid.not_found": "ยังไม่มีข้อความจาก bot — เปิดแชทกับ bot แล้วกด /start ก่อนลองใหม่",
     "tg.chatid.webhook_err": "ลบ webhook แล้วก็ยังติด error {code}: {exc} — ถ้า bot นี้กำลังรันกับโปรแกรมอื่นอยู่ ให้ปิดตัวนั้นก่อนแล้วลองใหม่",

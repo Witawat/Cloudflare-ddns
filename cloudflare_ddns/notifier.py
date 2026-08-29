@@ -689,7 +689,7 @@ def _tg_tunnel_text(cfg: "config_mod.Config", action: str, lang: str = "th") -> 
 
 
 def _tg_service_action(action: str, lang: str = "th") -> str:
-    """ควบคุม Windows Service สำหรับ /restart /start /stop.
+    """ควบคุม background service สำหรับ /restart /start /stop.
 
     Args:
         action: คำสั่งย่อย (restart/start/stop)

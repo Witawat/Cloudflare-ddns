@@ -102,5 +102,30 @@ class ConsoleCloseHandlerTest(unittest.TestCase):
         self.assertFalse(ok)
 
 
+class WebUICommandTest(unittest.TestCase):
+    def test_ctrl_c_ปิดwebuiสะอาด(self):
+        args = mock.Mock(config="/tmp/test-config.ini", port=18123, password=None)
+        ui = mock.Mock(host="127.0.0.1", port=18123)
+        ui.serve_forever.side_effect = KeyboardInterrupt
+        with mock.patch("cloudflare_ddns.webui.WebUI", return_value=ui), \
+                mock.patch.object(main, "print_banner"), \
+                mock.patch.object(main, "setup_console_logging"), \
+                contextlib.redirect_stdout(io.StringIO()):
+            main.cmd_webui(args)
+        ui.stop.assert_called_once()
+
+    def test_ctrl_c_ซ้ำระหว่างshutdown_ไม่หลุดเป็นtraceback(self):
+        args = mock.Mock(config="/tmp/test-config.ini", port=18123, password=None)
+        ui = mock.Mock(host="127.0.0.1", port=18123)
+        ui.serve_forever.side_effect = KeyboardInterrupt
+        ui.stop.side_effect = KeyboardInterrupt
+        with mock.patch("cloudflare_ddns.webui.WebUI", return_value=ui), \
+                mock.patch.object(main, "print_banner"), \
+                mock.patch.object(main, "setup_console_logging"), \
+                contextlib.redirect_stdout(io.StringIO()):
+            main.cmd_webui(args)
+        ui.stop.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
